@@ -297,12 +297,83 @@ export default function VideoEditor() {
   // Active Tool Panel
   const [activeTool, setActiveTool] = useState<string | null>(null);
 
+  // Selected Timeline Clip state
+  const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
+
   // Transient Text Editing state
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [newTextString, setNewTextString] = useState("");
-
-  // Presets
   const [presets, setPresets] = useState<ExportPreset[]>([]);
+
+  // Interactive Crop Pan & Zoom Dragging State
+  const isDraggingCropRef = useRef<"pan" | "zoom" | null>(null);
+  const dragStartRef = useRef<{ x: number; y: number; initialPanX: number; initialPanY: number; initialZoom: number }>({
+    x: 0, y: 0, initialPanX: 0, initialPanY: 0, initialZoom: 1
+  });
+
+  const handleCropPanStart = (e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
+    isDraggingCropRef.current = "pan";
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    dragStartRef.current = {
+      x: clientX,
+      y: clientY,
+      initialPanX: panX,
+      initialPanY: panY,
+      initialZoom: zoom
+    };
+  };
+
+  const handleCropZoomStart = (e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
+    isDraggingCropRef.current = "zoom";
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    dragStartRef.current = {
+      x: clientX,
+      y: clientY,
+      initialPanX: panX,
+      initialPanY: panY,
+      initialZoom: zoom
+    };
+  };
+
+  useEffect(() => {
+    const handleMove = (e: MouseEvent | TouchEvent) => {
+      if (!isDraggingCropRef.current) return;
+      const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
+      const clientY = 'touches' in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
+      const deltaX = clientX - dragStartRef.current.x;
+      const deltaY = clientY - dragStartRef.current.y;
+
+      if (isDraggingCropRef.current === "pan") {
+        setPanX(Math.max(-200, Math.min(200, dragStartRef.current.initialPanX + deltaX)));
+        setPanY(Math.max(-200, Math.min(200, dragStartRef.current.initialPanY + deltaY)));
+      } else if (isDraggingCropRef.current === "zoom") {
+        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        const factor = (deltaX + deltaY) > 0 ? 1 : -1;
+        const newZoom = Math.max(0.5, Math.min(3.0, dragStartRef.current.initialZoom + (factor * distance * 0.008)));
+        setZoom(parseFloat(newZoom.toFixed(2)));
+      }
+    };
+
+    const handleEnd = () => {
+      isDraggingCropRef.current = null;
+    };
+
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleEnd);
+    window.addEventListener("touchmove", handleMove);
+    window.addEventListener("touchend", handleEnd);
+
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleEnd);
+      window.removeEventListener("touchmove", handleMove);
+      window.removeEventListener("touchend", handleEnd);
+    };
+  }, [panX, panY, zoom, setPanX, setPanY, setZoom]);
 
   // Asynchronously probe media duration and append to videoClips list
   const addVideoFiles = useCallback(async (files: File[]) => {
@@ -546,10 +617,42 @@ export default function VideoEditor() {
       return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}:${frames.toString().padStart(2, '0')}`;
   };
 
-  // Split clip function
+  // Real CapCut Clip Splitting Function (Physically divides the clip under playhead into 2 clips)
   const handleSplitClip = () => {
-    if (currentTime > 0 && !splitPoints.includes(currentTime)) {
-      setSplitPoints([...splitPoints, currentTime].sort((a, b) => a - b));
+    if (videoClips.length === 0) return;
+
+    // Find the clip containing current playhead time
+    const targetOffset = clipOffsets.find(c => currentTime >= c.start && currentTime < c.end) || clipOffsets[0];
+    if (!targetOffset) return;
+
+    const clipToSplit = targetOffset.clip;
+    const relTime = currentTime - targetOffset.start;
+
+    // Only split if playhead is at least 0.2s away from boundaries
+    if (relTime > 0.2 && relTime < targetOffset.duration - 0.2) {
+      const idx = videoClips.findIndex(c => c.id === clipToSplit.id);
+      if (idx !== -1) {
+        const baseName = clipToSplit.name.replace(/_part\d+$/, '');
+        const part1: VideoClipItem = {
+          ...clipToSplit,
+          id: "clip_" + Date.now() + "_a",
+          name: `${baseName}_part1`,
+          duration: parseFloat(relTime.toFixed(2))
+        };
+        const part2: VideoClipItem = {
+          ...clipToSplit,
+          id: "clip_" + Date.now() + "_b",
+          name: `${baseName}_part2`,
+          duration: parseFloat((targetOffset.duration - relTime).toFixed(2))
+        };
+
+        setVideoClips(prev => {
+          const updated = [...prev];
+          updated.splice(idx, 1, part1, part2);
+          return updated;
+        });
+        setSelectedClipId(part2.id);
+      }
     }
   };
 
@@ -1053,11 +1156,15 @@ export default function VideoEditor() {
                             </div>
                           )}
 
-                          {/* CapCut Visual 3x3 Crop Box Overlay */}
+                          {/* CapCut Interactive 3x3 Crop Box Overlay (Draggable Pan + Corner Zoom) */}
                           {activeTool === "crop" && (
-                            <div className="absolute inset-2 md:inset-4 pointer-events-none z-30 border-2 border-cyan-400/90 rounded-sm">
+                            <div 
+                              onMouseDown={handleCropPanStart}
+                              onTouchStart={handleCropPanStart}
+                              className="absolute inset-2 md:inset-4 z-30 border-2 border-cyan-400/90 rounded-sm cursor-move select-none bg-cyan-400/5 group"
+                            >
                               {/* 3x3 Rule of Thirds Grid Lines */}
-                              <div className="absolute inset-0 grid grid-cols-3 grid-rows-3">
+                              <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none">
                                 <div className="border-r border-b border-white/40" />
                                 <div className="border-r border-b border-white/40" />
                                 <div className="border-b border-white/40" />
@@ -1068,11 +1175,33 @@ export default function VideoEditor() {
                                 <div className="border-r border-white/40" />
                                 <div className="" />
                               </div>
-                              {/* White Corner Handles (CapCut style) */}
-                              <div className="absolute -top-1 -left-1 w-5 h-5 border-t-4 border-l-4 border-white shadow-md" />
-                              <div className="absolute -top-1 -right-1 w-5 h-5 border-t-4 border-r-4 border-white shadow-md" />
-                              <div className="absolute -bottom-1 -left-1 w-5 h-5 border-b-4 border-l-4 border-white shadow-md" />
-                              <div className="absolute -bottom-1 -right-1 w-5 h-5 border-b-4 border-r-4 border-white shadow-md" />
+
+                              {/* Draggable Corner Scale Handles */}
+                              <div 
+                                onMouseDown={handleCropZoomStart}
+                                onTouchStart={handleCropZoomStart}
+                                className="absolute -top-2 -left-2 w-6 h-6 border-t-4 border-l-4 border-white bg-cyan-500/90 cursor-nwse-resize pointer-events-auto rounded-tl shadow-lg hover:scale-125 transition-transform" 
+                              />
+                              <div 
+                                onMouseDown={handleCropZoomStart}
+                                onTouchStart={handleCropZoomStart}
+                                className="absolute -top-2 -right-2 w-6 h-6 border-t-4 border-r-4 border-white bg-cyan-500/90 cursor-nesw-resize pointer-events-auto rounded-tr shadow-lg hover:scale-125 transition-transform" 
+                              />
+                              <div 
+                                onMouseDown={handleCropZoomStart}
+                                onTouchStart={handleCropZoomStart}
+                                className="absolute -bottom-2 -left-2 w-6 h-6 border-b-4 border-l-4 border-white bg-cyan-500/90 cursor-nesw-resize pointer-events-auto rounded-bl shadow-lg hover:scale-125 transition-transform" 
+                              />
+                              <div 
+                                onMouseDown={handleCropZoomStart}
+                                onTouchStart={handleCropZoomStart}
+                                className="absolute -bottom-2 -right-2 w-6 h-6 border-b-4 border-r-4 border-white bg-cyan-500/90 cursor-nwse-resize pointer-events-auto rounded-br shadow-lg hover:scale-125 transition-transform" 
+                              />
+
+                              {/* Drag Hint Badge */}
+                              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-md text-[10px] text-cyan-300 font-bold pointer-events-none border border-cyan-500/30 shadow-lg">
+                                 Drag to Pan • Corner to Zoom
+                              </div>
                             </div>
                           )}
 
@@ -1687,14 +1816,41 @@ export default function VideoEditor() {
                        {/* Video Track */}
                        <div className="h-9 rounded-lg flex items-center p-0.5 space-x-1" style={{ backgroundColor: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.2)' }}>
                           {videoClips.map((clip, idx) => {
-                             const isActive = activeClipInfo?.clip.id === clip.id;
+                             const isSelected = selectedClipId ? selectedClipId === clip.id : activeClipInfo?.clip.id === clip.id;
                              const widthPercent = duration > 0 ? (clip.duration / duration) * 100 : 0;
                              return (
-                                <div key={clip.id} className={`h-full relative rounded-md flex items-center px-2 cursor-pointer border group overflow-hidden ${isActive ? "bg-indigo-500/30 border-indigo-400 text-white" : "bg-white/5 border-white/10 text-slate-300"}`} style={{ minWidth: '80px', width: `${widthPercent}%` }}>
-                                   <span className="text-[9px] font-medium truncate">{clip.name}</span>
-                                   <div className="absolute right-1 opacity-0 group-hover:opacity-100 flex items-center bg-black/50 rounded backdrop-blur-sm">
-                                      {idx > 0 && <button onClick={() => handleMoveClip(idx, 'left')} className="p-1 hover:text-indigo-300"><ChevronLeft className="w-3 h-3"/></button>}
-                                      <button onClick={() => handleRemoveClip(clip.id)} className="p-1 hover:text-red-400"><Trash2 className="w-3 h-3"/></button>
+                                <div 
+                                  key={clip.id} 
+                                  onClick={(e) => { e.stopPropagation(); setSelectedClipId(clip.id); }}
+                                  className={`h-full relative rounded-md flex items-center px-1.5 cursor-pointer transition-all group overflow-hidden ${
+                                    isSelected 
+                                      ? "bg-indigo-500/40 border-2 border-white text-white shadow-[0_0_12px_rgba(255,255,255,0.4)] z-10" 
+                                      : "bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10"
+                                  }`} 
+                                  style={{ minWidth: '95px', width: `${widthPercent}%` }}
+                                >
+                                   {/* CapCut Drag Handles on selected clip */}
+                                   {isSelected && (
+                                     <>
+                                       <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-white rounded-l flex items-center justify-center">
+                                         <div className="w-0.5 h-3 bg-slate-900 rounded-full" />
+                                       </div>
+                                       <div className="absolute right-0 top-0 bottom-0 w-1.5 bg-white rounded-r flex items-center justify-center">
+                                         <div className="w-0.5 h-3 bg-slate-900 rounded-full" />
+                                       </div>
+                                     </>
+                                   )}
+                                   
+                                   <div className="flex items-center justify-between w-full overflow-hidden pl-1 pr-1">
+                                      <span className="text-[9px] font-bold truncate">{clip.name}</span>
+                                      <span className="text-[8px] font-mono text-indigo-200 bg-black/50 px-1 py-0.5 rounded shrink-0">{clip.duration.toFixed(1)}s</span>
+                                   </div>
+
+                                   {/* Clip action controls */}
+                                   <div className="absolute right-1 opacity-0 group-hover:opacity-100 flex items-center bg-black/70 rounded backdrop-blur-sm z-20">
+                                      {idx > 0 && <button onClick={(e) => { e.stopPropagation(); handleMoveClip(idx, 'left'); }} className="p-1 hover:text-indigo-300" title="Move Left"><ChevronLeft className="w-3 h-3"/></button>}
+                                      {idx < videoClips.length - 1 && <button onClick={(e) => { e.stopPropagation(); handleMoveClip(idx, 'right'); }} className="p-1 hover:text-indigo-300" title="Move Right"><ChevronRight className="w-3 h-3"/></button>}
+                                      <button onClick={(e) => { e.stopPropagation(); handleRemoveClip(clip.id); }} className="p-1 hover:text-red-400" title="Delete Clip"><Trash2 className="w-3 h-3"/></button>
                                    </div>
                                 </div>
                              )
