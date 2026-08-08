@@ -84,6 +84,7 @@ export interface VideoClipItem {
   name: string;
   objectUrl: string;
   duration: number;
+  startOffset?: number;
 }
 
 const getMediaDuration = (file: File): Promise<number> => {
@@ -380,11 +381,73 @@ export default function VideoEditor() {
     window.addEventListener("touchmove", handleMove);
     window.addEventListener("touchend", handleEnd);
 
+  }, []);
+
+  // Timeline Clip Drag Trimming State (Drag left/right clip handles to adjust scene duration)
+  const isTrimmingClipRef = useRef<"left" | "right" | null>(null);
+  const trimStartRef = useRef<{ clientX: number; clipId: string; initialDuration: number; initialStartOffset: number }>({
+    clientX: 0, clipId: "", initialDuration: 0, initialStartOffset: 0
+  });
+
+  const handleClipTrimStart = (clip: VideoClipItem, edge: "left" | "right", e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
+    isTrimmingClipRef.current = edge;
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    trimStartRef.current = {
+      clientX,
+      clipId: clip.id,
+      initialDuration: clip.duration,
+      initialStartOffset: clip.startOffset || 0
+    };
+  };
+
+  useEffect(() => {
+    const handleTrimMove = (e: MouseEvent | TouchEvent) => {
+      if (!isTrimmingClipRef.current) return;
+      const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
+      const deltaX = clientX - trimStartRef.current.clientX;
+      const deltaSeconds = deltaX / 25; // 25px per second scale
+
+      const edge = isTrimmingClipRef.current;
+      const { clipId, initialDuration, initialStartOffset } = trimStartRef.current;
+
+      setVideoClips(prev => {
+        return prev.map(c => {
+          if (c.id !== clipId) return c;
+
+          if (edge === "right") {
+            const newDuration = Math.max(0.5, initialDuration + deltaSeconds);
+            return { ...c, duration: parseFloat(newDuration.toFixed(2)) };
+          } else if (edge === "left") {
+            const maxDelta = initialDuration - 0.5;
+            const boundedDelta = Math.min(maxDelta, Math.max(-initialStartOffset, deltaSeconds));
+            const newStartOffset = Math.max(0, initialStartOffset + boundedDelta);
+            const newDuration = Math.max(0.5, initialDuration - boundedDelta);
+            return {
+              ...c,
+              startOffset: parseFloat(newStartOffset.toFixed(2)),
+              duration: parseFloat(newDuration.toFixed(2))
+            };
+          }
+          return c;
+        });
+      });
+    };
+
+    const handleTrimEnd = () => {
+      isTrimmingClipRef.current = null;
+    };
+
+    window.addEventListener("mousemove", handleTrimMove);
+    window.addEventListener("mouseup", handleTrimEnd);
+    window.addEventListener("touchmove", handleTrimMove);
+    window.addEventListener("touchend", handleTrimEnd);
+
     return () => {
-      window.removeEventListener("mousemove", handleMove);
-      window.removeEventListener("mouseup", handleEnd);
-      window.removeEventListener("touchmove", handleMove);
-      window.removeEventListener("touchend", handleEnd);
+      window.removeEventListener("mousemove", handleTrimMove);
+      window.removeEventListener("mouseup", handleTrimEnd);
+      window.removeEventListener("touchmove", handleTrimMove);
+      window.removeEventListener("touchend", handleTrimEnd);
     };
   }, []);
 
@@ -523,29 +586,35 @@ export default function VideoEditor() {
     });
   };
 
-  // Synchronize HTML video element with active clip's objectUrl
+  // Synchronize HTML video element with active clip's objectUrl & startOffset
   const activeClipId = activeClipInfo?.clip.id;
+  const activeStartOffset = activeClipInfo?.clip.startOffset || 0;
+
   useEffect(() => {
     if (!activeClipInfo || !videoRef.current) return;
-    const relTime = Math.max(0, currentTime - activeClipInfo.start);
+    const relTimeInClip = Math.max(0, currentTime - activeClipInfo.start);
     const targetUrl = activeClipInfo.clip.objectUrl;
+    const expectedMediaTime = (activeClipInfo.clip.startOffset || 0) + relTimeInClip;
 
     if (videoRef.current.src !== targetUrl) {
       videoRef.current.src = targetUrl;
-      videoRef.current.currentTime = relTime;
-      if (isPlaying) {
-        const p = videoRef.current.play();
-        if (p !== undefined) {
-          p.catch((e) => {
-            if (e.name !== "NotAllowedError" && !e.message?.includes("interrupted")) {
-              console.warn("Video play error:", e);
-            }
-          });
-        }
+    }
+
+    if (Math.abs(videoRef.current.currentTime - expectedMediaTime) > 0.3) {
+      videoRef.current.currentTime = expectedMediaTime;
+    }
+
+    if (isPlaying && videoRef.current.paused) {
+      const p = videoRef.current.play();
+      if (p !== undefined) {
+        p.catch((e) => {
+          if (e.name !== "NotAllowedError" && !e.message?.includes("interrupted")) {
+            console.warn("Video play error:", e);
+          }
+        });
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeClipId, isPlaying]);
+  }, [activeClipId, activeStartOffset, isPlaying]);
 
   const togglePlayPause = () => {
       if (videoRef.current) {
@@ -564,17 +633,22 @@ export default function VideoEditor() {
 
   const handleTimeUpdate = () => {
       if (videoRef.current && activeClipInfo && !isExporting) {
-          const relTime = videoRef.current.currentTime;
-          const newGlobalTime = activeClipInfo.start + relTime;
+          const currentMediaTime = videoRef.current.currentTime;
+          const startOffset = activeClipInfo.clip.startOffset || 0;
+          const relTimeInClip = Math.max(0, currentMediaTime - startOffset);
+          const newGlobalTime = activeClipInfo.start + relTimeInClip;
           setCurrentTime(newGlobalTime);
 
-          // Check if current clip reached its duration boundary
-          if (relTime >= activeClipInfo.duration - 0.08) {
+          // Check if current clip reached its trimmed duration boundary
+          if (relTimeInClip >= activeClipInfo.duration - 0.08) {
               const currentIdx = clipOffsets.findIndex(c => c.clip.id === activeClipInfo.clip.id);
               if (currentIdx < clipOffsets.length - 1) {
                   // Auto-advance to next clip in sequence
                   const nextClipInfo = clipOffsets[currentIdx + 1];
                   setCurrentTime(nextClipInfo.start);
+                  if (videoRef.current) {
+                    videoRef.current.currentTime = nextClipInfo.clip.startOffset || 0;
+                  }
               } else {
                   // Reached end of total timeline sequence
                   videoRef.current.pause();
@@ -698,6 +772,20 @@ export default function VideoEditor() {
   const scaleY = flipV ? -1 : 1;
   const transformStyle = `translate(${panX}px, ${panY}px) rotate(${rotate}deg) scaleX(${scaleX * zoom}) scaleY(${scaleY * zoom})`;
 
+  // Full Video Crop transform style calculation (expands crop region to fill preview frame)
+  const cropTransformStyle = useMemo(() => {
+    if (cropBox.width >= 99 && cropBox.height >= 99 && cropBox.left <= 1 && cropBox.top <= 1) {
+      return transformStyle;
+    }
+    const scaleXFactor = 100 / cropBox.width;
+    const scaleYFactor = 100 / cropBox.height;
+    const cropScale = Math.min(scaleXFactor, scaleYFactor);
+    const offsetX = (50 - (cropBox.left + cropBox.width / 2)) * (cropScale / 100) * 300;
+    const offsetY = (50 - (cropBox.top + cropBox.height / 2)) * (cropScale / 100) * 300;
+
+    return `${transformStyle} scale(${cropScale}) translate(${offsetX}px, ${offsetY}px)`;
+  }, [cropBox, transformStyle]);
+
   const formatTime = (time: number) => {
       const minutes = Math.floor(time / 60);
       const seconds = Math.floor(time % 60);
@@ -715,6 +803,7 @@ export default function VideoEditor() {
 
     const clipToSplit = targetOffset.clip;
     const relTime = currentTime - targetOffset.start;
+    const initialStartOffset = clipToSplit.startOffset || 0;
 
     // Only split if playhead is at least 0.2s away from boundaries
     if (relTime > 0.2 && relTime < targetOffset.duration - 0.2) {
@@ -725,12 +814,14 @@ export default function VideoEditor() {
           ...clipToSplit,
           id: "clip_" + Date.now() + "_a",
           name: `${baseName}_part1`,
+          startOffset: initialStartOffset,
           duration: parseFloat(relTime.toFixed(2))
         };
         const part2: VideoClipItem = {
           ...clipToSplit,
           id: "clip_" + Date.now() + "_b",
           name: `${baseName}_part2`,
+          startOffset: parseFloat((initialStartOffset + relTime).toFixed(2)),
           duration: parseFloat((targetOffset.duration - relTime).toFixed(2))
         };
 
@@ -1176,7 +1267,7 @@ export default function VideoEditor() {
                               className="w-full h-full object-contain max-h-full bg-black/90"
                               style={{
                                   filter: filterStyle,
-                                  transform: transformStyle
+                                  transform: cropTransformStyle
                               }}
                               onTimeUpdate={handleTimeUpdate}
                               onLoadedMetadata={handleLoadedMetadata}
@@ -1923,13 +2014,23 @@ export default function VideoEditor() {
                                   }`} 
                                   style={{ minWidth: '95px', width: `${widthPercent}%` }}
                                 >
-                                   {/* CapCut Drag Handles on selected clip */}
+                                   {/* CapCut Drag Trimming Handles on selected clip */}
                                    {isSelected && (
                                      <>
-                                       <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-white rounded-l flex items-center justify-center">
+                                       <div 
+                                         onMouseDown={(e) => handleClipTrimStart(clip, "left", e)}
+                                         onTouchStart={(e) => handleClipTrimStart(clip, "left", e)}
+                                         className="absolute left-0 top-0 bottom-0 w-2.5 bg-white rounded-l flex items-center justify-center cursor-ew-resize hover:bg-indigo-300 z-30 shadow-md"
+                                         title="Drag to trim start"
+                                       >
                                          <div className="w-0.5 h-3 bg-slate-900 rounded-full" />
                                        </div>
-                                       <div className="absolute right-0 top-0 bottom-0 w-1.5 bg-white rounded-r flex items-center justify-center">
+                                       <div 
+                                         onMouseDown={(e) => handleClipTrimStart(clip, "right", e)}
+                                         onTouchStart={(e) => handleClipTrimStart(clip, "right", e)}
+                                         className="absolute right-0 top-0 bottom-0 w-2.5 bg-white rounded-r flex items-center justify-center cursor-ew-resize hover:bg-indigo-300 z-30 shadow-md"
+                                         title="Drag to trim end"
+                                       >
                                          <div className="w-0.5 h-3 bg-slate-900 rounded-full" />
                                        </div>
                                      </>
