@@ -1,14 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import dynamic from "next/dynamic";
 import Navbar from "@/components/Navbar";
 import Home from "@/components/Home";
-
-const YoutubeDownloader = dynamic(() => import("@/components/YoutubeDownloader"), { ssr: false });
-const VideoEditor = dynamic(() => import("@/components/VideoEditor"), { ssr: false });
-const ThumbnailEditor = dynamic(() => import("@/components/ThumbnailEditor"), { ssr: false });
-const CreatorAi = dynamic(() => import("@/components/CreatorAi"), { ssr: false });
+import YoutubeDownloader from "@/components/YoutubeDownloader";
+import VideoEditor from "@/components/VideoEditor";
+import ThumbnailEditor from "@/components/ThumbnailEditor";
+import CreatorAi from "@/components/CreatorAi";
 
 // Tab ID mapping: new nav uses 'downloader'/'editor', legacy used 'youtube'/'video'
 const TAB_ALIASES: Record<string, string> = {
@@ -20,6 +18,11 @@ const TAB_ALIASES: Record<string, string> = {
 
 export default function Page() {
   const [activeTab, setActiveTab] = useState("home");
+  const [hasMounted, setHasMounted] = useState(false);
+
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
 
   useEffect(() => {
     const handleTabChange = (e: any) => {
@@ -63,9 +66,12 @@ export default function Page() {
     return () => {
       window.removeEventListener("change-app-tab" as any, handleTabChange);
       window.removeEventListener("unhandledrejection", handleRejection);
-      window.removeEventListener("error", handleError);
     };
   }, []);
+
+  if (!hasMounted) {
+    return <div className="min-h-[100dvh] bg-[#050810]" />;
+  }
 
   return (
     <div className="min-h-[100dvh] bg-[var(--fl-bg)] text-slate-100 flex flex-col font-sans selection:bg-indigo-600/30">

@@ -29,10 +29,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      <head>
-        <link rel="manifest" href="/manifest.json" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+      <body className="antialiased overflow-x-hidden">
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -62,8 +59,8 @@ export default function RootLayout({
             `,
           }}
         />
-      </head>
-      <body className="antialiased overflow-x-hidden">{children}</body>
+        {children}
+      </body>
     </html>
   );
 }
