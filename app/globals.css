@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+  
+  :root {
+    --fl-bg: #050810;
+    --fl-surface-1: #0D1117;
+    --fl-surface-2: #13192A;
+    --fl-surface-3: #1A2236;
+    --fl-border: rgba(255,255,255,0.06);
+    --fl-border-hover: rgba(255,255,255,0.12);
+    --fl-accent-blue: #3B82F6;
+    --fl-accent-violet: #7C3AED;
+    --fl-accent-cyan: #06B6D4;
+    --fl-accent-indigo: #6366F1;
+    --fl-text-primary: #F1F5F9;
+    --fl-text-secondary: #94A3B8;
+    --fl-text-muted: #475569;
+    --fl-glow-blue: rgba(59,130,246,0.3);
+    --fl-glow-violet: rgba(124,58,237,0.3);
+    --fl-glow-indigo: rgba(99,102,241,0.35);
+  }
+
+  body {
+    background-color: var(--fl-bg);
+    color: var(--fl-text-primary);
+    font-family: 'Inter', sans-serif;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--fl-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--fl-accent-indigo);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--fl-accent-violet);
+}
+
+@layer utilities {
+  .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+  
+  .fl-glass {
+    background: rgba(13, 17, 23, 0.8);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .fl-glow-border {
+    box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.4), 0 0 20px rgba(99, 102, 241, 0.15);
+  }
+
+  .fl-cap-pill {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 100px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+}
+
+@keyframes fl-pulse-glow {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes fl-float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}

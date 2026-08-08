@@ -1,0 +1,40 @@
+{
+  "name": "fahi-videos-os",
+  "version": "3.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "NODE_ENV=production next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@distube/ytdl-core": "^4.16.12",
+    "@google/genai": "^2.12.0",
+    "@xaviabot/fb-downloader": "^1.0.14",
+    "another-fb-video-downloader": "^1.0.6",
+    "btch-downloader": "^6.0.35",
+    "fdown-downloader": "^1.0.0",
+    "fluent-ffmpeg": "^2.1.3",
+    "framer-motion": "^11.0.0",
+    "html-to-image": "^1.11.13",
+    "lucide-react": "^0.460.0",
+    "next": "^15.0.0",
+    "react": "^19.0.0-rc",
+    "react-dom": "^19.0.0-rc",
+    "ruhend-scraper": "^10.0.3",
+    "snapsave-media-downloader": "^1.0.5",
+    "youtube-dl-exec": "^3.1.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "autoprefixer": "^10.5.0",
+    "eslint": "^9",
+    "eslint-config-next": "^15.0.0",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5"
+  }
+}
