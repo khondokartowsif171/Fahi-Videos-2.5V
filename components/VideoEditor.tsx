@@ -300,6 +300,94 @@ export default function VideoEditor() {
   // Selected Timeline Clip state
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
 
+  // Freeform Custom Crop Box Bounds state (left, top, width, height in %)
+  const [cropBox, setCropBox] = useState<{ left: number; top: number; width: number; height: number }>({
+    left: 5,
+    top: 5,
+    width: 90,
+    height: 90
+  });
+
+  const isDraggingCropBoxRef = useRef<"move" | "top-left" | "top-right" | "bottom-left" | "bottom-right" | null>(null);
+  const cropBoxStartRef = useRef<{ clientX: number; clientY: number; box: { left: number; top: number; width: number; height: number } }>({
+    clientX: 0, clientY: 0, box: { left: 5, top: 5, width: 90, height: 90 }
+  });
+
+  const handleCropBoxStart = (type: "move" | "top-left" | "top-right" | "bottom-left" | "bottom-right", e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
+    isDraggingCropBoxRef.current = type;
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    cropBoxStartRef.current = {
+      clientX,
+      clientY,
+      box: { ...cropBox }
+    };
+  };
+
+  useEffect(() => {
+    const handleMove = (e: MouseEvent | TouchEvent) => {
+      if (!isDraggingCropBoxRef.current) return;
+      const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
+      const clientY = 'touches' in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
+      const deltaXPercent = ((clientX - cropBoxStartRef.current.clientX) / Math.max(300, window.innerWidth * 0.4)) * 100;
+      const deltaYPercent = ((clientY - cropBoxStartRef.current.clientY) / Math.max(300, window.innerHeight * 0.4)) * 100;
+      const initial = cropBoxStartRef.current.box;
+      const type = isDraggingCropBoxRef.current;
+
+      setCropBox(() => {
+        let left = initial.left;
+        let top = initial.top;
+        let width = initial.width;
+        let height = initial.height;
+
+        if (type === "move") {
+          left = Math.max(0, Math.min(100 - initial.width, initial.left + deltaXPercent));
+          top = Math.max(0, Math.min(100 - initial.height, initial.top + deltaYPercent));
+        } else if (type === "top-left") {
+          left = Math.max(0, Math.min(initial.left + initial.width - 15, initial.left + deltaXPercent));
+          top = Math.max(0, Math.min(initial.top + initial.height - 15, initial.top + deltaYPercent));
+          width = initial.width - (left - initial.left);
+          height = initial.height - (top - initial.top);
+        } else if (type === "bottom-right") {
+          width = Math.max(15, Math.min(100 - initial.left, initial.width + deltaXPercent));
+          height = Math.max(15, Math.min(100 - initial.top, initial.height + deltaYPercent));
+        } else if (type === "top-right") {
+          top = Math.max(0, Math.min(initial.top + initial.height - 15, initial.top + deltaYPercent));
+          width = Math.max(15, Math.min(100 - initial.left, initial.width + deltaXPercent));
+          height = initial.height - (top - initial.top);
+        } else if (type === "bottom-left") {
+          left = Math.max(0, Math.min(initial.left + initial.width - 15, initial.left + deltaXPercent));
+          width = initial.width - (left - initial.left);
+          height = Math.max(15, Math.min(100 - initial.top, initial.height + deltaYPercent));
+        }
+
+        return {
+          left: parseFloat(left.toFixed(1)),
+          top: parseFloat(top.toFixed(1)),
+          width: parseFloat(width.toFixed(1)),
+          height: parseFloat(height.toFixed(1))
+        };
+      });
+    };
+
+    const handleEnd = () => {
+      isDraggingCropBoxRef.current = null;
+    };
+
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleEnd);
+    window.addEventListener("touchmove", handleMove);
+    window.addEventListener("touchend", handleEnd);
+
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleEnd);
+      window.removeEventListener("touchmove", handleMove);
+      window.removeEventListener("touchend", handleEnd);
+    };
+  }, []);
+
   // Transient Text Editing state
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [newTextString, setNewTextString] = useState("");
@@ -1156,51 +1244,57 @@ export default function VideoEditor() {
                             </div>
                           )}
 
-                          {/* CapCut Interactive 3x3 Crop Box Overlay (Draggable Pan + Corner Zoom) */}
+                          {/* CapCut Interactive 3x3 Custom Freeform Crop Box Overlay */}
                           {activeTool === "crop" && (
                             <div 
-                              onMouseDown={handleCropPanStart}
-                              onTouchStart={handleCropPanStart}
-                              className="absolute inset-2 md:inset-4 z-30 border-2 border-cyan-400/90 rounded-sm cursor-move select-none bg-cyan-400/5 group"
+                              onMouseDown={(e) => handleCropBoxStart("move", e)}
+                              onTouchStart={(e) => handleCropBoxStart("move", e)}
+                              style={{
+                                left: `${cropBox.left}%`,
+                                top: `${cropBox.top}%`,
+                                width: `${cropBox.width}%`,
+                                height: `${cropBox.height}%`
+                              }}
+                              className="absolute z-30 border-2 border-cyan-400 cursor-move select-none bg-cyan-400/10 shadow-[0_0_20px_rgba(6,182,212,0.3)] transition-all duration-75"
                             >
                               {/* 3x3 Rule of Thirds Grid Lines */}
                               <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none">
-                                <div className="border-r border-b border-white/40" />
-                                <div className="border-r border-b border-white/40" />
-                                <div className="border-b border-white/40" />
-                                <div className="border-r border-b border-white/40" />
-                                <div className="border-r border-b border-white/40" />
-                                <div className="border-b border-white/40" />
-                                <div className="border-r border-white/40" />
-                                <div className="border-r border-white/40" />
+                                <div className="border-r border-b border-white/50" />
+                                <div className="border-r border-b border-white/50" />
+                                <div className="border-b border-white/50" />
+                                <div className="border-r border-b border-white/50" />
+                                <div className="border-r border-b border-white/50" />
+                                <div className="border-b border-white/50" />
+                                <div className="border-r border-white/50" />
+                                <div className="border-r border-white/50" />
                                 <div className="" />
                               </div>
 
-                              {/* Draggable Corner Scale Handles */}
+                              {/* 4 Interactive Corner Handles */}
                               <div 
-                                onMouseDown={handleCropZoomStart}
-                                onTouchStart={handleCropZoomStart}
-                                className="absolute -top-2 -left-2 w-6 h-6 border-t-4 border-l-4 border-white bg-cyan-500/90 cursor-nwse-resize pointer-events-auto rounded-tl shadow-lg hover:scale-125 transition-transform" 
+                                onMouseDown={(e) => handleCropBoxStart("top-left", e)}
+                                onTouchStart={(e) => handleCropBoxStart("top-left", e)}
+                                className="absolute -top-2.5 -left-2.5 w-6 h-6 border-t-4 border-l-4 border-white bg-cyan-400 cursor-nwse-resize pointer-events-auto rounded-tl shadow-xl hover:scale-125 transition-transform" 
                               />
                               <div 
-                                onMouseDown={handleCropZoomStart}
-                                onTouchStart={handleCropZoomStart}
-                                className="absolute -top-2 -right-2 w-6 h-6 border-t-4 border-r-4 border-white bg-cyan-500/90 cursor-nesw-resize pointer-events-auto rounded-tr shadow-lg hover:scale-125 transition-transform" 
+                                onMouseDown={(e) => handleCropBoxStart("top-right", e)}
+                                onTouchStart={(e) => handleCropBoxStart("top-right", e)}
+                                className="absolute -top-2.5 -right-2.5 w-6 h-6 border-t-4 border-r-4 border-white bg-cyan-400 cursor-nesw-resize pointer-events-auto rounded-tr shadow-xl hover:scale-125 transition-transform" 
                               />
                               <div 
-                                onMouseDown={handleCropZoomStart}
-                                onTouchStart={handleCropZoomStart}
-                                className="absolute -bottom-2 -left-2 w-6 h-6 border-b-4 border-l-4 border-white bg-cyan-500/90 cursor-nesw-resize pointer-events-auto rounded-bl shadow-lg hover:scale-125 transition-transform" 
+                                onMouseDown={(e) => handleCropBoxStart("bottom-left", e)}
+                                onTouchStart={(e) => handleCropBoxStart("bottom-left", e)}
+                                className="absolute -bottom-2.5 -left-2.5 w-6 h-6 border-b-4 border-l-4 border-white bg-cyan-400 cursor-nesw-resize pointer-events-auto rounded-bl shadow-xl hover:scale-125 transition-transform" 
                               />
                               <div 
-                                onMouseDown={handleCropZoomStart}
-                                onTouchStart={handleCropZoomStart}
-                                className="absolute -bottom-2 -right-2 w-6 h-6 border-b-4 border-r-4 border-white bg-cyan-500/90 cursor-nwse-resize pointer-events-auto rounded-br shadow-lg hover:scale-125 transition-transform" 
+                                onMouseDown={(e) => handleCropBoxStart("bottom-right", e)}
+                                onTouchStart={(e) => handleCropBoxStart("bottom-right", e)}
+                                className="absolute -bottom-2.5 -right-2.5 w-6 h-6 border-b-4 border-r-4 border-white bg-cyan-400 cursor-nwse-resize pointer-events-auto rounded-br shadow-xl hover:scale-125 transition-transform" 
                               />
 
-                              {/* Drag Hint Badge */}
-                              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-md text-[10px] text-cyan-300 font-bold pointer-events-none border border-cyan-500/30 shadow-lg">
-                                 Drag to Pan • Corner to Zoom
+                              {/* Center Drag Badge */}
+                              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/80 backdrop-blur-md px-2 py-0.5 rounded text-[9px] text-cyan-300 font-bold pointer-events-none border border-cyan-500/40 shadow-lg whitespace-nowrap">
+                                 Freeform Custom Crop
                               </div>
                             </div>
                           )}
@@ -1259,23 +1353,23 @@ export default function VideoEditor() {
               </div>
           </div>
           
-          {/* TOOL SIDEBAR: Vertical on Desktop / Compact Horizontal Scroll Bar on Mobile */}
-          <div className="w-full md:w-14 shrink-0 flex flex-row md:flex-col items-center py-1 md:py-3 overflow-x-auto md:overflow-x-hidden overflow-y-hidden md:overflow-y-auto scrollbar-none z-20 order-2 md:order-first border-t border-b md:border-b-0 border-white/10" style={{ backgroundColor: 'rgba(8,10,18,0.95)', borderRight: '1px solid rgba(255,255,255,0.06)' }}>
-              <div className="flex flex-row md:flex-col space-x-1.5 md:space-x-0 md:space-y-1 w-max md:w-full px-2 md:px-1">
+          {/* TOOL SIDEBAR: Vertical on Desktop Only (Hidden on Mobile to eliminate duplicate toolbars) */}
+          <div className="hidden md:flex w-14 shrink-0 flex-col items-center py-3 overflow-y-auto scrollbar-none z-20 order-first border-r border-white/10" style={{ backgroundColor: 'rgba(8,10,18,0.95)' }}>
+              <div className="flex flex-col space-y-1 w-full px-1">
                   {TOOLS.map((tool) => {
                       const isActive = activeTool === tool.id;
                       return (
                           <button 
                             key={tool.id} 
                             onClick={() => setActiveTool(isActive ? null : tool.id)}
-                            className={`w-14 md:w-full flex flex-col items-center justify-center space-y-0.5 py-1.5 md:py-2.5 rounded-xl transition-all shrink-0 ${
+                            className={`w-full flex flex-col items-center justify-center space-y-0.5 py-2.5 rounded-xl transition-all shrink-0 ${
                               isActive 
-                                ? "bg-indigo-500/15 border-b-2 md:border-b-0 md:border-l-2 border-indigo-500 text-indigo-400" 
-                                : "text-slate-500 hover:text-slate-300 hover:bg-white/5 border-b-2 md:border-b-0 md:border-l-2 border-transparent"
+                                ? "bg-indigo-500/15 border-l-2 border-indigo-500 text-indigo-400" 
+                                : "text-slate-500 hover:text-slate-300 hover:bg-white/5 border-l-2 border-transparent"
                             }`}
                           >
-                              <tool.icon className="w-4 h-4 md:w-5 md:h-5" strokeWidth={isActive ? 2.5 : 2} />
-                              <span className="text-[8px] md:text-[9px] font-medium tracking-wide">{tool.label}</span>
+                              <tool.icon className="w-5 h-5" strokeWidth={isActive ? 2.5 : 2} />
+                              <span className="text-[9px] font-medium tracking-wide">{tool.label}</span>
                           </button>
                       );
                   })}
@@ -1901,30 +1995,106 @@ export default function VideoEditor() {
                        </div>
                     </div>
                  </div>
-              </div>
+             </div>
           </div>
       </div>
 
-      {/* CapCut Mobile Action Footer Bar */}
-      <div className="shrink-0 h-12 bg-[#050810]/95 backdrop-blur-xl border-t border-white/10 flex items-center justify-around px-1 z-40">
-          {[
-            { id: 'edit', label: 'Split', icon: Scissors, action: handleSplitClip },
-            { id: 'audio', label: 'Audio', icon: Music, action: () => setActiveTool('audio') },
-            { id: 'text', label: 'Text', icon: Type, action: () => setActiveTool('text') },
-            { id: 'effects', label: 'Effects', icon: Wand2, action: () => setActiveTool('effects') },
-            { id: 'overlay', label: 'Overlay', icon: Layers, action: () => setActiveTool('overlay') },
-            { id: 'captions', label: 'Captions', icon: Captions, action: () => setActiveTool('captions') },
-          ].map(btn => (
-            <button
-              key={btn.id}
-              onClick={btn.action}
-              className="flex flex-col items-center justify-center flex-1 py-1 text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-all"
-            >
-               <btn.icon className="w-4 h-4" />
-               <span className="text-[9px] font-medium mt-0.5">{btn.label}</span>
-            </button>
-          ))}
-       </div>
+      {/* CapCut-Standard Swipable Bottom Footer Toolbar (Unified 2-Level Nested Architecture) */}
+      <div className="shrink-0 h-14 bg-[#050810]/95 backdrop-blur-xl border-t border-white/10 flex items-center px-2 z-40 relative">
+         {activeTool ? (
+           /* LEVEL 2: Sub-tool Drawer (Tapped into a primary tool like Edit, Audio, Text, Crop) */
+           <div className="flex items-center space-x-2 w-full overflow-x-auto scrollbar-none py-1">
+              {/* Back Button */}
+              <button 
+                onClick={() => setActiveTool(null)}
+                className="flex items-center space-x-1 px-3 py-1.5 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 rounded-xl text-xs font-bold shrink-0 border border-indigo-500/30 transition-colors"
+              >
+                 <ChevronLeft className="w-4 h-4" />
+                 <span>Back</span>
+              </button>
+
+              <div className="w-px h-5 bg-white/10 shrink-0" />
+
+              {/* Level 2 Sub-tools depending on activeTool */}
+              {activeTool === 'edit' && (
+                 <>
+                    <button onClick={handleSplitClip} className="flex flex-col items-center px-3 py-1 text-slate-300 hover:text-white shrink-0">
+                       <Scissors className="w-4 h-4 text-indigo-400" />
+                       <span className="text-[9px] font-medium mt-0.5">Split</span>
+                    </button>
+                    <button onClick={() => setRotate((rotate + 90) % 360)} className="flex flex-col items-center px-3 py-1 text-slate-300 hover:text-white shrink-0">
+                       <RotateCw className="w-4 h-4" />
+                       <span className="text-[9px] font-medium mt-0.5">Rotate</span>
+                    </button>
+                    <button onClick={() => setFlipH(!flipH)} className="flex flex-col items-center px-3 py-1 text-slate-300 hover:text-white shrink-0">
+                       <FlipHorizontal className="w-4 h-4" />
+                       <span className="text-[9px] font-medium mt-0.5">Flip H</span>
+                    </button>
+                    <button onClick={() => setPlaybackSpeed(playbackSpeed === 1 ? 1.5 : playbackSpeed === 1.5 ? 2 : 1)} className="flex flex-col items-center px-3 py-1 text-slate-300 hover:text-white shrink-0">
+                       <FastForward className="w-4 h-4 text-cyan-400" />
+                       <span className="text-[9px] font-medium mt-0.5">{playbackSpeed}x</span>
+                    </button>
+                    {selectedClipId && (
+                       <button onClick={() => handleRemoveClip(selectedClipId)} className="flex flex-col items-center px-3 py-1 text-red-400 hover:text-red-300 shrink-0">
+                          <Trash2 className="w-4 h-4" />
+                          <span className="text-[9px] font-medium mt-0.5">Delete</span>
+                       </button>
+                    )}
+                 </>
+              )}
+
+              {activeTool === 'crop' && (
+                 <>
+                    {[{ r: '9:16', l: '9:16' }, { r: '16:9', l: '16:9' }, { r: '1:1', l: '1:1' }, { r: '4:3', l: '4:3' }].map(r => (
+                       <button key={r.r} onClick={() => setAspectRatio(r.r as any)} className={`px-3 py-1 rounded-lg text-xs font-bold shrink-0 border ${aspectRatio === r.r ? 'bg-indigo-500 text-white border-indigo-400' : 'bg-white/5 border-white/10 text-slate-400'}`}>
+                          {r.l}
+                       </button>
+                    ))}
+                    <button onClick={() => { setZoom(1); setPanX(0); setPanY(0); setRotate(0); setAspectRatio('9:16'); setCropBox({ left: 5, top: 5, width: 90, height: 90 }); }} className="flex flex-col items-center px-3 py-1 text-slate-400 hover:text-white shrink-0">
+                       <RefreshCw className="w-4 h-4" />
+                       <span className="text-[9px] font-medium mt-0.5">Reset</span>
+                    </button>
+                 </>
+              )}
+
+              {activeTool === 'audio' && (
+                 <>
+                    <button onClick={() => {}} className="flex flex-col items-center px-3 py-1 text-violet-400 shrink-0">
+                       <Plus className="w-4 h-4" />
+                       <span className="text-[9px] font-medium mt-0.5">Add Track</span>
+                    </button>
+                    <button onClick={() => setIsMuted(!isMuted)} className="flex flex-col items-center px-3 py-1 text-slate-300 shrink-0">
+                       {isMuted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4" />}
+                       <span className="text-[9px] font-medium mt-0.5">{isMuted ? 'Muted' : 'Volume'}</span>
+                    </button>
+                 </>
+              )}
+
+              {activeTool === 'text' && (
+                 <>
+                    <button onClick={handleAddTextOverlay} className="flex flex-col items-center px-3 py-1 text-yellow-400 shrink-0">
+                       <Plus className="w-4 h-4" />
+                       <span className="text-[9px] font-medium mt-0.5">Add Text</span>
+                    </button>
+                 </>
+              )}
+           </div>
+         ) : (
+           /* LEVEL 1: Primary Swipable Bottom Toolbar (Swipe horizontally to access all 13 tools) */
+           <div className="flex items-center space-x-1.5 w-full overflow-x-auto scrollbar-none py-1">
+              {TOOLS.map((tool: any) => (
+                 <button 
+                   key={tool.id} 
+                   onClick={() => setActiveTool(tool.id)}
+                   className="flex flex-col items-center justify-center min-w-[56px] px-2 py-1 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-all shrink-0"
+                 >
+                    <tool.icon className="w-4 h-4" />
+                    <span className="text-[9px] font-medium mt-0.5 tracking-tight whitespace-nowrap">{tool.label}</span>
+                 </button>
+              ))}
+           </div>
+         )}
+      </div>
 
       {/* Export Modal */}
       {showExportModal && (
