@@ -958,31 +958,8 @@ export default function VideoEditor() {
       {/* 3-Panel Main Area */}
       <div className="flex flex-1 overflow-hidden flex-col md:flex-row">
           
-          {/* LEFT/BOTTOM: Tool Sidebar (Desktop) / Scrollable Bar (Mobile) */}
-          <div className="w-full md:w-14 shrink-0 flex flex-row md:flex-col items-center py-2 md:py-3 overflow-x-auto md:overflow-x-hidden overflow-y-hidden md:overflow-y-auto scrollbar-none z-20 order-2 md:order-first border-t border-white/10 md:border-t-0" style={{ backgroundColor: 'rgba(8,10,18,0.95)', borderRight: '1px solid rgba(255,255,255,0.06)' }}>
-              <div className="flex flex-row md:flex-col space-x-2 md:space-x-0 md:space-y-1 w-max md:w-full px-2 md:px-1">
-                  {TOOLS.map((tool) => {
-                      const isActive = activeTool === tool.id;
-                      return (
-                          <button 
-                            key={tool.id} 
-                            onClick={() => setActiveTool(isActive ? null : tool.id)}
-                            className={`w-16 md:w-full flex flex-col items-center justify-center space-y-1 py-2.5 rounded-xl transition-all shrink-0 ${
-                              isActive 
-                                ? "bg-indigo-500/15 border-b-2 md:border-b-0 md:border-l-2 border-indigo-500 text-indigo-400" 
-                                : "text-slate-500 hover:text-slate-300 hover:bg-white/5 border-b-2 md:border-b-0 md:border-l-2 border-transparent"
-                            }`}
-                          >
-                              <tool.icon className="w-5 h-5" strokeWidth={isActive ? 2.5 : 2} />
-                              <span className="text-[9px] font-medium tracking-wide">{tool.label}</span>
-                          </button>
-                      );
-                  })}
-              </div>
-          </div>
-
-          {/* CENTER: Video Preview */}
-          <div className={`flex-1 relative flex flex-col p-2 md:p-4 overflow-hidden order-1 ${bgStyleClass}`}>
+          {/* CENTER: Video Preview (FIXED 42vh ON MOBILE SO PREVIEW IS ALWAYS VISIBLE) */}
+          <div className={`w-full h-[42vh] sm:h-[48vh] md:h-auto md:flex-1 relative flex flex-col p-1.5 sm:p-2 md:p-4 overflow-hidden shrink-0 md:shrink order-1 ${bgStyleClass}`}>
               
               {/* Export Progress Overlay */}
               {isExporting && (
@@ -999,13 +976,13 @@ export default function VideoEditor() {
                 </div>
               )}
 
-              <div className="flex-1 flex items-center justify-center relative">
+              <div className="flex-1 flex items-center justify-center relative min-h-0 h-full">
                   {videoFile ? (
-                      <div className={`relative w-full mx-auto ${aspectClass} rounded-2xl overflow-hidden shadow-2xl transition-all duration-300 group`} style={{ boxShadow: '0 0 0 1px rgba(99,102,241,0.3), 0 0 40px rgba(99,102,241,0.1)' }}>
+                      <div className={`relative w-full h-full max-h-full mx-auto ${aspectClass} rounded-xl md:rounded-2xl overflow-hidden shadow-2xl transition-all duration-300 group flex items-center justify-center bg-black/90`} style={{ boxShadow: '0 0 0 1px rgba(99,102,241,0.3), 0 0 40px rgba(99,102,241,0.1)' }}>
                           <video
                               ref={videoRef}
                               src={objectUrl || undefined}
-                              className="w-full h-full object-contain bg-black/90"
+                              className="w-full h-full object-contain max-h-full bg-black/90"
                               style={{
                                   filter: filterStyle,
                                   transform: transformStyle
@@ -1062,8 +1039,8 @@ export default function VideoEditor() {
 
                           {/* Render Captions Overlay */}
                           {autoCaptionsEnabled && currentCaption && (
-                            <div className="absolute bottom-20 left-4 right-4 text-center pointer-events-none z-10">
-                              <span className="inline-block px-4 py-1.5 rounded-lg bg-black/80 border border-yellow-400/40 text-yellow-300 font-extrabold text-base tracking-wide shadow-2xl drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)]">
+                            <div className="absolute bottom-14 md:bottom-20 left-4 right-4 text-center pointer-events-none z-10">
+                              <span className="inline-block px-3 py-1 rounded-lg bg-black/80 border border-yellow-400/40 text-yellow-300 font-extrabold text-xs md:text-base tracking-wide shadow-2xl drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)]">
                                 {currentCaption.text}
                               </span>
                             </div>
@@ -1071,29 +1048,29 @@ export default function VideoEditor() {
 
                           {/* Render AI Avatar Presenter Overlay */}
                           {aiAvatar && (
-                            <div className="absolute bottom-20 right-4 w-20 h-20 rounded-full border-2 border-indigo-400 bg-purple-950/80 overflow-hidden shadow-xl flex items-center justify-center animate-pulse">
-                              <UserCircle className="w-12 h-12 text-indigo-300" />
+                            <div className="absolute bottom-14 md:bottom-20 right-4 w-14 h-14 md:w-20 md:h-20 rounded-full border-2 border-indigo-400 bg-purple-950/80 overflow-hidden shadow-xl flex items-center justify-center animate-pulse">
+                              <UserCircle className="w-8 h-8 md:w-12 md:h-12 text-indigo-300" />
                             </div>
                           )}
 
                           {/* Video Watermark Badge */}
-                          <div className="absolute top-4 left-4 px-2.5 py-1 rounded-md bg-black/30 backdrop-blur-md border border-white/10 text-[9px] font-mono text-indigo-200 tracking-wider uppercase pointer-events-none shadow-lg">
+                          <div className="absolute top-2 left-2 md:top-4 md:left-4 px-2 py-0.5 md:px-2.5 md:py-1 rounded-md bg-black/30 backdrop-blur-md border border-white/10 text-[8px] md:text-[9px] font-mono text-indigo-200 tracking-wider uppercase pointer-events-none shadow-lg">
                             {aspectRatio} • {playbackSpeed}x
                           </div>
                       </div>
                   ) : (
-                      <div className="flex flex-col items-center justify-center space-y-6 p-10 border border-white/5 rounded-3xl max-w-md w-full relative overflow-hidden" style={{ background: 'linear-gradient(145deg, rgba(13,17,23,0.9), rgba(5,8,16,0.9))' }}>
+                      <div className="flex flex-col items-center justify-center space-y-4 md:space-y-6 p-6 md:p-10 border border-white/5 rounded-2xl md:rounded-3xl max-w-md w-full relative overflow-hidden" style={{ background: 'linear-gradient(145deg, rgba(13,17,23,0.9), rgba(5,8,16,0.9))' }}>
                           <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-transparent pointer-events-none" />
-                          <div className="w-24 h-24 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center shadow-[0_0_30px_rgba(99,102,241,0.15)] relative">
+                          <div className="w-16 h-16 md:w-24 md:h-24 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center shadow-[0_0_30px_rgba(99,102,241,0.15)] relative">
                               <div className="absolute inset-0 rounded-full border border-indigo-400/30 animate-ping opacity-20" />
-                              <VideoIcon className="w-12 h-12 text-indigo-400" />
+                              <VideoIcon className="w-8 h-8 md:w-12 md:h-12 text-indigo-400" />
                           </div>
-                          <div className="text-center space-y-2 z-10">
-                            <h3 className="text-[#F1F5F9] font-bold text-lg">Drop your media here</h3>
-                            <p className="text-sm text-slate-500">Supports MP4, WebM, MOV up to 4K</p>
+                          <div className="text-center space-y-1 md:space-y-2 z-10">
+                            <h3 className="text-[#F1F5F9] font-bold text-sm md:text-lg">Drop your media here</h3>
+                            <p className="text-xs md:text-sm text-slate-500">Supports MP4, WebM, MOV up to 4K</p>
                           </div>
-                          <label className="bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-400 hover:to-violet-400 text-white px-8 py-3 rounded-xl font-bold text-sm cursor-pointer shadow-[0_0_20px_rgba(99,102,241,0.3)] transition-all flex items-center space-x-2 z-10">
-                              <Plus className="w-5 h-5" />
+                          <label className="bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-400 hover:to-violet-400 text-white px-6 py-2.5 md:px-8 md:py-3 rounded-xl font-bold text-xs md:text-sm cursor-pointer shadow-[0_0_20px_rgba(99,102,241,0.3)] transition-all flex items-center space-x-2 z-10">
+                              <Plus className="w-4 h-4 md:w-5 md:h-5" />
                               <span>Upload Video</span>
                               <input type="file" accept="video/*" multiple className="hidden" onChange={handleFileUpload} />
                           </label>
@@ -1102,36 +1079,59 @@ export default function VideoEditor() {
 
                   {/* FLOATING CONTROLS BAR */}
                   {videoFile && (
-                    <div className="absolute bottom-4 left-4 right-4 z-20 backdrop-blur-xl rounded-2xl px-4 py-2.5 flex items-center justify-between" style={{ backgroundColor: 'rgba(5,8,16,0.85)', border: '1px solid rgba(255,255,255,0.1)' }}>
-                        <div className="flex items-center space-x-2 text-slate-300">
-                            <button className="p-1.5 hover:text-white hover:bg-white/10 rounded-lg transition-colors"><SkipBack className="w-4 h-4"/></button>
-                            <button onClick={togglePlayPause} className="w-10 h-10 flex items-center justify-center rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 text-white shadow-[0_0_15px_rgba(99,102,241,0.4)] hover:scale-105 transition-transform">
-                                {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
+                    <div className="absolute bottom-2 left-2 right-2 md:bottom-4 md:left-4 md:right-4 z-20 backdrop-blur-xl rounded-xl md:rounded-2xl px-3 py-1.5 md:px-4 md:py-2.5 flex items-center justify-between" style={{ backgroundColor: 'rgba(5,8,16,0.85)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                        <div className="flex items-center space-x-1.5 md:space-x-2 text-slate-300">
+                            <button className="p-1 md:p-1.5 hover:text-white hover:bg-white/10 rounded-lg transition-colors"><SkipBack className="w-3.5 h-3.5 md:w-4 md:h-4"/></button>
+                            <button onClick={togglePlayPause} className="w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 text-white shadow-[0_0_15px_rgba(99,102,241,0.4)] hover:scale-105 transition-transform">
+                                {isPlaying ? <Pause className="w-3.5 h-3.5 md:w-4 md:h-4 fill-current" /> : <Play className="w-3.5 h-3.5 md:w-4 md:h-4 fill-current ml-0.5" />}
                             </button>
-                            <button className="p-1.5 hover:text-white hover:bg-white/10 rounded-lg transition-colors"><SkipForward className="w-4 h-4"/></button>
+                            <button className="p-1 md:p-1.5 hover:text-white hover:bg-white/10 rounded-lg transition-colors"><SkipForward className="w-3.5 h-3.5 md:w-4 md:h-4"/></button>
                         </div>
                         
-                        <div className="font-mono text-xs md:text-sm tracking-wider hidden sm:block">
+                        <div className="font-mono text-xs md:text-sm tracking-wider">
                             <span className="text-indigo-400">{formatTime(currentTime)}</span>
                             <span className="text-slate-600 mx-1">/</span>
                             <span className="text-slate-400">{formatTime(duration)}</span>
                         </div>
 
-                        <div className="flex items-center space-x-3 text-slate-300">
-                            <span className="text-[10px] font-bold bg-white/5 px-2 py-1 rounded border border-white/10">{playbackSpeed}x</span>
-                            <button onClick={() => setIsMuted(!isMuted)} className="p-1.5 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
-                                {isMuted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4" />}
+                        <div className="flex items-center space-x-2 md:space-x-3 text-slate-300">
+                            <span className="text-[9px] md:text-[10px] font-bold bg-white/5 px-1.5 py-0.5 md:px-2 md:py-1 rounded border border-white/10">{playbackSpeed}x</span>
+                            <button onClick={() => setIsMuted(!isMuted)} className="p-1 md:p-1.5 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
+                                {isMuted ? <VolumeX className="w-3.5 h-3.5 md:w-4 md:h-4 text-red-400" /> : <Volume2 className="w-3.5 h-3.5 md:w-4 md:h-4" />}
                             </button>
-                            <div className="w-px h-4 bg-white/10" />
-                            <button className="p-1.5 hover:text-white hover:bg-white/10 rounded-lg transition-colors"><Maximize2 className="w-4 h-4" /></button>
+                            <div className="w-px h-3 md:h-4 bg-white/10" />
+                            <button className="p-1 md:p-1.5 hover:text-white hover:bg-white/10 rounded-lg transition-colors"><Maximize2 className="w-3.5 h-3.5 md:w-4 md:h-4" /></button>
                         </div>
                     </div>
                   )}
               </div>
           </div>
+          
+          {/* TOOL SIDEBAR: Vertical on Desktop / Compact Horizontal Scroll Bar on Mobile */}
+          <div className="w-full md:w-14 shrink-0 flex flex-row md:flex-col items-center py-1 md:py-3 overflow-x-auto md:overflow-x-hidden overflow-y-hidden md:overflow-y-auto scrollbar-none z-20 order-2 md:order-first border-t border-b md:border-b-0 border-white/10" style={{ backgroundColor: 'rgba(8,10,18,0.95)', borderRight: '1px solid rgba(255,255,255,0.06)' }}>
+              <div className="flex flex-row md:flex-col space-x-1.5 md:space-x-0 md:space-y-1 w-max md:w-full px-2 md:px-1">
+                  {TOOLS.map((tool) => {
+                      const isActive = activeTool === tool.id;
+                      return (
+                          <button 
+                            key={tool.id} 
+                            onClick={() => setActiveTool(isActive ? null : tool.id)}
+                            className={`w-14 md:w-full flex flex-col items-center justify-center space-y-0.5 py-1.5 md:py-2.5 rounded-xl transition-all shrink-0 ${
+                              isActive 
+                                ? "bg-indigo-500/15 border-b-2 md:border-b-0 md:border-l-2 border-indigo-500 text-indigo-400" 
+                                : "text-slate-500 hover:text-slate-300 hover:bg-white/5 border-b-2 md:border-b-0 md:border-l-2 border-transparent"
+                            }`}
+                          >
+                              <tool.icon className="w-4 h-4 md:w-5 md:h-5" strokeWidth={isActive ? 2.5 : 2} />
+                              <span className="text-[8px] md:text-[9px] font-medium tracking-wide">{tool.label}</span>
+                          </button>
+                      );
+                  })}
+              </div>
+          </div>
 
-          {/* RIGHT/BOTTOM: Properties Panel */}
-          <div className={`w-full md:w-64 shrink-0 flex flex-col overflow-y-auto overflow-x-hidden z-30 order-3 md:order-last transition-all duration-300 ${activeTool ? 'max-h-[40vh] md:max-h-full border-t md:border-t-0' : 'max-h-[25vh] md:max-h-full border-t md:border-t-0 border-transparent'}`} style={{ backgroundColor: 'rgba(8,10,18,0.95)', borderLeft: '1px solid rgba(255,255,255,0.06)' }}>
+          {/* RIGHT/BOTTOM: Properties Panel (TAKES REMAINING HEIGHT BELOW TOOLS ON MOBILE) */}
+          <div className={`w-full md:w-64 flex-1 md:flex-none flex flex-col min-h-0 overflow-y-auto overflow-x-hidden z-30 order-3 md:order-last transition-all duration-300 ${activeTool ? 'border-t md:border-t-0' : 'border-t md:border-t-0 border-transparent'}`} style={{ backgroundColor: 'rgba(8,10,18,0.95)', borderLeft: '1px solid rgba(255,255,255,0.06)' }}>
               
               {/* Context Header */}
               <div className="px-4 py-3 border-b sticky top-0 bg-[rgba(8,10,18,0.95)] z-10 backdrop-blur-md flex items-center justify-between" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
