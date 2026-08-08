@@ -1053,6 +1053,29 @@ export default function VideoEditor() {
                             </div>
                           )}
 
+                          {/* CapCut Visual 3x3 Crop Box Overlay */}
+                          {activeTool === "crop" && (
+                            <div className="absolute inset-2 md:inset-4 pointer-events-none z-30 border-2 border-cyan-400/90 rounded-sm">
+                              {/* 3x3 Rule of Thirds Grid Lines */}
+                              <div className="absolute inset-0 grid grid-cols-3 grid-rows-3">
+                                <div className="border-r border-b border-white/40" />
+                                <div className="border-r border-b border-white/40" />
+                                <div className="border-b border-white/40" />
+                                <div className="border-r border-b border-white/40" />
+                                <div className="border-r border-b border-white/40" />
+                                <div className="border-b border-white/40" />
+                                <div className="border-r border-white/40" />
+                                <div className="border-r border-white/40" />
+                                <div className="" />
+                              </div>
+                              {/* White Corner Handles (CapCut style) */}
+                              <div className="absolute -top-1 -left-1 w-5 h-5 border-t-4 border-l-4 border-white shadow-md" />
+                              <div className="absolute -top-1 -right-1 w-5 h-5 border-t-4 border-r-4 border-white shadow-md" />
+                              <div className="absolute -bottom-1 -left-1 w-5 h-5 border-b-4 border-l-4 border-white shadow-md" />
+                              <div className="absolute -bottom-1 -right-1 w-5 h-5 border-b-4 border-r-4 border-white shadow-md" />
+                            </div>
+                          )}
+
                           {/* Video Watermark Badge */}
                           <div className="absolute top-2 left-2 md:top-4 md:left-4 px-2 py-0.5 md:px-2.5 md:py-1 rounded-md bg-black/30 backdrop-blur-md border border-white/10 text-[8px] md:text-[9px] font-mono text-indigo-200 tracking-wider uppercase pointer-events-none shadow-lg">
                             {aspectRatio} • {playbackSpeed}x
@@ -1241,43 +1264,86 @@ export default function VideoEditor() {
                   )}
 
                   {activeTool === "crop" && (
-                    <div className="space-y-5">
+                    <div className="space-y-4">
+                       {/* Header Bar */}
+                       <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                          <button onClick={() => setActiveTool(null)} className="text-slate-400 hover:text-white p-1">
+                             <X className="w-5 h-5" />
+                          </button>
+                          <span className="text-sm font-bold text-white tracking-wide">Crop & Resize</span>
+                          <button onClick={() => setActiveTool(null)} className="text-emerald-400 hover:text-emerald-300 p-1">
+                             <Check className="w-5 h-5" />
+                          </button>
+                       </div>
+
+                       {/* Rotation Scale Ruler */}
                        <div className="space-y-2">
-                          <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider block">Aspect Ratio Options</span>
-                          <div className="flex flex-col space-y-2">
-                            {[
-                              { ratio: "9:16", label: "9:16 Shorts/Reels" },
-                              { ratio: "16:9", label: "16:9 Landscape" },
-                              { ratio: "1:1", label: "1:1 Square" },
-                              { ratio: "4:5", label: "4:5 Portrait" },
-                              { ratio: "21:9", label: "21:9 Cinematic" }
-                            ].map(r => (
-                              <button key={r.ratio} onClick={() => setAspectRatio(r.ratio as any)} className={`py-2 px-3 rounded-lg text-left text-xs font-medium border transition-colors ${aspectRatio === r.ratio ? "bg-indigo-500/20 border-indigo-500 text-indigo-300" : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"}`}>
-                                {r.label}
-                              </button>
-                            ))}
+                          <div className="flex justify-between items-center text-xs">
+                             <span className="text-slate-400 font-medium">Rotate Angle</span>
+                             <span className="text-cyan-400 font-mono font-bold text-xs">{rotate}°</span>
+                          </div>
+                          <div className="relative flex items-center justify-center py-2 bg-white/5 rounded-xl border border-white/10 px-2">
+                             <div className="absolute w-0.5 h-6 bg-cyan-400 rounded-full z-10 pointer-events-none" />
+                             <input
+                               type="range"
+                               min="-45"
+                               max="45"
+                               step="1"
+                               value={rotate}
+                               onChange={(e) => setRotate(parseInt(e.target.value))}
+                               className="w-full accent-cyan-400 h-2 bg-transparent cursor-pointer relative z-20 appearance-none"
+                             />
                           </div>
                        </div>
 
-                       <div className="space-y-4">
-                          <div className="space-y-2">
-                            <div className="flex justify-between items-center text-xs">
-                               <span className="text-slate-400 font-medium">Pan X</span>
-                               <span className="text-indigo-400 font-mono">{panX}px</span>
-                            </div>
-                            <input type="range" min="-100" max="100" step="5" value={panX} onChange={e => setPanX(parseInt(e.target.value))} className="w-full accent-indigo-500 h-1 bg-white/10 rounded-full" />
-                          </div>
-                          <div className="space-y-2">
-                            <div className="flex justify-between items-center text-xs">
-                               <span className="text-slate-400 font-medium">Pan Y</span>
-                               <span className="text-indigo-400 font-mono">{panY}px</span>
-                            </div>
-                            <input type="range" min="-100" max="100" step="5" value={panY} onChange={e => setPanY(parseInt(e.target.value))} className="w-full accent-indigo-500 h-1 bg-white/10 rounded-full" />
+                       {/* Aspect Ratio Cards Grid (CapCut Style) */}
+                       <div className="space-y-2">
+                          <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider block">Aspect Ratio</span>
+                          <div className="grid grid-cols-4 gap-2">
+                             {[
+                               { ratio: "9:16", icon: "📱", label: "9:16" },
+                               { ratio: "16:9", icon: "🖥️", label: "16:9" },
+                               { ratio: "1:1", icon: "🔲", label: "1:1" },
+                               { ratio: "4:3", icon: "📺", label: "4:3" },
+                             ].map(r => (
+                               <button
+                                 key={r.ratio}
+                                 onClick={() => setAspectRatio(r.ratio as any)}
+                                 className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all ${
+                                   aspectRatio === r.ratio 
+                                     ? "bg-indigo-500/30 border-indigo-400 text-white shadow-[0_0_12px_rgba(99,102,241,0.4)]" 
+                                     : "bg-white/5 border-white/10 text-slate-400 hover:text-slate-200"
+                                 }`}
+                               >
+                                  <span className="text-base">{r.icon}</span>
+                                  <span className="text-[10px] font-bold mt-1">{r.label}</span>
+                               </button>
+                             ))}
                           </div>
                        </div>
 
-                       <button onClick={() => { setZoom(1); setPanX(0); setPanY(0); setRotate(0); }} className="w-full py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 text-xs font-bold transition-colors">
-                          Reset Crop
+                       {/* Position Sliders */}
+                       <div className="space-y-3 pt-2 border-t border-white/10">
+                          <div className="space-y-1">
+                             <div className="flex justify-between items-center text-xs">
+                                <span className="text-slate-400">Position X</span>
+                                <span className="text-indigo-400 font-mono text-[10px]">{panX}px</span>
+                             </div>
+                             <input type="range" min="-100" max="100" step="5" value={panX} onChange={e => setPanX(parseInt(e.target.value))} className="w-full accent-indigo-500 h-1 bg-white/10 rounded-full" />
+                          </div>
+                          <div className="space-y-1">
+                             <div className="flex justify-between items-center text-xs">
+                                <span className="text-slate-400">Position Y</span>
+                                <span className="text-indigo-400 font-mono text-[10px]">{panY}px</span>
+                             </div>
+                             <input type="range" min="-100" max="100" step="5" value={panY} onChange={e => setPanY(parseInt(e.target.value))} className="w-full accent-indigo-500 h-1 bg-white/10 rounded-full" />
+                          </div>
+                       </div>
+
+                       {/* Reset Button */}
+                       <button onClick={() => { setZoom(1); setPanX(0); setPanY(0); setRotate(0); setAspectRatio("9:16"); }} className="w-full py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 text-xs font-bold transition-colors flex items-center justify-center space-x-1.5">
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          <span>Reset Crop</span>
                        </button>
                     </div>
                   )}
@@ -1563,83 +1629,146 @@ export default function VideoEditor() {
              </div>
 
              <div className="flex-1 flex overflow-y-auto overflow-x-hidden relative">
-                {/* Left labels column */}
-                <div className="w-24 shrink-0 bg-[#050810] z-20 border-r border-white/5 flex flex-col pt-2 space-y-1">
-                   <div className="h-10 flex items-center px-2 text-[10px] text-slate-400 font-medium">
-                      <VideoIcon className="w-3.5 h-3.5 mr-1.5 text-indigo-400" /> Video
-                   </div>
-                   <div className="h-8 flex items-center px-2 text-[10px] text-slate-400 font-medium">
-                      <Music className="w-3.5 h-3.5 mr-1.5 text-violet-400" /> Audio
-                   </div>
-                   {textOverlays.length > 0 && (
-                     <div className="h-6 flex items-center px-2 text-[10px] text-slate-400 font-medium">
-                        <Type className="w-3.5 h-3.5 mr-1.5 text-yellow-400" /> Text
-                     </div>
-                   )}
-                </div>
+                 {/* Left labels column (CapCut Style: Cover thumbnail + Track icons) */}
+                 <div className="w-20 shrink-0 bg-[#050810] z-20 border-r border-white/5 flex flex-col pt-1 px-1 space-y-1 items-center justify-start">
+                    {/* Cover Button */}
+                    <button 
+                      onClick={() => {
+                         const v = videoRef.current;
+                         if (!v) return;
+                         const c = document.createElement("canvas");
+                         c.width = v.videoWidth || 320;
+                         c.height = v.videoHeight || 180;
+                         const ctx = c.getContext("2d");
+                         if (ctx) {
+                            ctx.drawImage(v, 0, 0, c.width, c.height);
+                            const url = c.toDataURL("image/png");
+                            setEditorState((prev: any) => ({ ...prev, coverImage: url }));
+                         }
+                      }}
+                      className="w-full h-9 rounded-lg bg-white/5 border border-white/10 hover:border-indigo-400 flex flex-col items-center justify-center p-0.5 cursor-pointer transition-all group relative overflow-hidden shrink-0"
+                      title="Set Cover Frame"
+                    >
+                       <ImageIcon className="w-3 h-3 text-indigo-400 group-hover:scale-110 transition-transform" />
+                       <span className="text-[8px] font-bold text-slate-300">Cover</span>
+                    </button>
 
-                {/* Right tracks scroll area */}
-                <div className="flex-1 overflow-x-auto overflow-y-hidden relative pt-2 pb-2">
-                   {/* Playhead line overlay */}
-                   {duration > 0 && (
-                      <div className="absolute top-0 bottom-0 w-px bg-indigo-400 z-30 pointer-events-none" style={{ left: `${(currentTime / duration) * 100}%` }}>
-                         <div className="w-2 h-2 bg-indigo-400 rotate-45 -translate-x-1/2 -translate-y-1" />
-                      </div>
-                   )}
-                   
-                   <div className="flex flex-col space-y-1 min-w-full px-2" style={{ width: 'max-content' }}>
-                      {/* Video Track */}
-                      <div className="h-10 rounded-lg flex items-center p-0.5 space-x-1" style={{ backgroundColor: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.2)' }}>
-                         {videoClips.map((clip, idx) => {
-                            const isActive = activeClipInfo?.clip.id === clip.id;
-                            const widthPercent = duration > 0 ? (clip.duration / duration) * 100 : 0;
-                            return (
-                               <div key={clip.id} className={`h-full relative rounded-md flex items-center px-2 cursor-pointer border group overflow-hidden ${isActive ? "bg-indigo-500/30 border-indigo-400 text-white" : "bg-white/5 border-white/10 text-slate-300"}`} style={{ minWidth: '80px', width: `${widthPercent}%` }}>
-                                  <span className="text-[10px] font-medium truncate">{clip.name}</span>
-                                  <div className="absolute right-1 opacity-0 group-hover:opacity-100 flex items-center bg-black/50 rounded backdrop-blur-sm">
-                                     {idx > 0 && <button onClick={() => handleMoveClip(idx, 'left')} className="p-1 hover:text-indigo-300"><ChevronLeft className="w-3 h-3"/></button>}
-                                     <button onClick={() => handleRemoveClip(clip.id)} className="p-1 hover:text-red-400"><Trash2 className="w-3 h-3"/></button>
-                                  </div>
-                               </div>
-                            )
-                         })}
-                         <label className="h-full px-3 flex items-center justify-center rounded-md bg-white/5 hover:bg-white/10 border border-dashed border-white/20 text-slate-400 cursor-pointer transition-colors shrink-0">
-                            <Plus className="w-4 h-4" />
-                            <input type="file" accept="video/*" multiple className="hidden" onChange={handleFileUpload} />
-                         </label>
-                      </div>
+                    {/* Audio Track Icon / Add Button */}
+                    <button 
+                      onClick={() => setActiveTool('audio')}
+                      className="w-full h-7 rounded-md bg-violet-500/10 border border-violet-500/20 hover:border-violet-400 flex items-center justify-center space-x-1 cursor-pointer transition-colors shrink-0"
+                      title="Add Audio"
+                    >
+                       <Music className="w-3 h-3 text-violet-400" />
+                       <span className="text-[8px] font-bold text-violet-300">Audio</span>
+                    </button>
 
-                      {/* Audio Track */}
-                      <div className="h-8 rounded flex items-center px-1" style={{ backgroundColor: 'rgba(124,58,237,0.05)', border: '1px solid rgba(124,58,237,0.2)' }}>
-                         {selectedAudio ? (
-                           <div className="h-6 w-full rounded bg-violet-500/20 border border-violet-500/40 flex items-center overflow-hidden px-1 space-x-0.5">
-                             {/* Fake waveform */}
-                             {Array.from({length: 40}).map((_, i) => (
-                               <div key={i} className="w-1 bg-violet-400/60 rounded-full" style={{ height: `${Math.max(20, Math.random() * 100)}%` }} />
-                             ))}
-                           </div>
-                         ) : (
-                           <button onClick={() => setActiveTool('audio')} className="h-6 px-3 rounded bg-white/5 text-[9px] text-slate-500 flex items-center">
-                              <Plus className="w-3 h-3 mr-1" /> Add audio
-                           </button>
-                         )}
-                      </div>
+                    {/* Text Track Icon / Add Button */}
+                    <button 
+                      onClick={() => setActiveTool('text')}
+                      className="w-full h-6 rounded-md bg-yellow-500/10 border border-yellow-500/20 hover:border-yellow-400 flex items-center justify-center space-x-1 cursor-pointer transition-colors shrink-0"
+                      title="Add Text"
+                    >
+                       <Type className="w-3 h-3 text-yellow-400" />
+                       <span className="text-[8px] font-bold text-yellow-300">Text</span>
+                    </button>
+                 </div>
 
-                      {/* Text Track */}
-                      {textOverlays.length > 0 && (
-                        <div className="h-6 rounded flex items-center px-1 space-x-1" style={{ backgroundColor: 'rgba(234,179,8,0.05)', border: '1px solid rgba(234,179,8,0.2)' }}>
-                           {textOverlays.map((t, idx) => (
-                             <div key={t.id} className="h-4 px-2 rounded text-[8px] font-bold bg-yellow-500/20 text-yellow-300 border border-yellow-500/40 flex items-center shrink-0">
-                               {t.text}
-                             </div>
-                           ))}
-                        </div>
-                      )}
-                   </div>
-                </div>
-             </div>
+                 {/* Right tracks scroll area */}
+                 <div className="flex-1 overflow-x-auto overflow-y-hidden relative pt-1 pb-1">
+                    {/* Playhead line overlay */}
+                    {duration > 0 && (
+                       <div className="absolute top-0 bottom-0 w-px bg-indigo-400 z-30 pointer-events-none" style={{ left: `${(currentTime / duration) * 100}%` }}>
+                          <div className="w-2 h-2 bg-indigo-400 rotate-45 -translate-x-1/2 -translate-y-1 shadow-[0_0_8px_rgba(99,102,241,0.8)]" />
+                       </div>
+                    )}
+                    
+                    <div className="flex flex-col space-y-1 min-w-full px-2" style={{ width: 'max-content' }}>
+                       {/* Video Track */}
+                       <div className="h-9 rounded-lg flex items-center p-0.5 space-x-1" style={{ backgroundColor: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.2)' }}>
+                          {videoClips.map((clip, idx) => {
+                             const isActive = activeClipInfo?.clip.id === clip.id;
+                             const widthPercent = duration > 0 ? (clip.duration / duration) * 100 : 0;
+                             return (
+                                <div key={clip.id} className={`h-full relative rounded-md flex items-center px-2 cursor-pointer border group overflow-hidden ${isActive ? "bg-indigo-500/30 border-indigo-400 text-white" : "bg-white/5 border-white/10 text-slate-300"}`} style={{ minWidth: '80px', width: `${widthPercent}%` }}>
+                                   <span className="text-[9px] font-medium truncate">{clip.name}</span>
+                                   <div className="absolute right-1 opacity-0 group-hover:opacity-100 flex items-center bg-black/50 rounded backdrop-blur-sm">
+                                      {idx > 0 && <button onClick={() => handleMoveClip(idx, 'left')} className="p-1 hover:text-indigo-300"><ChevronLeft className="w-3 h-3"/></button>}
+                                      <button onClick={() => handleRemoveClip(clip.id)} className="p-1 hover:text-red-400"><Trash2 className="w-3 h-3"/></button>
+                                   </div>
+                                </div>
+                             )
+                          })}
+                          <label className="h-full px-2.5 flex items-center justify-center rounded-md bg-white/5 hover:bg-white/10 border border-dashed border-white/20 text-slate-400 text-[9px] font-bold cursor-pointer transition-colors shrink-0 space-x-1">
+                             <Plus className="w-3.5 h-3.5" />
+                             <span>Add end</span>
+                             <input type="file" accept="video/*" multiple className="hidden" onChange={handleFileUpload} />
+                          </label>
+                       </div>
+
+                       {/* Audio Track (CapCut Inline Add Audio) */}
+                       <div className="h-7 rounded flex items-center px-1" style={{ backgroundColor: 'rgba(124,58,237,0.05)', border: '1px solid rgba(124,58,237,0.2)' }}>
+                          {selectedAudio ? (
+                            <div className="h-5 w-full rounded bg-violet-500/20 border border-violet-500/40 flex items-center justify-between px-2 overflow-hidden">
+                              <div className="flex items-center space-x-1 overflow-hidden">
+                                 <Music className="w-3 h-3 text-violet-400 shrink-0" />
+                                 <span className="text-[9px] font-bold text-violet-200 truncate">{selectedAudio.name}</span>
+                              </div>
+                              <div className="flex items-center space-x-0.5 shrink-0">
+                                {Array.from({length: 15}).map((_, i) => (
+                                  <div key={i} className="w-0.5 bg-violet-400/70 rounded-full" style={{ height: `${Math.max(25, (i % 5 + 1) * 20)}%` }} />
+                                ))}
+                              </div>
+                            </div>
+                          ) : (
+                            <button onClick={() => setActiveTool('audio')} className="h-5 px-2.5 rounded-md bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 text-[9px] font-bold flex items-center space-x-1 transition-colors border border-violet-500/30">
+                               <Plus className="w-3 h-3" />
+                               <span>Add audio</span>
+                            </button>
+                          )}
+                       </div>
+
+                       {/* Text Track (CapCut Inline Add Text) */}
+                       <div className="h-6 rounded flex items-center px-1 space-x-1" style={{ backgroundColor: 'rgba(234,179,8,0.05)', border: '1px solid rgba(234,179,8,0.2)' }}>
+                          {textOverlays.length > 0 ? (
+                            textOverlays.map((t) => (
+                              <div key={t.id} className="h-4 px-2 rounded text-[8px] font-bold bg-yellow-500/20 text-yellow-300 border border-yellow-500/40 flex items-center shrink-0">
+                                {t.text}
+                              </div>
+                            ))
+                          ) : (
+                            <button onClick={() => setActiveTool('text')} className="h-4 px-2 rounded bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-300 text-[8px] font-bold flex items-center space-x-1 transition-colors border border-yellow-500/20">
+                               <Plus className="w-2.5 h-2.5" />
+                               <span>Add text</span>
+                            </button>
+                          )}
+                       </div>
+                    </div>
+                 </div>
+              </div>
           </div>
       </div>
+
+      {/* CapCut Mobile Action Footer Bar */}
+      <div className="shrink-0 h-12 bg-[#050810]/95 backdrop-blur-xl border-t border-white/10 flex items-center justify-around px-1 z-40">
+          {[
+            { id: 'edit', label: 'Split', icon: Scissors, action: handleSplitClip },
+            { id: 'audio', label: 'Audio', icon: Music, action: () => setActiveTool('audio') },
+            { id: 'text', label: 'Text', icon: Type, action: () => setActiveTool('text') },
+            { id: 'effects', label: 'Effects', icon: Wand2, action: () => setActiveTool('effects') },
+            { id: 'overlay', label: 'Overlay', icon: Layers, action: () => setActiveTool('overlay') },
+            { id: 'captions', label: 'Captions', icon: Captions, action: () => setActiveTool('captions') },
+          ].map(btn => (
+            <button
+              key={btn.id}
+              onClick={btn.action}
+              className="flex flex-col items-center justify-center flex-1 py-1 text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-all"
+            >
+               <btn.icon className="w-4 h-4" />
+               <span className="text-[9px] font-medium mt-0.5">{btn.label}</span>
+            </button>
+          ))}
+       </div>
 
       {/* Export Modal */}
       {showExportModal && (
