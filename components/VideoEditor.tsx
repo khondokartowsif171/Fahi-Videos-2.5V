@@ -1467,8 +1467,8 @@ export default function VideoEditor() {
               </div>
           </div>
 
-          {/* RIGHT/BOTTOM: Properties Panel (TAKES REMAINING HEIGHT BELOW TOOLS ON MOBILE) */}
-          <div className={`w-full md:w-64 flex-1 md:flex-none flex flex-col min-h-0 overflow-y-auto overflow-x-hidden z-30 order-3 md:order-last transition-all duration-300 ${activeTool ? 'border-t md:border-t-0' : 'border-t md:border-t-0 border-transparent'}`} style={{ backgroundColor: 'rgba(8,10,18,0.95)', borderLeft: '1px solid rgba(255,255,255,0.06)' }}>
+          {/* RIGHT PANEL: Properties (Desktop Only - Hidden on Mobile for clean CapCut layout) */}
+          <div className="hidden md:flex w-64 shrink-0 flex-col min-h-0 overflow-y-auto overflow-x-hidden z-30 order-last border-l border-white/10" style={{ backgroundColor: 'rgba(8,10,18,0.95)' }}>
               
               {/* Context Header */}
               <div className="px-4 py-3 border-b sticky top-0 bg-[rgba(8,10,18,0.95)] z-10 backdrop-blur-md flex items-center justify-between" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
@@ -2145,17 +2145,37 @@ export default function VideoEditor() {
               )}
 
               {activeTool === 'crop' && (
-                 <>
-                    {[{ r: '9:16', l: '9:16' }, { r: '16:9', l: '16:9' }, { r: '1:1', l: '1:1' }, { r: '4:3', l: '4:3' }].map(r => (
-                       <button key={r.r} onClick={() => setAspectRatio(r.r as any)} className={`px-3 py-1 rounded-lg text-xs font-bold shrink-0 border ${aspectRatio === r.r ? 'bg-indigo-500 text-white border-indigo-400' : 'bg-white/5 border-white/10 text-slate-400'}`}>
-                          {r.l}
+                 <div className="flex items-center space-x-3 overflow-x-auto scrollbar-none py-0.5">
+                    {/* Rotation Dial Quick Controls */}
+                    <div className="flex items-center space-x-1 border-r border-white/10 pr-2 shrink-0">
+                       <span className="text-[9px] font-bold text-slate-400">Rot: {rotate}°</span>
+                       <input 
+                         type="range" 
+                         min={-45} 
+                         max={45} 
+                         value={rotate} 
+                         onChange={(e) => setRotate(parseInt(e.target.value))}
+                         className="w-20 accent-cyan-400 h-1 bg-white/10 rounded-full cursor-pointer" 
+                       />
+                    </div>
+
+                    {/* Aspect Ratio Presets */}
+                    <div className="flex items-center space-x-1.5 shrink-0">
+                       <button onClick={() => setAspectRatio("9:16")} className={`px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 border ${aspectRatio === '9:16' ? 'bg-cyan-500/30 text-cyan-300 border-cyan-400' : 'bg-white/5 border-white/10 text-slate-400'}`}>
+                          Custom
                        </button>
-                    ))}
-                    <button onClick={() => { setZoom(1); setPanX(0); setPanY(0); setRotate(0); setAspectRatio('9:16'); setCropBox({ left: 5, top: 5, width: 90, height: 90 }); }} className="flex flex-col items-center px-3 py-1 text-slate-400 hover:text-white shrink-0">
-                       <RefreshCw className="w-4 h-4" />
-                       <span className="text-[9px] font-medium mt-0.5">Reset</span>
+                       {[{ r: '9:16', l: '9:16' }, { r: '16:9', l: '16:9' }, { r: '1:1', l: '1:1' }, { r: '4:3', l: '4:3' }].map(r => (
+                          <button key={r.r} onClick={() => setAspectRatio(r.r as any)} className={`px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 border ${aspectRatio === r.r ? 'bg-indigo-500 text-white border-indigo-400' : 'bg-white/5 border-white/10 text-slate-400'}`}>
+                             {r.l}
+                          </button>
+                       ))}
+                    </div>
+
+                    <button onClick={() => { setZoom(1); setPanX(0); setPanY(0); setRotate(0); setAspectRatio('9:16'); setCropBox({ left: 5, top: 5, width: 90, height: 90 }); }} className="flex flex-col items-center px-2 py-1 text-slate-400 hover:text-white shrink-0">
+                       <RefreshCw className="w-3.5 h-3.5" />
+                       <span className="text-[8px] font-medium mt-0.5">Reset</span>
                     </button>
-                 </>
+                 </div>
               )}
 
               {activeTool === 'audio' && (
