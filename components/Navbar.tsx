@@ -2,9 +2,10 @@
 
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { House, Download, Video, ImageIcon, Sparkles, Zap, Settings, Key } from 'lucide-react';
+import { House, Download, Video, ImageIcon, Sparkles, Zap, Settings, Key, ShieldCheck } from 'lucide-react';
 import GeminiApiBox from './GeminiApiBox';
 import UserSettingsModal from './UserSettingsModal';
+import AdminLoginModal from './AdminLoginModal';
 
 interface NavbarProps {
   activeTab: string;
@@ -22,6 +23,7 @@ const tabs = [
 export default function Navbar({ activeTab, setActiveTab }: NavbarProps) {
   const [apiBoxOpen, setApiBoxOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [adminModalOpen, setAdminModalOpen] = useState(false);
 
   return (
     <>
@@ -65,7 +67,15 @@ export default function Navbar({ activeTab, setActiveTab }: NavbarProps) {
           </nav>
 
           {/* Right Actions */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setAdminModalOpen(true)}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30 transition-all shadow-sm"
+              title="Admin Login Console"
+            >
+              <ShieldCheck className="w-4 h-4 text-violet-400" />
+              <span>Admin</span>
+            </button>
             <button
               onClick={() => setApiBoxOpen(true)}
               className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-full transition-colors"
@@ -93,7 +103,14 @@ export default function Navbar({ activeTab, setActiveTab }: NavbarProps) {
               FahiVids
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setAdminModalOpen(true)}
+              className="p-1.5 bg-violet-600/20 border border-violet-500/30 text-violet-300 rounded-lg text-xs font-bold flex items-center space-x-1"
+            >
+              <ShieldCheck className="w-4 h-4 text-violet-400" />
+              <span>Admin</span>
+            </button>
             <button
               onClick={() => setApiBoxOpen(true)}
               className="p-2 text-slate-400 hover:text-white rounded-full"
@@ -109,6 +126,11 @@ export default function Navbar({ activeTab, setActiveTab }: NavbarProps) {
           </div>
         </header>
       )}
+
+      {/* Modals */}
+      <GeminiApiBox isOpen={apiBoxOpen} onClose={() => setApiBoxOpen(false)} />
+      <UserSettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <AdminLoginModal isOpen={adminModalOpen} onClose={() => setAdminModalOpen(false)} />
 
       {/* Mobile Bottom Navigation (Hidden in Editor mode to allow full timeline interactions) */}
       {activeTab !== 'editor' && (
