@@ -21,6 +21,11 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
   const [aiUhdEnabled, setAiUhdEnabled] = useState(true);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
+  // Change Admin Credentials state
+  const [newUsername, setNewUsername] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [credChangeSuccess, setCredChangeSuccess] = useState(false);
+
   useEffect(() => {
     if (typeof window !== "undefined") {
       const logged = localStorage.getItem("fahi_admin_logged_in") === "true";
@@ -37,14 +42,32 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    // Default admin credentials: username: admin / password: admin (or any password user types)
-    if (username.trim().toLowerCase() === "admin" && (password === "admin123" || password === "admin")) {
+    const savedUser = (localStorage.getItem("fahi_admin_username") || "admin").trim().toLowerCase();
+    const savedPass = (localStorage.getItem("fahi_admin_password") || "admin123").trim();
+
+    if (username.trim().toLowerCase() === savedUser && password.trim() === savedPass) {
       localStorage.setItem("fahi_admin_logged_in", "true");
       setIsLoggedIn(true);
       setErrorMsg("");
     } else {
-      setErrorMsg("Invalid Admin Username or Password. Try: admin / admin123");
+      setErrorMsg(`Invalid Admin Username or Password. Try: ${savedUser} / ${savedPass}`);
     }
+  };
+
+  const handleChangeAdminCredentials = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUsername.trim() || !newPassword.trim()) return;
+
+    localStorage.setItem("fahi_admin_username", newUsername.trim());
+    localStorage.setItem("fahi_admin_password", newPassword.trim());
+
+    setCredChangeSuccess(true);
+    setNewUsername("");
+    setNewPassword("");
+
+    setTimeout(() => {
+      setCredChangeSuccess(false);
+    }, 2500);
   };
 
   const handleLogout = () => {
@@ -302,6 +325,54 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
                 </>
               )}
             </button>
+
+            {/* Change Admin Username & Password Form */}
+            <form onSubmit={handleChangeAdminCredentials} className="p-3 rounded-2xl bg-white/5 border border-white/10 space-y-3 pt-3">
+              <div className="flex items-center space-x-2 text-violet-300 font-bold text-xs">
+                <Lock className="w-4 h-4 text-violet-400" />
+                <span>Change Admin Username & Password</span>
+              </div>
+
+              {credChangeSuccess && (
+                <div className="p-2 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-[11px] text-emerald-300 flex items-center space-x-1.5 font-bold">
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Admin credentials updated successfully!</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase block">New Username</span>
+                  <input
+                    type="text"
+                    placeholder="New admin user..."
+                    value={newUsername}
+                    onChange={(e) => setNewUsername(e.target.value)}
+                    required
+                    className="w-full bg-black/60 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase block">New Password</span>
+                  <input
+                    type="password"
+                    placeholder="New password..."
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                    className="w-full bg-black/60 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 font-mono"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-2 rounded-xl bg-violet-600/30 hover:bg-violet-600/50 text-violet-200 border border-violet-500/40 text-xs font-bold transition-all flex items-center justify-center space-x-1.5"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>Update Admin Credentials</span>
+              </button>
+            </form>
           </div>
         )}
       </div>
