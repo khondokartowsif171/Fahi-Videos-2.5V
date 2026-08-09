@@ -50,7 +50,7 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
       setIsLoggedIn(true);
       setErrorMsg("");
     } else {
-      setErrorMsg(`Invalid Admin Username or Password. Try: ${savedUser} / ${savedPass}`);
+      setErrorMsg("Invalid Admin Username or Password.");
     }
   };
 
@@ -142,7 +142,7 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
               </label>
               <input
                 type="text"
-                placeholder="Username (e.g. admin)"
+                placeholder="Username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
@@ -157,7 +157,7 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
               </label>
               <input
                 type="password"
-                placeholder="Password (e.g. admin123)"
+                placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -172,10 +172,6 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
               <ShieldCheck className="w-4 h-4" />
               <span>Log In to Admin Panel</span>
             </button>
-
-            <p className="text-[10px] text-center text-slate-500 font-mono">
-              Default Credentials: <span className="text-slate-300">admin</span> / <span className="text-slate-300">admin123</span>
-            </p>
           </form>
         ) : (
           /* Unlocked Admin Control Panel */
