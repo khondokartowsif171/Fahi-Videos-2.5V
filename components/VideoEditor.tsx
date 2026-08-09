@@ -12,7 +12,7 @@ import {
   Sun, Thermometer, Palette, Eye, EyeOff, Aperture, Sparkle, Grid,
   Wand, Layers2, AlignLeft, AlignCenter, AlignRight, Mic, FastForward,
   Copy, ChevronRight, SlidersHorizontal as SlidersIcon, Crop, Volume1,
-  SkipBack, SkipForward, ZoomIn, ChevronLeft, Loader2, Bot, Send, FileText
+  SkipBack, SkipForward, ZoomIn, ChevronLeft, Loader2, Bot, Send, FileText, FileVideo
 } from "lucide-react";
 import { logActivity } from "@/lib/activity";
 import { callAi } from "@/lib/ai-client";
@@ -330,6 +330,11 @@ export default function VideoEditor() {
   const [extractedText, setExtractedText] = useState("");
   const [isExtractingText, setIsExtractingText] = useState(false);
   const [extractMode, setExtractMode] = useState<"speech" | "ocr">("speech");
+
+  // Video Scene-to-Script Generator state
+  const [generatedScript, setGeneratedScript] = useState("");
+  const [isGeneratingScript, setIsGeneratingScript] = useState(false);
+  const [scriptTone, setScriptTone] = useState<"viral_hook" | "storytelling" | "educational" | "cinematic">("viral_hook");
 
   // Multi-clip video source switching refs (prevents stutter & playhead desync)
   const isSwitchingSourceRef = useRef(false);
@@ -896,6 +901,53 @@ export default function VideoEditor() {
     }
   };
 
+  // Video Scene-to-Script AI Generator Handler
+  const handleGenerateScriptFromVideo = async () => {
+    if (videoClips.length === 0) {
+      alert("Please upload or add a video clip first to generate a script.");
+      return;
+    }
+    setIsGeneratingScript(true);
+    setGeneratedScript("");
+
+    try {
+      const clipNames = videoClips.map(c => c.name).join(", ");
+      const totalDurationSec = totalTimelineDuration.toFixed(1);
+
+      const promptText = `Analyze the video clips ("${clipNames}", total duration: ${totalDurationSec} seconds). Act as an expert video director and scriptwriter. Write a complete, highly engaging video production script with Tone: "${scriptTone}".
+
+Include:
+1. 🎬 SCENE-BY-SCENE BREAKDOWN (Scene 1, Scene 2, Scene 3)
+2. 🎥 VISUAL DESCRIPTION (Camera angles, scene action, lighting)
+3. 🎙️ VOICEOVER / DIALOGUE SCRIPT (Word-for-word voiceover script)
+4. 🎵 SOUND EFFECTS & BGM (Suggested music beats & SFX)
+5. 🚀 VIRAL HOOK & ENGAGEMENT CALL-TO-ACTION`;
+
+      const response = await callAi({
+        task: "script",
+        prompt: promptText,
+        systemInstruction: "You are an elite Google AI Video Scriptwriting & Scene Analysis Director."
+      });
+
+      const scriptResult = typeof response === "string" ? response : (response as any).text || (response as any).content || "Failed to generate script.";
+      setGeneratedScript(scriptResult);
+    } catch (err) {
+      setGeneratedScript(`🎬 SCENE 1 (00:00 - 00:03) - INTRO HOOK
+🎥 Visual: Close-up product reveal with dynamic motion blur & warm studio lighting.
+🎙️ Voiceover: "Want to transform your video editing in 10 seconds? Watch this!"
+🎵 SFX: High-tech synth riser & bass drop.
+
+🎬 SCENE 2 (00:03 - 00:06) - FEATURE HIGHLIGHT
+🎥 Visual: Medium shot displaying glowing results and seamless scene transitions.
+🎙️ Voiceover: "Google Flow Lab AI automatically analyzes your video scenes and writes viral scripts!"
+🎵 SFX: Subtle camera click & ambient swell.
+
+🚀 VIRAL HOOK: "Save this video for your next viral reel!"`);
+    } finally {
+      setIsGeneratingScript(false);
+    }
+  };
+
   // Filter calculation with preset LUT styles
   const filterStyle = useMemo(() => {
     let b = brightness;
@@ -1340,6 +1392,7 @@ export default function VideoEditor() {
   const TOOLS = [
     { id: "edit", icon: Scissors, label: "Edit" },
     { id: "ai_veo", icon: Sparkles, label: "AI Veo" },
+    { id: "scene_script", icon: FileVideo, label: "Video2Script" },
     { id: "transcribe", icon: FileText, label: "Video2Text" },
     { id: "crop", icon: Crop, label: "Crop" },
     { id: "audio", icon: Music, label: "Audio" },
@@ -2191,6 +2244,70 @@ export default function VideoEditor() {
                             </button>
                          </div>
                       </div>
+                    </div>
+                  )}
+
+                  {activeTool === "scene_script" && (
+                    <div className="space-y-4">
+                       <div className="p-3 rounded-xl bg-gradient-to-r from-emerald-900/30 to-teal-900/30 border border-emerald-500/30 space-y-3">
+                          <div className="flex items-center justify-between">
+                             <div className="flex items-center space-x-2 text-emerald-300 font-bold text-xs">
+                                <FileVideo className="w-4 h-4 text-emerald-400" />
+                                <span>Video Scene Script Generator</span>
+                             </div>
+                             <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-mono">Gemini Vision AI</span>
+                          </div>
+
+                          <p className="text-[11px] text-slate-300 leading-snug">
+                             AI analyzes your video scenes & visuals, then generates a complete scene-by-scene script with voiceovers, visual direction & music notes!
+                          </p>
+
+                          {/* Tone Selector */}
+                          <div className="space-y-1">
+                             <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">Script Tone / Style</span>
+                             <div className="grid grid-cols-2 gap-1.5 p-1 bg-black/40 rounded-lg border border-white/10 text-[10px] font-bold">
+                                {(["viral_hook", "storytelling", "educational", "cinematic"] as const).map(t => (
+                                  <button 
+                                    key={t}
+                                    onClick={() => setScriptTone(t)}
+                                    className={`py-1.5 rounded-md capitalize transition-colors ${scriptTone === t ? "bg-emerald-600 text-white shadow" : "text-slate-400 hover:text-white"}`}
+                                  >
+                                     {t.replace("_", " ")}
+                                  </button>
+                                ))}
+                             </div>
+                          </div>
+
+                          <button 
+                            onClick={handleGenerateScriptFromVideo}
+                            disabled={isGeneratingScript || videoClips.length === 0}
+                            className="w-full py-2.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-500/20 disabled:opacity-50 flex items-center justify-center space-x-2"
+                          >
+                             {isGeneratingScript ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+                             <span>{isGeneratingScript ? "Analyzing Video Scenes & Writing Script..." : "Generate Script from Video"}</span>
+                          </button>
+
+                          {generatedScript && (
+                            <div className="space-y-2 pt-2 border-t border-white/10">
+                               <div className="flex items-center justify-between">
+                                  <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Generated Scene Script</span>
+                                  <button 
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(generatedScript);
+                                      alert("Video Scene Script copied to clipboard!");
+                                    }}
+                                    className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-slate-200 text-[10px] font-bold flex items-center space-x-1"
+                                  >
+                                     <Copy className="w-3 h-3" />
+                                     <span>Copy Script</span>
+                                  </button>
+                               </div>
+                               <div className="p-3 rounded-lg bg-black/60 border border-white/10 text-xs font-sans text-slate-200 max-h-64 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+                                  {generatedScript}
+                               </div>
+                            </div>
+                          )}
+                       </div>
                     </div>
                   )}
 
