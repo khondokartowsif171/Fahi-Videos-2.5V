@@ -221,6 +221,35 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
                 />
               </div>
 
+              {/* Supabase Database Cloud Sync */}
+              <div className="space-y-1.5 pt-2 border-t border-white/10">
+                <label className="text-xs font-bold text-slate-300 flex items-center space-x-1.5">
+                  <Server className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Supabase Database URL</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="https://xyz.supabase.co"
+                  value={localStorage.getItem("fahi_supabase_url") || ""}
+                  onChange={(e) => localStorage.setItem("fahi_supabase_url", e.target.value)}
+                  className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-mono"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-300 flex items-center space-x-1.5">
+                  <Key className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Supabase Anon Key</span>
+                </label>
+                <input
+                  type="password"
+                  placeholder="eyJh..."
+                  value={localStorage.getItem("fahi_supabase_anon_key") || ""}
+                  onChange={(e) => localStorage.setItem("fahi_supabase_anon_key", e.target.value)}
+                  className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-mono"
+                />
+              </div>
+
               <div className="flex items-center justify-between pt-1">
                 <span className="text-xs font-medium text-slate-300">Route AI via n8n Webhook</span>
                 <button

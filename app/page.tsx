@@ -83,22 +83,18 @@ export default function Page() {
       {/* Cap-Style Navigation */}
       <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
 
-      {/* Main Workspace */}
-      {activeTab === "editor" ? (
-        // Editor gets full height, no padding, no bottom clearance (it manages its own layout)
-        <main className="flex-1 overflow-hidden">
-          <VideoEditor />
-        </main>
-      ) : (
-        // All other tabs get standard responsive padding + bottom nav clearance on mobile
-        <main className={`flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 overflow-x-hidden
-          pb-24 md:pb-8`}>
-          {activeTab === "home" && <Home setActiveTab={setActiveTab} />}
-          {activeTab === "downloader" && <YoutubeDownloader />}
-          {activeTab === "thumbnail" && <ThumbnailEditor />}
-          {activeTab === "ai" && <CreatorAi />}
-        </main>
-      )}
+      {/* Main Workspace: Keep-Alive Video Editor (Never unmounts on tab switch, preserving all video edits) */}
+      <main className={`flex-1 overflow-hidden ${activeTab === "editor" ? "block" : "hidden"}`}>
+        <VideoEditor />
+      </main>
+
+      {/* Other Workspaces */}
+      <main className={`flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 overflow-x-hidden pb-24 md:pb-8 ${activeTab !== "editor" ? "block" : "hidden"}`}>
+        {activeTab === "home" && <Home setActiveTab={setActiveTab} />}
+        {activeTab === "downloader" && <YoutubeDownloader />}
+        {activeTab === "thumbnail" && <ThumbnailEditor />}
+        {activeTab === "ai" && <CreatorAi />}
+      </main>
 
     </div>
   );
