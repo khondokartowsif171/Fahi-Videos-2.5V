@@ -1197,7 +1197,7 @@ export default function VideoEditor() {
   ];
 
   return (
-    <div className="flex flex-col h-[calc(100vh-64px)] font-sans antialiased overflow-hidden bg-[#050810] text-[#F1F5F9] selection:bg-indigo-500/30">
+    <div className="flex flex-col h-[100dvh] md:h-[calc(100vh-64px)] font-sans antialiased overflow-hidden bg-[#050810] text-[#F1F5F9] selection:bg-indigo-500/30">
       
       {/* Top Professional Navbar (FlowLab Style) */}
       <div className="flex items-center justify-between px-4 h-12 shrink-0 z-20 border-b" style={{ backgroundColor: 'rgba(5,8,16,0.95)', borderColor: 'rgba(255,255,255,0.06)' }}>
@@ -2044,19 +2044,27 @@ export default function VideoEditor() {
                                      <>
                                        <div 
                                          onMouseDown={(e) => handleClipTrimStart(clip, "left", e)}
-                                         onTouchStart={(e) => handleClipTrimStart(clip, "left", e)}
-                                         className="absolute left-0 top-0 bottom-0 w-2.5 bg-white rounded-l flex items-center justify-center cursor-ew-resize hover:bg-indigo-300 z-30 shadow-md"
+                                         onTouchStart={(e) => {
+                                           if (e.cancelable) e.preventDefault();
+                                           e.stopPropagation();
+                                           handleClipTrimStart(clip, "left", e);
+                                         }}
+                                         className="absolute -left-1 top-0 bottom-0 w-5 bg-white rounded-l flex items-center justify-center cursor-ew-resize hover:bg-indigo-300 z-40 shadow-xl touch-none"
                                          title="Drag to trim start"
                                        >
-                                         <div className="w-0.5 h-3 bg-slate-900 rounded-full" />
+                                         <div className="w-1 h-4 bg-slate-900 rounded-full" />
                                        </div>
                                        <div 
                                          onMouseDown={(e) => handleClipTrimStart(clip, "right", e)}
-                                         onTouchStart={(e) => handleClipTrimStart(clip, "right", e)}
-                                         className="absolute right-0 top-0 bottom-0 w-2.5 bg-white rounded-r flex items-center justify-center cursor-ew-resize hover:bg-indigo-300 z-30 shadow-md"
+                                         onTouchStart={(e) => {
+                                           if (e.cancelable) e.preventDefault();
+                                           e.stopPropagation();
+                                           handleClipTrimStart(clip, "right", e);
+                                         }}
+                                         className="absolute -right-1 top-0 bottom-0 w-5 bg-white rounded-r flex items-center justify-center cursor-ew-resize hover:bg-indigo-300 z-40 shadow-xl touch-none"
                                          title="Drag to trim end"
                                        >
-                                         <div className="w-0.5 h-3 bg-slate-900 rounded-full" />
+                                         <div className="w-1 h-4 bg-slate-900 rounded-full" />
                                        </div>
                                      </>
                                    )}
