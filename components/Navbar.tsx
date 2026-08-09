@@ -14,9 +14,9 @@ interface NavbarProps {
 const tabs = [
   { id: 'home', label: 'Home', icon: House },
   { id: 'downloader', label: 'Downloader', icon: Download },
-  { id: 'editor', label: 'Editor', icon: Video },
+  { id: 'editor', label: 'Video Studio', icon: Video },
   { id: 'thumbnail', label: 'Thumbnail', icon: ImageIcon },
-  { id: 'ai', label: 'AI', icon: Sparkles },
+  { id: 'ai', label: 'Flow AI Lab', icon: Sparkles },
 ];
 
 export default function Navbar({ activeTab, setActiveTab }: NavbarProps) {

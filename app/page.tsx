@@ -16,6 +16,8 @@ const TAB_ALIASES: Record<string, string> = {
   video: 'editor',
   downloader: 'downloader',
   editor: 'editor',
+  ai: 'ai',
+  flowlab: 'ai',
 };
 
 export default function Page() {
