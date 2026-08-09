@@ -301,6 +301,10 @@ export default function VideoEditor() {
   // Selected Timeline Clip state
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
 
+  // Multi-clip video source switching refs (prevents stutter & playhead desync)
+  const isSwitchingSourceRef = useRef(false);
+  const pendingSeekTimeRef = useRef<number | null>(null);
+
   // Freeform Custom Crop Box Bounds state (left, top, width, height in %)
   const [cropBox, setCropBox] = useState<{ left: number; top: number; width: number; height: number }>({
     left: 5,
@@ -597,24 +601,40 @@ export default function VideoEditor() {
     const expectedMediaTime = (activeClipInfo.clip.startOffset || 0) + relTimeInClip;
 
     if (videoRef.current.src !== targetUrl) {
+      isSwitchingSourceRef.current = true;
+      pendingSeekTimeRef.current = expectedMediaTime;
       videoRef.current.src = targetUrl;
-    }
-
-    if (Math.abs(videoRef.current.currentTime - expectedMediaTime) > 0.3) {
-      videoRef.current.currentTime = expectedMediaTime;
-    }
-
-    if (isPlaying && videoRef.current.paused) {
-      const p = videoRef.current.play();
-      if (p !== undefined) {
-        p.catch((e) => {
+      videoRef.current.load();
+    } else {
+      if (Math.abs(videoRef.current.currentTime - expectedMediaTime) > 0.25) {
+        videoRef.current.currentTime = expectedMediaTime;
+      }
+      if (isPlaying && videoRef.current.paused && !isSwitchingSourceRef.current) {
+        videoRef.current.play().catch(e => {
           if (e.name !== "NotAllowedError" && !e.message?.includes("interrupted")) {
-            console.warn("Video play error:", e);
+            console.warn("Play warning:", e);
           }
         });
       }
     }
   }, [activeClipId, activeStartOffset, isPlaying]);
+
+  const handleVideoLoadedData = () => {
+    if (videoRef.current) {
+      if (pendingSeekTimeRef.current !== null) {
+        videoRef.current.currentTime = pendingSeekTimeRef.current;
+        pendingSeekTimeRef.current = null;
+      }
+      isSwitchingSourceRef.current = false;
+      if (isPlaying && videoRef.current.paused) {
+        videoRef.current.play().catch(e => {
+          if (e.name !== "NotAllowedError" && !e.message?.includes("interrupted")) {
+            console.warn("Play error after load:", e);
+          }
+        });
+      }
+    }
+  };
 
   const togglePlayPause = () => {
       if (videoRef.current) {
@@ -632,25 +652,24 @@ export default function VideoEditor() {
   };
 
   const handleTimeUpdate = () => {
+      if (isSwitchingSourceRef.current) return; // Suppress timeupdate during source loading
       if (videoRef.current && activeClipInfo && !isExporting) {
           const currentMediaTime = videoRef.current.currentTime;
           const startOffset = activeClipInfo.clip.startOffset || 0;
           const relTimeInClip = Math.max(0, currentMediaTime - startOffset);
           const newGlobalTime = activeClipInfo.start + relTimeInClip;
+
           setCurrentTime(newGlobalTime);
 
           // Check if current clip reached its trimmed duration boundary
           if (relTimeInClip >= activeClipInfo.duration - 0.08) {
               const currentIdx = clipOffsets.findIndex(c => c.clip.id === activeClipInfo.clip.id);
               if (currentIdx < clipOffsets.length - 1) {
-                  // Auto-advance to next clip in sequence
+                  // Auto-advance seamlessly to next clip!
                   const nextClipInfo = clipOffsets[currentIdx + 1];
                   setCurrentTime(nextClipInfo.start);
-                  if (videoRef.current) {
-                    videoRef.current.currentTime = nextClipInfo.clip.startOffset || 0;
-                  }
               } else {
-                  // Reached end of total timeline sequence
+                  // End of sequence
                   videoRef.current.pause();
                   setIsPlaying(false);
               }
@@ -661,7 +680,7 @@ export default function VideoEditor() {
   const handleLoadedMetadata = () => {
       if (videoRef.current && activeClipInfo) {
           const realDur = videoRef.current.duration;
-          if (realDur && isFinite(realDur) && Math.abs(realDur - activeClipInfo.duration) > 0.5) {
+          if (realDur && isFinite(realDur) && Math.abs(realDur - activeClipInfo.duration) > 0.5 && !activeClipInfo.clip.startOffset) {
               setVideoClips((prev) =>
                   prev.map((c) => (c.id === activeClipInfo.clip.id ? { ...c, duration: realDur } : c))
               );
@@ -679,10 +698,15 @@ export default function VideoEditor() {
           const targetInfo = clipOffsets.find(c => time >= c.start && time < c.end) || clipOffsets[clipOffsets.length - 1];
           if (targetInfo && videoRef.current) {
               const relTime = Math.max(0, time - targetInfo.start);
+              const mediaTime = (targetInfo.clip.startOffset || 0) + relTime;
               if (videoRef.current.getAttribute("src") !== targetInfo.clip.objectUrl) {
+                  isSwitchingSourceRef.current = true;
+                  pendingSeekTimeRef.current = mediaTime;
                   videoRef.current.src = targetInfo.clip.objectUrl;
+                  videoRef.current.load();
+              } else {
+                  videoRef.current.currentTime = mediaTime;
               }
-              videoRef.current.currentTime = relTime;
           }
       }
   };
@@ -1271,6 +1295,7 @@ export default function VideoEditor() {
                               }}
                               onTimeUpdate={handleTimeUpdate}
                               onLoadedMetadata={handleLoadedMetadata}
+                              onLoadedData={handleVideoLoadedData}
                               onEnded={() => setIsPlaying(false)}
                           />
 
