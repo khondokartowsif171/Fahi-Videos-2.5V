@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X, ShieldCheck, Lock, User, Key, Check, LogOut, Server, Cpu, Activity, AlertCircle, Sparkles } from "lucide-react";
+import { X, ShieldCheck, Lock, User, Key, Check, LogOut, Server, Cpu, Activity, AlertCircle, Sparkles, Eye, EyeOff, RotateCw } from "lucide-react";
 
 interface AdminLoginModalProps {
   isOpen: boolean;
@@ -12,7 +12,9 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [resetSuccess, setResetSuccess] = useState(false);
 
   // Admin settings state
   const [geminiApiKey, setGeminiApiKey] = useState("");
@@ -45,13 +47,29 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
     const savedUser = (localStorage.getItem("fahi_admin_username") || "admin").trim().toLowerCase();
     const savedPass = (localStorage.getItem("fahi_admin_password") || "admin123").trim();
 
-    if (username.trim().toLowerCase() === savedUser && password.trim() === savedPass) {
+    const inputUser = username.trim().toLowerCase();
+    const inputPass = password.trim();
+
+    if (inputUser === savedUser && inputPass === savedPass) {
       localStorage.setItem("fahi_admin_logged_in", "true");
       setIsLoggedIn(true);
       setErrorMsg("");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("fahi-admin-login-change", { detail: { isLoggedIn: true } }));
+      }
     } else {
       setErrorMsg("Invalid Admin Username or Password.");
     }
+  };
+
+  const handleResetToDefaultCredentials = () => {
+    localStorage.setItem("fahi_admin_username", "admin");
+    localStorage.setItem("fahi_admin_password", "admin123");
+    setUsername("admin");
+    setPassword("admin123");
+    setErrorMsg("");
+    setResetSuccess(true);
+    setTimeout(() => setResetSuccess(false), 2500);
   };
 
   const handleChangeAdminCredentials = (e: React.FormEvent) => {
@@ -75,6 +93,9 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
     setIsLoggedIn(false);
     setUsername("");
     setPassword("");
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("fahi-admin-login-change", { detail: { isLoggedIn: false } }));
+    }
   };
 
   const handleSaveAdminSettings = () => {
@@ -115,7 +136,7 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+            className="p-1.5 rounded-full text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -124,10 +145,6 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
         {!isLoggedIn ? (
           /* Login Form */
           <form onSubmit={handleLogin} className="space-y-4">
-            <div className="p-3 rounded-xl bg-violet-500/10 border border-violet-500/20 text-xs text-violet-300 leading-relaxed">
-              🔑 Log in as Super Admin to manage API keys, n8n webhooks, AI engines, and system settings.
-            </div>
-
             {errorMsg && (
               <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-xs text-red-400 flex items-center space-x-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
@@ -142,7 +159,7 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
               </label>
               <input
                 type="text"
-                placeholder="Username"
+                placeholder="Enter admin username..."
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
@@ -151,13 +168,23 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-300 flex items-center space-x-1.5">
-                <Lock className="w-3.5 h-3.5 text-slate-400" />
-                <span>Admin Passcode</span>
+              <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
+                <span className="flex items-center space-x-1.5">
+                  <Lock className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Admin Passcode</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="text-[10px] text-slate-400 hover:text-white flex items-center space-x-1 cursor-pointer"
+                >
+                  {showPassword ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                  <span>{showPassword ? "Hide" : "Show"}</span>
+                </button>
               </label>
               <input
-                type="password"
-                placeholder="Password"
+                type={showPassword ? "text" : "password"}
+                placeholder="Enter passcode..."
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -167,7 +194,7 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
 
             <button
               type="submit"
-              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-violet-500/25 transition-all flex items-center justify-center space-x-2"
+              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-violet-500/25 transition-all flex items-center justify-center space-x-2 cursor-pointer"
             >
               <ShieldCheck className="w-4 h-4" />
               <span>Log In to Admin Panel</span>
@@ -184,7 +211,7 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
               </div>
               <button
                 onClick={handleLogout}
-                className="px-2.5 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-300 text-[10px] font-bold flex items-center space-x-1 border border-red-500/30"
+                className="px-2.5 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-300 text-[10px] font-bold flex items-center space-x-1 border border-red-500/30 cursor-pointer"
               >
                 <LogOut className="w-3 h-3" />
                 <span>Log Out</span>
@@ -211,7 +238,7 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
             </div>
 
             {/* API Credentials */}
-            <div className="space-y-3 pt-2 border-t border-white/10">
+            <div className="space-y-3 pt-2 border-t border-white/10 max-h-[220px] overflow-y-auto pr-1">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-300 flex items-center space-x-1.5">
                   <Key className="w-3.5 h-3.5 text-violet-400" />
@@ -249,8 +276,10 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
                 <input
                   type="text"
                   placeholder="https://xyz.supabase.co"
-                  value={localStorage.getItem("fahi_supabase_url") || ""}
-                  onChange={(e) => localStorage.setItem("fahi_supabase_url", e.target.value)}
+                  value={typeof window !== "undefined" ? (localStorage.getItem("fahi_supabase_url") || "") : ""}
+                  onChange={(e) => {
+                    if (typeof window !== "undefined") localStorage.setItem("fahi_supabase_url", e.target.value);
+                  }}
                   className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-mono"
                 />
               </div>
@@ -263,8 +292,10 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
                 <input
                   type="password"
                   placeholder="eyJh..."
-                  value={localStorage.getItem("fahi_supabase_anon_key") || ""}
-                  onChange={(e) => localStorage.setItem("fahi_supabase_anon_key", e.target.value)}
+                  value={typeof window !== "undefined" ? (localStorage.getItem("fahi_supabase_anon_key") || "") : ""}
+                  onChange={(e) => {
+                    if (typeof window !== "undefined") localStorage.setItem("fahi_supabase_anon_key", e.target.value);
+                  }}
                   className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-mono"
                 />
               </div>
@@ -274,7 +305,7 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
                 <button
                   type="button"
                   onClick={() => setUseN8n(!useN8n)}
-                  className={`w-10 h-5 rounded-full transition-colors relative p-0.5 ${
+                  className={`w-10 h-5 rounded-full transition-colors relative p-0.5 cursor-pointer ${
                     useN8n ? "bg-violet-600" : "bg-white/10"
                   }`}
                 >
@@ -291,7 +322,7 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
                 <button
                   type="button"
                   onClick={() => setAiUhdEnabled(!aiUhdEnabled)}
-                  className={`w-10 h-5 rounded-full transition-colors relative p-0.5 ${
+                  className={`w-10 h-5 rounded-full transition-colors relative p-0.5 cursor-pointer ${
                     aiUhdEnabled ? "bg-violet-600" : "bg-white/10"
                   }`}
                 >
@@ -307,7 +338,7 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
             {/* Save Button */}
             <button
               onClick={handleSaveAdminSettings}
-              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center space-x-2"
+              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center space-x-2 cursor-pointer"
             >
               {savedSuccess ? (
                 <>
@@ -363,7 +394,7 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
 
               <button
                 type="submit"
-                className="w-full py-2 rounded-xl bg-violet-600/30 hover:bg-violet-600/50 text-violet-200 border border-violet-500/40 text-xs font-bold transition-all flex items-center justify-center space-x-1.5"
+                className="w-full py-2 rounded-xl bg-violet-600/30 hover:bg-violet-600/50 text-violet-200 border border-violet-500/40 text-xs font-bold transition-all flex items-center justify-center space-x-1.5 cursor-pointer"
               >
                 <Lock className="w-3.5 h-3.5" />
                 <span>Update Admin Credentials</span>

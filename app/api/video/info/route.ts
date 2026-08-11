@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+export const dynamic = "force-dynamic";
 const btch = require("btch-downloader");
 
 async function expandUrl(shortUrl: string) {
