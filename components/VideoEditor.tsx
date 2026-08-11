@@ -12,11 +12,13 @@ import {
   Sun, Thermometer, Palette, Eye, EyeOff, Aperture, Sparkle, Grid,
   Wand, Layers2, AlignLeft, AlignCenter, AlignRight, Mic, FastForward,
   Copy, ChevronRight, SlidersHorizontal as SlidersIcon, Crop, Volume1,
-  SkipBack, SkipForward, ZoomIn, ChevronLeft, Loader2, Bot, Send, FileText, FileVideo
+  SkipBack, SkipForward, ZoomIn, ChevronLeft, Loader2, Bot, Send, FileText, FileVideo,
+  Filter, ShieldCheck
 } from "lucide-react";
 import { logActivity } from "@/lib/activity";
 import { callAi } from "@/lib/ai-client";
 import UserSettingsModal from "./UserSettingsModal";
+import AdminLoginModal from "./AdminLoginModal";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface ExportPreset {
@@ -270,6 +272,7 @@ export default function VideoEditor() {
   // Theme and User Settings State
   const [editorTheme, setEditorTheme] = useState<"dark" | "light">("dark");
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showAdminModal, setShowAdminModal] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -454,9 +457,10 @@ export default function VideoEditor() {
   useEffect(() => {
     const handleTrimMove = (e: MouseEvent | TouchEvent) => {
       if (!isTrimmingClipRef.current) return;
+      if (e.cancelable) e.preventDefault();
       const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
       const deltaX = clientX - trimStartRef.current.clientX;
-      const deltaSeconds = deltaX / 25; // 25px per second scale
+      const deltaSeconds = deltaX / 15; // 15px per second scale
 
       const edge = isTrimmingClipRef.current;
       const { clipId, initialDuration, initialStartOffset } = trimStartRef.current;
@@ -490,7 +494,7 @@ export default function VideoEditor() {
 
     window.addEventListener("mousemove", handleTrimMove);
     window.addEventListener("mouseup", handleTrimEnd);
-    window.addEventListener("touchmove", handleTrimMove);
+    window.addEventListener("touchmove", handleTrimMove, { passive: false });
     window.addEventListener("touchend", handleTrimEnd);
 
     return () => {
@@ -592,6 +596,15 @@ export default function VideoEditor() {
       });
     }
     setVideoClips((prev) => [...prev, ...newItems]);
+    if (newItems.length > 0) {
+      setSelectedClipId(newItems[0].id);
+    }
+    setIsPlaying(true);
+    setTimeout(() => {
+      if (videoRef.current) {
+        videoRef.current.play().catch(e => console.warn("Auto-play error:", e));
+      }
+    }, 150);
   }, []);
 
   useEffect(() => {
@@ -1478,69 +1491,52 @@ Include:
   return (
     <div className="flex flex-col h-[100dvh] md:h-[calc(100vh-64px)] font-sans antialiased overflow-hidden bg-[#050810] text-[#F1F5F9] selection:bg-indigo-500/30">
       
-      {/* Top Professional Header (Video Studio NLE) */}
-      <div className="flex items-center justify-between px-4 h-12 shrink-0 z-30 border-b bg-[#0B0F19]/95 backdrop-blur-xl border-white/5">
-          {/* Left: Branding & Undo/Redo */}
-          <div className="flex items-center space-x-3">
-              <button 
-                onClick={() => setVideoClips([])} 
-                className="text-slate-400 hover:text-slate-200 transition-colors"
-                title="Close Project"
+      {/* Top Header — Exact CapCut Mobile Style */}
+      <div className="flex items-center justify-between px-3 h-12 shrink-0 z-30 bg-[#0B0F19]/95 backdrop-blur-xl border-b border-white/5">
+          {/* Left: X close + Search */}
+          <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setVideoClips([])}
+                className="p-1.5 text-slate-300 hover:text-white hover:bg-white/8 rounded-lg transition-colors"
+                title="Close"
               >
                   <X className="w-5 h-5" />
               </button>
-              <div className="h-4 w-px bg-white/10" />
-              <div className="flex items-center space-x-1">
-                <button 
-                  onClick={undo} 
-                  disabled={!canUndo} 
-                  className={`p-1.5 rounded-lg transition-colors ${!canUndo ? "opacity-30 cursor-not-allowed text-slate-500" : "text-indigo-400 hover:bg-indigo-500/10 hover:text-indigo-300"}`}
-                  title="Undo (Ctrl+Z)"
-                >
-                  <Undo2 className="w-4 h-4" />
-                </button>
-                <button 
-                  onClick={redo} 
-                  disabled={!canRedo} 
-                  className={`p-1.5 rounded-lg transition-colors ${!canRedo ? "opacity-30 cursor-not-allowed text-slate-500" : "text-indigo-400 hover:bg-indigo-500/10 hover:text-indigo-300"}`}
-                  title="Redo (Ctrl+Y)"
-                >
-                  <Redo2 className="w-4 h-4" />
-                </button>
+              <button
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-white/8 rounded-lg transition-colors"
+                title="Search"
+              >
+                  <Search className="w-4.5 h-4.5" />
+              </button>
+          </div>
+
+          {/* Center: Brand + AI UHD badge + Admin button */}
+          <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setShowAdminModal(true)}
+                className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg border border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 text-xs font-bold transition-all cursor-pointer"
+                title="Admin Console"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-violet-400" />
+                <span className="hidden sm:inline">Admin</span>
+              </button>
+
+              <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                  <span className="text-xs font-bold text-white">AI UHD</span>
+                  <ChevronDown className="w-3 h-3 text-slate-400" />
               </div>
           </div>
 
-          {/* Center: Title Badge */}
-          <div className="flex items-center justify-center flex-1">
-             <div className="flex items-center space-x-2 bg-white/5 border border-white/10 px-3 py-1 rounded-full">
-                 <Film className="w-3.5 h-3.5 text-indigo-400" />
-                 <span className="text-xs font-medium text-slate-300">Video Studio</span>
-             </div>
-          </div>
-          
-          {/* Right: Actions */}
-          <div className="flex items-center space-x-3">
-              <button 
-                onClick={() => setActiveTool("templates")}
-                className="hidden sm:flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border bg-white/5 hover:bg-white/10 text-white border-white/10 transition-colors"
-              >
-                  <LayoutTemplate className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>Templates</span>
-              </button>
-
-              <div className="flex items-center space-x-1.5 px-3 py-1 rounded-full text-[10px] font-bold border bg-indigo-500/10 border-indigo-500/30 text-indigo-300">
-                  <Sparkles className="w-3 h-3 text-indigo-400" />
-                  <span>AI UHD</span>
-              </div>
-
-              <button 
-                onClick={() => setShowExportModal(true)} 
-                className="bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-400 hover:to-violet-400 text-white px-4 py-1.5 rounded-lg text-xs font-bold flex items-center shadow-[0_0_15px_rgba(99,102,241,0.4)] transition-all"
-              >
-                  <Download className="w-4 h-4 mr-1.5" />
-                  Export
-              </button>
-          </div>
+          {/* Right: Export button */}
+          <button
+            onClick={() => setShowExportModal(true)}
+            className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold text-white transition-all"
+            style={{ background: 'linear-gradient(135deg, #06B6D4, #3B82F6)', boxShadow: '0 0 16px rgba(6,182,212,0.4)' }}
+          >
+              <Download className="w-3.5 h-3.5" />
+              <span>Export</span>
+          </button>
       </div>
 
       {/* 3-Panel Main Area */}
@@ -1721,30 +1717,43 @@ Include:
                       </div>
                   )}
 
-                  {/* FLOATING CONTROLS BAR */}
+                  {/* CapCut-style controls below video: fullscreen | play | caption | undo | redo */}
                   {videoFile && (
-                    <div className="absolute bottom-2 left-2 right-2 md:bottom-4 md:left-4 md:right-4 z-20 backdrop-blur-xl rounded-xl md:rounded-2xl px-3 py-1.5 md:px-4 md:py-2.5 flex items-center justify-between" style={{ backgroundColor: 'rgba(5,8,16,0.85)', border: '1px solid rgba(255,255,255,0.1)' }}>
-                        <div className="flex items-center space-x-1.5 md:space-x-2 text-slate-300">
-                            <button className="p-1 md:p-1.5 hover:text-white hover:bg-white/10 rounded-lg transition-colors"><SkipBack className="w-3.5 h-3.5 md:w-4 md:h-4"/></button>
-                            <button onClick={togglePlayPause} className="w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 text-white shadow-[0_0_15px_rgba(99,102,241,0.4)] hover:scale-105 transition-transform">
-                                {isPlaying ? <Pause className="w-3.5 h-3.5 md:w-4 md:h-4 fill-current" /> : <Play className="w-3.5 h-3.5 md:w-4 md:h-4 fill-current ml-0.5" />}
-                            </button>
-                            <button className="p-1 md:p-1.5 hover:text-white hover:bg-white/10 rounded-lg transition-colors"><SkipForward className="w-3.5 h-3.5 md:w-4 md:h-4"/></button>
-                        </div>
-                        
-                        <div className="font-mono text-xs md:text-sm tracking-wider">
-                            <span className="text-indigo-400">{formatTime(currentTime)}</span>
-                            <span className="text-slate-600 mx-1">/</span>
-                            <span className="text-slate-400">{formatTime(duration)}</span>
+                    <div className="absolute bottom-0 left-0 right-0 z-20 flex items-center justify-between px-3 py-2 bg-gradient-to-t from-black/70 to-transparent">
+                        {/* Left: fullscreen */}
+                        <button className="p-1.5 text-slate-300 hover:text-white transition-colors">
+                          <Maximize2 className="w-4 h-4" />
+                        </button>
+
+                        {/* Center: time | play | time */}
+                        <div className="flex items-center space-x-3">
+                          <span className="font-mono text-[11px] text-slate-300 tracking-wider">{formatTime(currentTime)}</span>
+                          <button
+                            onClick={togglePlayPause}
+                            className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white hover:bg-white/20 transition-all"
+                          >
+                            {isPlaying
+                              ? <Pause className="w-4 h-4 fill-current" />
+                              : <Play className="w-4 h-4 fill-current ml-0.5" />}
+                          </button>
+                          <span className="font-mono text-[11px] text-slate-400 tracking-wider">{formatTime(duration)}</span>
                         </div>
 
-                        <div className="flex items-center space-x-2 md:space-x-3 text-slate-300">
-                            <span className="text-[9px] md:text-[10px] font-bold bg-white/5 px-1.5 py-0.5 md:px-2 md:py-1 rounded border border-white/10">{playbackSpeed}x</span>
-                            <button onClick={() => setIsMuted(!isMuted)} className="p-1 md:p-1.5 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
-                                {isMuted ? <VolumeX className="w-3.5 h-3.5 md:w-4 md:h-4 text-red-400" /> : <Volume2 className="w-3.5 h-3.5 md:w-4 md:h-4" />}
-                            </button>
-                            <div className="w-px h-3 md:h-4 bg-white/10" />
-                            <button className="p-1 md:p-1.5 hover:text-white hover:bg-white/10 rounded-lg transition-colors"><Maximize2 className="w-3.5 h-3.5 md:w-4 md:h-4" /></button>
+                        {/* Right: caption toggle | undo | redo */}
+                        <div className="flex items-center space-x-1">
+                          <button
+                            onClick={() => setAutoCaptionsEnabled(!autoCaptionsEnabled)}
+                            className={`p-1.5 rounded-lg transition-colors ${autoCaptionsEnabled ? 'text-cyan-400' : 'text-slate-500'}`}
+                            title="Toggle captions"
+                          >
+                            <Captions className="w-4 h-4" />
+                          </button>
+                          <button onClick={undo} disabled={!canUndo} className={`p-1.5 rounded-lg transition-colors ${!canUndo ? 'opacity-30 text-slate-600' : 'text-slate-300 hover:text-white'}`}>
+                            <Undo2 className="w-4 h-4" />
+                          </button>
+                          <button onClick={redo} disabled={!canRedo} className={`p-1.5 rounded-lg transition-colors ${!canRedo ? 'opacity-30 text-slate-600' : 'text-slate-300 hover:text-white'}`}>
+                            <Redo2 className="w-4 h-4" />
+                          </button>
                         </div>
                     </div>
                   )}
@@ -2582,8 +2591,8 @@ Include:
           </div>
       </div>
 
-      {/* BOTTOM: FlowLab Timeline */}
-      <div className="shrink-0 flex flex-col z-20" style={{ height: '180px', backgroundColor: 'rgba(5,8,16,1)', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+      {/* BOTTOM: CapCut-Style Timeline */}
+      <div className="shrink-0 flex flex-col z-20" style={{ height: '192px', backgroundColor: 'rgba(5,8,16,1)', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
           
           {/* Timeline Toolbar */}
           <div className="h-10 flex items-center justify-between px-4 border-b border-white/5">
@@ -2617,48 +2626,43 @@ Include:
              </div>
 
              <div className="flex-1 flex overflow-y-auto overflow-x-hidden relative">
-                 {/* Left labels column (CapCut Style: Cover thumbnail + Track icons) */}
-                 <div className="w-20 shrink-0 bg-[#050810] z-20 border-r border-white/5 flex flex-col pt-1 px-1 space-y-1 items-center justify-start">
-                    {/* Cover Button */}
-                    <button 
-                      onClick={() => {
-                         const v = videoRef.current;
-                         if (!v) return;
-                         const c = document.createElement("canvas");
-                         c.width = v.videoWidth || 320;
-                         c.height = v.videoHeight || 180;
-                         const ctx = c.getContext("2d");
-                         if (ctx) {
-                            ctx.drawImage(v, 0, 0, c.width, c.height);
-                            const url = c.toDataURL("image/png");
-                            setEditorState((prev: any) => ({ ...prev, coverImage: url }));
-                         }
-                      }}
-                      className="w-full h-9 rounded-lg bg-white/5 border border-white/10 hover:border-indigo-400 flex flex-col items-center justify-center p-0.5 cursor-pointer transition-all group relative overflow-hidden shrink-0"
-                      title="Set Cover Frame"
-                    >
-                       <ImageIcon className="w-3 h-3 text-indigo-400 group-hover:scale-110 transition-transform" />
-                       <span className="text-[8px] font-bold text-slate-300">Cover</span>
-                    </button>
+                 {/* Left labels column — CapCut Style: Track Name Labels */}
+                 <div className="w-20 shrink-0 bg-[#050810] z-20 border-r border-white/5 flex flex-col pt-1 pb-1 space-y-1">
+                    {/* Video Track Label */}
+                    <div className="h-9 flex items-center justify-between px-1.5 rounded-lg" style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.18)' }}>
+                      <div className="flex flex-col">
+                        <span className="text-[8px] font-bold text-indigo-300 leading-tight">Video 1</span>
+                        <span className="text-[7px] text-slate-500">{videoClips.length} clips</span>
+                      </div>
+                      <label className="cursor-pointer p-0.5 rounded hover:bg-indigo-500/20 transition-colors" title="Add Video">
+                        <Plus className="w-2.5 h-2.5 text-indigo-400" />
+                        <input type="file" accept="video/*" multiple className="hidden" onChange={handleFileUpload} />
+                      </label>
+                    </div>
 
-                    {/* Audio Track Icon / Add Button */}
-                    <button 
+                    {/* Audio Track Label */}
+                    <button
                       onClick={() => setActiveTool('audio')}
-                      className="w-full h-7 rounded-md bg-violet-500/10 border border-violet-500/20 hover:border-violet-400 flex items-center justify-center space-x-1 cursor-pointer transition-colors shrink-0"
-                      title="Add Audio"
+                      className="h-7 flex items-center justify-between px-1.5 rounded-md cursor-pointer transition-colors"
+                      style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.18)' }}
                     >
-                       <Music className="w-3 h-3 text-violet-400" />
-                       <span className="text-[8px] font-bold text-violet-300">Audio</span>
+                      <div className="flex flex-col items-start">
+                        <span className="text-[8px] font-bold text-violet-300 leading-tight">Audio 1</span>
+                        <span className="text-[7px] text-slate-500">{selectedAudio ? '1 track' : 'empty'}</span>
+                      </div>
+                      <Music className="w-2.5 h-2.5 text-violet-400" />
                     </button>
 
-                    {/* Text Track Icon / Add Button */}
-                    <button 
+                    {/* Text Track Label */}
+                    <button
                       onClick={() => setActiveTool('text')}
-                      className="w-full h-6 rounded-md bg-yellow-500/10 border border-yellow-500/20 hover:border-yellow-400 flex items-center justify-center space-x-1 cursor-pointer transition-colors shrink-0"
-                      title="Add Text"
+                      className="h-6 flex items-center justify-between px-1.5 rounded-md cursor-pointer transition-colors"
+                      style={{ background: 'rgba(234,179,8,0.06)', border: '1px solid rgba(234,179,8,0.18)' }}
                     >
-                       <Type className="w-3 h-3 text-yellow-400" />
-                       <span className="text-[8px] font-bold text-yellow-300">Text</span>
+                      <div className="flex flex-col items-start">
+                        <span className="text-[8px] font-bold text-yellow-300 leading-tight">Text</span>
+                      </div>
+                      <Type className="w-2.5 h-2.5 text-yellow-400" />
                     </button>
                  </div>
 
@@ -2681,10 +2685,10 @@ Include:
                                 <div 
                                   key={clip.id} 
                                   onClick={(e) => { e.stopPropagation(); setSelectedClipId(clip.id); }}
-                                  className={`h-full relative rounded-md flex items-center px-1.5 cursor-pointer transition-all group overflow-hidden ${
+                                  className={`h-full relative rounded-md flex items-center px-2 cursor-pointer transition-all group ${
                                     isSelected 
-                                      ? "bg-indigo-500/40 border-2 border-white text-white shadow-[0_0_12px_rgba(255,255,255,0.4)] z-10" 
-                                      : "bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10"
+                                      ? "bg-indigo-500/40 border-2 border-white text-white shadow-[0_0_12px_rgba(255,255,255,0.4)] z-10 overflow-visible" 
+                                      : "bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 overflow-hidden"
                                   }`} 
                                   style={{ minWidth: '95px', width: `${widthPercent}%` }}
                                 >
@@ -2698,10 +2702,10 @@ Include:
                                            e.stopPropagation();
                                            handleClipTrimStart(clip, "left", e);
                                          }}
-                                         className="absolute -left-1 top-0 bottom-0 w-5 bg-white rounded-l flex items-center justify-center cursor-ew-resize hover:bg-indigo-300 z-40 shadow-xl touch-none"
+                                         className="absolute -left-2 top-0 bottom-0 w-4 bg-white rounded-l flex items-center justify-center cursor-ew-resize hover:bg-indigo-300 z-50 shadow-xl touch-none"
                                          title="Drag to trim start"
                                        >
-                                         <div className="w-1 h-4 bg-slate-900 rounded-full" />
+                                         <div className="w-0.5 h-4 bg-slate-900 rounded-full" />
                                        </div>
                                        <div 
                                          onMouseDown={(e) => handleClipTrimStart(clip, "right", e)}
@@ -2710,10 +2714,10 @@ Include:
                                            e.stopPropagation();
                                            handleClipTrimStart(clip, "right", e);
                                          }}
-                                         className="absolute -right-1 top-0 bottom-0 w-5 bg-white rounded-r flex items-center justify-center cursor-ew-resize hover:bg-indigo-300 z-40 shadow-xl touch-none"
+                                         className="absolute -right-2 top-0 bottom-0 w-4 bg-white rounded-r flex items-center justify-center cursor-ew-resize hover:bg-indigo-300 z-50 shadow-xl touch-none"
                                          title="Drag to trim end"
                                        >
-                                         <div className="w-1 h-4 bg-slate-900 rounded-full" />
+                                         <div className="w-0.5 h-4 bg-slate-900 rounded-full" />
                                        </div>
                                      </>
                                    )}
@@ -2782,121 +2786,307 @@ Include:
           </div>
       </div>
 
-      {/* CapCut-Standard Swipable Bottom Footer Toolbar (Unified 2-Level Nested Architecture) */}
-      <div className="shrink-0 h-14 bg-[#050810]/95 backdrop-blur-xl border-t border-white/10 flex items-center px-2 z-40 relative">
-         {activeTool ? (
-           /* LEVEL 2: Sub-tool Drawer (Tapped into a primary tool like Edit, Audio, Text, Crop) */
-           <div className="flex items-center space-x-2 w-full overflow-x-auto scrollbar-none py-1">
-              {/* Back Button */}
-              <button 
-                onClick={() => setActiveTool(null)}
-                className="flex items-center space-x-1 px-3 py-1.5 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 rounded-xl text-xs font-bold shrink-0 border border-indigo-500/30 transition-colors"
+      {/* CapCut-Style Context-Sensitive Bottom Footer Toolbar */}
+      <div className="shrink-0 z-40 relative" style={{ backgroundColor: 'rgba(5,8,16,0.97)', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+
+        {/* CROP TOOL: Full overlay sheet — opens above footer when crop is active on mobile */}
+        {activeTool === 'crop' && (
+          <div className="fixed inset-0 z-50 flex flex-col bg-[#050810]">
+            {/* Crop header */}
+            <div className="flex items-center justify-between px-4 h-12 border-b border-white/10">
+              <button onClick={() => setActiveTool(null)} className="p-1.5 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+              <span className="text-sm font-bold text-white">Resize</span>
+              <button onClick={() => setActiveTool(null)} className="p-1.5 text-white"><Check className="w-5 h-5" /></button>
+            </div>
+
+            {/* Crop video preview */}
+            <div className="flex-1 bg-black flex items-center justify-center relative overflow-hidden p-4">
+              <div className="relative max-w-full max-h-full" style={{ width: '280px', height: '380px' }}>
+                <video
+                  src={objectUrl || undefined}
+                  className="w-full h-full object-contain bg-black"
+                  muted
+                  style={{
+                    filter: filterStyle,
+                    transform: `rotate(${rotate}deg)`
+                  }}
+                />
+                {/* Interactive Crop Box Overlay matching CapCut */}
+                <div
+                  onMouseDown={(e) => handleCropBoxStart("move", e)}
+                  onTouchStart={(e) => handleCropBoxStart("move", e)}
+                  style={{
+                    left: `${cropBox.left}%`,
+                    top: `${cropBox.top}%`,
+                    width: `${cropBox.width}%`,
+                    height: `${cropBox.height}%`
+                  }}
+                  className="absolute border-2 border-white cursor-move select-none shadow-[0_0_0_9999px_rgba(0,0,0,0.65)]"
+                >
+                  {/* 3x3 grid */}
+                  <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none">
+                    <div className="border-r border-b border-white/40" />
+                    <div className="border-r border-b border-white/40" />
+                    <div className="border-b border-white/40" />
+                    <div className="border-r border-b border-white/40" />
+                    <div className="border-r border-b border-white/40" />
+                    <div className="border-b border-white/40" />
+                    <div className="border-r border-white/40" />
+                    <div className="border-r border-white/40" />
+                    <div />
+                  </div>
+
+                  {/* 4 Interactive Corner Handles */}
+                  <div
+                    onMouseDown={(e) => handleCropBoxStart("top-left", e)}
+                    onTouchStart={(e) => handleCropBoxStart("top-left", e)}
+                    className="absolute -top-2.5 -left-2.5 w-6 h-6 border-t-4 border-l-4 border-white cursor-nwse-resize pointer-events-auto shadow-lg"
+                  />
+                  <div
+                    onMouseDown={(e) => handleCropBoxStart("top-right", e)}
+                    onTouchStart={(e) => handleCropBoxStart("top-right", e)}
+                    className="absolute -top-2.5 -right-2.5 w-6 h-6 border-t-4 border-r-4 border-white cursor-nesw-resize pointer-events-auto shadow-lg"
+                  />
+                  <div
+                    onMouseDown={(e) => handleCropBoxStart("bottom-left", e)}
+                    onTouchStart={(e) => handleCropBoxStart("bottom-left", e)}
+                    className="absolute -bottom-2.5 -left-2.5 w-6 h-6 border-b-4 border-l-4 border-white cursor-nesw-resize pointer-events-auto shadow-lg"
+                  />
+                  <div
+                    onMouseDown={(e) => handleCropBoxStart("bottom-right", e)}
+                    onTouchStart={(e) => handleCropBoxStart("bottom-right", e)}
+                    className="absolute -bottom-2.5 -right-2.5 w-6 h-6 border-b-4 border-r-4 border-white cursor-nwse-resize pointer-events-auto shadow-lg"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Time scrubber */}
+            <div className="flex items-center space-x-3 px-4 py-2 border-b border-white/5">
+              <span className="font-mono text-[11px] text-slate-400">00:00</span>
+              <input type="range" min="0" max={duration || 100} step="0.05" value={currentTime} onChange={handleScrub} className="flex-1 accent-white h-1 bg-white/20 rounded-full" />
+              <span className="font-mono text-[11px] text-slate-400">{formatTime(duration)}</span>
+            </div>
+
+            {/* Crop / AI expand tabs */}
+            <div className="flex border-b border-white/10 px-4">
+              <button className="py-2.5 mr-4 text-sm font-bold text-cyan-400 border-b-2 border-cyan-400">Crop</button>
+              <button className="py-2.5 text-sm font-medium text-slate-400 hover:text-white">AI expand</button>
+            </div>
+
+            {/* Rotate ruler */}
+            <div className="px-4 py-3 space-y-1">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-white font-medium">Rotate</span>
+                <span className="text-sm font-bold text-white">{rotate}°</span>
+              </div>
+              <input type="range" min="-45" max="45" step="1" value={rotate} onChange={(e) => setRotate(parseInt(e.target.value))} className="w-full accent-cyan-400 h-1 bg-white/20 rounded-full cursor-pointer" />
+            </div>
+
+            {/* Aspect ratio presets */}
+            <div className="px-4 pb-3 space-y-3">
+              <span className="text-sm font-medium text-white block">Aspect ratio</span>
+              <div className="flex space-x-3 overflow-x-auto scrollbar-none">
+                {[
+                  { r: 'custom', label: 'Custom', box: { left: 5, top: 5, width: 90, height: 90 } },
+                  { r: '9:16', label: '9:16', box: { left: 20, top: 5, width: 60, height: 90 } },
+                  { r: '16:9', label: '16:9', box: { left: 5, top: 25, width: 90, height: 50.6 } },
+                  { r: '1:1', label: '1:1', box: { left: 15, top: 15, width: 70, height: 70 } },
+                  { r: '4:3', label: '4:3', box: { left: 5, top: 18, width: 90, height: 64 } },
+                ].map((ar, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      if (ar.r !== 'custom') setAspectRatio(ar.r as any);
+                      setCropBox(ar.box);
+                    }}
+                    className="flex flex-col items-center space-y-1.5 shrink-0 cursor-pointer"
+                  >
+                    <div className={`w-12 h-14 rounded-xl flex items-center justify-center border-2 ${
+                      ((ar.r as string) === 'custom' && cropBox.width >= 85) || (aspectRatio === (ar.r as any) && (ar.r as string) !== 'custom')
+                        ? 'border-white bg-white/15'
+                        : 'border-slate-600 bg-white/5'
+                    }`}>
+                      {ar.r === 'custom'
+                        ? <Maximize2 className="w-4 h-4 text-white" />
+                        : <div className={`bg-slate-400 rounded-sm ${
+                            ar.r === '16:9' ? 'w-8 h-5'
+                            : ar.r === '1:1' ? 'w-6 h-6'
+                            : ar.r === '4:3' ? 'w-7 h-5'
+                            : 'w-4 h-7'
+                          }`} />}
+                    </div>
+                    <span className="text-[10px] font-medium text-slate-300">{ar.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              <button
+                onClick={() => { setZoom(1); setPanX(0); setPanY(0); setRotate(0); setAspectRatio('9:16'); setCropBox({ left: 5, top: 5, width: 90, height: 90 }); }}
+                className="flex items-center space-x-2 text-sm text-slate-400 hover:text-white transition-colors cursor-pointer"
               >
-                 <ChevronLeft className="w-4 h-4" />
-                 <span>Back</span>
+                <Trash2 className="w-4 h-4" />
+                <span>Reset</span>
               </button>
+            </div>
+          </div>
+        )}
 
-              <div className="w-px h-5 bg-white/10 shrink-0" />
+        {/* Main footer bar */}
+        <div className="h-[60px] flex items-center w-full overflow-hidden">
+          {activeTool && activeTool !== 'crop' ? (
+            /* Sub-tool level: Back + context tools */
+            <div className="flex items-center w-full overflow-x-auto scrollbar-none px-2 py-1 space-x-1">
+              {/* Back arrow */}
+              <button
+                onClick={() => setActiveTool(null)}
+                className="flex flex-col items-center justify-center w-10 h-10 text-slate-300 hover:text-white shrink-0"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <div className="w-px h-6 bg-white/15 shrink-0" />
 
-              {/* Level 2 Sub-tools depending on activeTool */}
+              {/* Sub-tools for 'edit' */}
               {activeTool === 'edit' && (
-                 <>
-                    <button onClick={handleSplitClip} className="flex flex-col items-center px-3 py-1 text-slate-300 hover:text-white shrink-0">
-                       <Scissors className="w-4 h-4 text-indigo-400" />
-                       <span className="text-[9px] font-medium mt-0.5">Split</span>
+                <>
+                  {[
+                    { icon: Scissors, label: 'Split', fn: handleSplitClip, color: 'text-indigo-400' },
+                    { icon: Layers, label: 'Fade', fn: () => {}, color: 'text-slate-300' },
+                    { icon: Volume2, label: 'Volume', fn: () => setIsMuted(!isMuted), color: 'text-slate-300' },
+                    { icon: Wand2, label: 'Animations', fn: () => setActiveTool('effects'), color: 'text-cyan-400' },
+                    { icon: Sparkles, label: 'Effects', fn: () => setActiveTool('effects'), color: 'text-violet-400' },
+                    { icon: Trash2, label: 'Delete', fn: () => selectedClipId && handleRemoveClip(selectedClipId), color: 'text-red-400' },
+                  ].map((t, i) => (
+                    <button key={i} onClick={t.fn} className={`flex flex-col items-center justify-center min-w-[52px] py-2 ${t.color} hover:text-white shrink-0 transition-colors`}>
+                      <t.icon className="w-5 h-5" />
+                      <span className="text-[9px] font-medium mt-0.5">{t.label}</span>
                     </button>
-                    <button onClick={() => setRotate((rotate + 90) % 360)} className="flex flex-col items-center px-3 py-1 text-slate-300 hover:text-white shrink-0">
-                       <RotateCw className="w-4 h-4" />
-                       <span className="text-[9px] font-medium mt-0.5">Rotate</span>
-                    </button>
-                    <button onClick={() => setFlipH(!flipH)} className="flex flex-col items-center px-3 py-1 text-slate-300 hover:text-white shrink-0">
-                       <FlipHorizontal className="w-4 h-4" />
-                       <span className="text-[9px] font-medium mt-0.5">Flip H</span>
-                    </button>
-                    <button onClick={() => setPlaybackSpeed(playbackSpeed === 1 ? 1.5 : playbackSpeed === 1.5 ? 2 : 1)} className="flex flex-col items-center px-3 py-1 text-slate-300 hover:text-white shrink-0">
-                       <FastForward className="w-4 h-4 text-cyan-400" />
-                       <span className="text-[9px] font-medium mt-0.5">{playbackSpeed}x</span>
-                    </button>
-                    {selectedClipId && (
-                       <button onClick={() => handleRemoveClip(selectedClipId)} className="flex flex-col items-center px-3 py-1 text-red-400 hover:text-red-300 shrink-0">
-                          <Trash2 className="w-4 h-4" />
-                          <span className="text-[9px] font-medium mt-0.5">Delete</span>
-                       </button>
-                    )}
-                 </>
+                  ))}
+                </>
               )}
 
-              {activeTool === 'crop' && (
-                 <div className="flex items-center space-x-3 overflow-x-auto scrollbar-none py-0.5">
-                    {/* Rotation Dial Quick Controls */}
-                    <div className="flex items-center space-x-1 border-r border-white/10 pr-2 shrink-0">
-                       <span className="text-[9px] font-bold text-slate-400">Rot: {rotate}°</span>
-                       <input 
-                         type="range" 
-                         min={-45} 
-                         max={45} 
-                         value={rotate} 
-                         onChange={(e) => setRotate(parseInt(e.target.value))}
-                         className="w-20 accent-cyan-400 h-1 bg-white/10 rounded-full cursor-pointer" 
-                       />
-                    </div>
-
-                    {/* Aspect Ratio Presets */}
-                    <div className="flex items-center space-x-1.5 shrink-0">
-                       <button onClick={() => setAspectRatio("9:16")} className={`px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 border ${aspectRatio === '9:16' ? 'bg-cyan-500/30 text-cyan-300 border-cyan-400' : 'bg-white/5 border-white/10 text-slate-400'}`}>
-                          Custom
-                       </button>
-                       {[{ r: '9:16', l: '9:16' }, { r: '16:9', l: '16:9' }, { r: '1:1', l: '1:1' }, { r: '4:3', l: '4:3' }].map(r => (
-                          <button key={r.r} onClick={() => setAspectRatio(r.r as any)} className={`px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 border ${aspectRatio === r.r ? 'bg-indigo-500 text-white border-indigo-400' : 'bg-white/5 border-white/10 text-slate-400'}`}>
-                             {r.l}
-                          </button>
-                       ))}
-                    </div>
-
-                    <button onClick={() => { setZoom(1); setPanX(0); setPanY(0); setRotate(0); setAspectRatio('9:16'); setCropBox({ left: 5, top: 5, width: 90, height: 90 }); }} className="flex flex-col items-center px-2 py-1 text-slate-400 hover:text-white shrink-0">
-                       <RefreshCw className="w-3.5 h-3.5" />
-                       <span className="text-[8px] font-medium mt-0.5">Reset</span>
-                    </button>
-                 </div>
-              )}
-
+              {/* Sub-tools for 'audio' */}
               {activeTool === 'audio' && (
-                 <>
-                    <button onClick={() => {}} className="flex flex-col items-center px-3 py-1 text-violet-400 shrink-0">
-                       <Plus className="w-4 h-4" />
-                       <span className="text-[9px] font-medium mt-0.5">Add Track</span>
+                <>
+                  {[
+                    { icon: Plus, label: 'Add', fn: () => {}, color: 'text-violet-400' },
+                    { icon: Volume2, label: 'Volume', fn: () => setIsMuted(!isMuted), color: 'text-slate-300' },
+                    { icon: Music, label: 'Effects', fn: () => {}, color: 'text-slate-300' },
+                    { icon: Trash2, label: 'Delete', fn: () => setSelectedAudio(null), color: 'text-red-400' },
+                  ].map((t, i) => (
+                    <button key={i} onClick={t.fn} className={`flex flex-col items-center justify-center min-w-[52px] py-2 ${t.color} hover:text-white shrink-0 transition-colors`}>
+                      <t.icon className="w-5 h-5" />
+                      <span className="text-[9px] font-medium mt-0.5">{t.label}</span>
                     </button>
-                    <button onClick={() => setIsMuted(!isMuted)} className="flex flex-col items-center px-3 py-1 text-slate-300 shrink-0">
-                       {isMuted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4" />}
-                       <span className="text-[9px] font-medium mt-0.5">{isMuted ? 'Muted' : 'Volume'}</span>
-                    </button>
-                 </>
+                  ))}
+                </>
               )}
 
+              {/* Sub-tools for 'text' */}
               {activeTool === 'text' && (
-                 <>
-                    <button onClick={handleAddTextOverlay} className="flex flex-col items-center px-3 py-1 text-yellow-400 shrink-0">
-                       <Plus className="w-4 h-4" />
-                       <span className="text-[9px] font-medium mt-0.5">Add Text</span>
+                <>
+                  {[
+                    { icon: Plus, label: 'Add Text', fn: handleAddTextOverlay, color: 'text-yellow-400' },
+                    { icon: Type, label: 'Style', fn: () => {}, color: 'text-slate-300' },
+                    { icon: AlignCenter, label: 'Align', fn: () => {}, color: 'text-slate-300' },
+                    { icon: Trash2, label: 'Delete', fn: () => setTextOverlays([]), color: 'text-red-400' },
+                  ].map((t, i) => (
+                    <button key={i} onClick={t.fn} className={`flex flex-col items-center justify-center min-w-[52px] py-2 ${t.color} hover:text-white shrink-0 transition-colors`}>
+                      <t.icon className="w-5 h-5" />
+                      <span className="text-[9px] font-medium mt-0.5">{t.label}</span>
                     </button>
-                 </>
+                  ))}
+                </>
               )}
-           </div>
-         ) : (
-           /* LEVEL 1: Primary Swipable Bottom Toolbar (Swipe horizontally to access all 13 tools) */
-           <div className="flex items-center space-x-1.5 w-full overflow-x-auto scrollbar-none py-1">
-              {TOOLS.map((tool: any) => (
-                 <button 
-                   key={tool.id} 
-                   onClick={() => setActiveTool(tool.id)}
-                   className="flex flex-col items-center justify-center min-w-[56px] px-2 py-1 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-all shrink-0"
-                 >
-                    <tool.icon className="w-4 h-4" />
-                    <span className="text-[9px] font-medium mt-0.5 tracking-tight whitespace-nowrap">{tool.label}</span>
-                 </button>
-              ))}
-           </div>
-         )}
+
+              {/* Sub-tools for 'effects' */}
+              {activeTool === 'effects' && (
+                <div className="flex items-center space-x-1 overflow-x-auto scrollbar-none">
+                  {[
+                    { id: 'none', name: 'None' },
+                    { id: 'glitch', name: 'Glitch' },
+                    { id: 'neon', name: 'Neon' },
+                    { id: 'vhs', name: 'VHS' },
+                    { id: 'grain', name: 'Grain' },
+                    { id: 'blur', name: 'Blur' },
+                    { id: 'golden', name: 'Gold' },
+                  ].map(eff => (
+                    <button
+                      key={eff.id}
+                      onClick={() => setSelectedEffect(eff.id)}
+                      className={`flex flex-col items-center min-w-[52px] py-2 shrink-0 transition-colors ${
+                        selectedEffect === eff.id ? 'text-violet-300' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <div className={`w-9 h-9 rounded-xl mb-0.5 flex items-center justify-center border ${
+                        selectedEffect === eff.id
+                          ? 'bg-violet-500/30 border-violet-500'
+                          : 'bg-white/5 border-white/10'
+                      }`}>
+                        <Sparkles className="w-4 h-4" />
+                      </div>
+                      <span className="text-[9px] font-medium">{eff.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Fallback for other tools */}
+              {!['edit', 'audio', 'text', 'effects'].includes(activeTool) && (
+                <span className="text-xs text-slate-500 px-4">{activeTool} tools</span>
+              )}
+            </div>
+          ) : activeTool !== 'crop' ? (
+            /* Main primary tools — CapCut style */
+            selectedClipId ? (
+              /* Clip selected: show clip-context tools */
+              <div className="flex items-center w-full overflow-x-auto scrollbar-none px-2 py-1 space-x-1">
+                <button onClick={() => setSelectedClipId(null)} className="flex flex-col items-center justify-center w-10 h-10 text-slate-400 hover:text-white shrink-0">
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <div className="w-px h-6 bg-white/15 shrink-0" />
+                {[
+                  { icon: Scissors, label: 'Split', fn: handleSplitClip, color: 'text-slate-300' },
+                  { icon: Layers, label: 'Fade', fn: () => {}, color: 'text-slate-300' },
+                  { icon: Volume2, label: 'Volume', fn: () => setActiveTool('audio'), color: 'text-slate-300' },
+                  { icon: Wand2, label: 'Animations', fn: () => setActiveTool('effects'), color: 'text-slate-300' },
+                  { icon: Sparkles, label: 'Effects', fn: () => setActiveTool('effects'), color: 'text-slate-300' },
+                  { icon: Trash2, label: 'Delete', fn: () => { handleRemoveClip(selectedClipId); setSelectedClipId(null); }, color: 'text-red-400' },
+                ].map((t, i) => (
+                  <button key={i} onClick={t.fn} className={`flex flex-col items-center justify-center min-w-[56px] py-2 ${t.color} hover:text-white shrink-0 transition-colors`}>
+                    <t.icon className="w-5 h-5" />
+                    <span className="text-[9px] font-medium mt-0.5">{t.label}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              /* No clip selected: show main tool categories */
+              <div className="flex items-center w-full overflow-x-auto scrollbar-none px-3 space-x-1">
+                {[
+                  { icon: Scissors, label: 'Edit', id: 'edit', color: 'text-slate-300' },
+                  { icon: Music, label: 'Audio', id: 'audio', color: 'text-slate-300' },
+                  { icon: Type, label: 'Text', id: 'text', color: 'text-slate-300' },
+                  { icon: Sparkles, label: 'Effects', id: 'effects', color: 'text-slate-300' },
+                  { icon: ImageIcon, label: 'Overlay', id: 'stickers', color: 'text-slate-300' },
+                  { icon: AlignCenter, label: 'Captions', id: 'captions', color: 'text-slate-300' },
+                  { icon: Crop, label: 'Crop', id: 'crop', color: 'text-slate-300' },
+                  { icon: SlidersHorizontal, label: 'Adjust', id: 'adjust', color: 'text-slate-300' },
+                  { icon: Filter, label: 'Filters', id: 'filters', color: 'text-slate-300' },
+                  { icon: Wand2, label: 'AI Tools', id: 'ai_veo', color: 'text-violet-400' },
+                ].map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setActiveTool(t.id as any)}
+                    className={`flex flex-col items-center justify-center min-w-[56px] py-2 ${t.color} hover:text-white shrink-0 transition-colors`}
+                  >
+                    <t.icon className="w-5 h-5" />
+                    <span className="text-[9px] font-medium mt-1 whitespace-nowrap">{t.label}</span>
+                  </button>
+                ))}
+              </div>
+            )
+          ) : null}
+        </div>
       </div>
 
       {/* Export Modal */}
@@ -2969,6 +3159,12 @@ Include:
         isOpen={showSettingsModal} 
         onClose={() => setShowSettingsModal(false)} 
         onThemeChange={(t) => setEditorTheme(t)} 
+      />
+      
+      {/* Admin Login Modal */}
+      <AdminLoginModal
+        isOpen={showAdminModal}
+        onClose={() => setShowAdminModal(false)}
       />
     </div>
   );

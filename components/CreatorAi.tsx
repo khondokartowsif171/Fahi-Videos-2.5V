@@ -25,7 +25,8 @@ import {
   Music,
   Volume2,
   Copy,
-  FileAudio
+  FileAudio,
+  Trash2
 } from "lucide-react";
 import { logActivity } from "@/lib/activity";
 import { getAiHeaders } from "@/lib/ai-client";
@@ -187,10 +188,19 @@ export default function CreatorAi() {
           useMapsGrounding: useMapsGrounding,
         }),
       });
-
-      const data = await response.json();
-      if (data.error) {
-        throw new Error(data.error);
+      const data = await response.json().catch(() => ({ error: "Invalid JSON response from server" }));
+      if (!response.ok || data.error) {
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            id: `err-${Date.now()}`,
+            sender: "ai",
+            text: `⚠️ ${data.error || "Failed to contact AI engine. Please verify your settings or try again."}`,
+            timestamp: new Date(),
+          }
+        ]);
+        setIsChatLoading(false);
+        return;
       }
 
       const aiMsg: Message = {
@@ -339,6 +349,11 @@ export default function CreatorAi() {
   const [videoMessage, setVideoMessage] = useState("");
   const [isVideoFallback, setIsVideoFallback] = useState(false);
 
+  // Google Flow Media Gallery state
+  const [videoHistory, setVideoHistory] = useState<Array<{ id: string; url: string; prompt: string; date: string; resolution: string; duration: string; isFallback: boolean }>>([]);
+  const [activeMediaTab, setActiveMediaTab] = useState<'all' | 'videos' | 'images'>('all');
+  const [flowChatInput, setFlowChatInput] = useState('');
+
   const reassuringMessages = [
     "Spinning up high-speed Veo 3 nodes...",
     "Decoding video prompt semantics...",
@@ -448,6 +463,7 @@ export default function CreatorAi() {
           }
           // Download video binary securely
           fetchVideoBlobAndSet(operationName);
+          setVideoHistory(prev => [...prev, { id: Date.now().toString(), url: '', prompt: videoPrompt || 'Image to Video', date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), resolution: videoResolution === '1080p' ? '1080p' : '720p', duration: '6s', isFallback: data.isFallback || false }]);
         }
       } catch (err) {
         console.error("Polling error:", err);
@@ -472,6 +488,7 @@ export default function CreatorAi() {
       const blob = await response.blob();
       const localUrl = URL.createObjectURL(blob);
       setVeoResultUrl(localUrl);
+      setVideoHistory(prev => prev.map((v, i) => i === prev.length - 1 ? { ...v, url: localUrl } : v));
       
       logActivity({
         type: "ai_generate",
@@ -1264,180 +1281,233 @@ export default function CreatorAi() {
             WORKSPACE LAYOUT: AI VIDEO STUDIO
             =================================================================== */}
         {activeWorkspace === "video" && (
-          <div className="p-6 flex flex-col flex-1 h-full justify-between">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch h-full">
-              
-              {/* Creator Settings Form */}
-              <div className="space-y-6 flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center space-x-2 mb-6">
-                    <Video className="w-5 h-5 text-indigo-400" />
-                    <h4 className="text-white font-bold text-sm">Veo 3 Video Studio</h4>
-                  </div>
+  <div className="flex flex-col lg:flex-row h-full min-h-[560px] overflow-hidden">
+    {/* LEFT: Media Gallery Sidebar */}
+    <div className="w-full lg:w-56 xl:w-64 flex flex-col bg-black/30 border-b lg:border-b-0 lg:border-r border-white/5 shrink-0">
+      {/* Media Tabs */}
+      <div className="p-3 border-b border-white/5">
+        <div className="space-y-0.5">
+          {[
+            { id: 'all', label: 'All Media', icon: '🎬' },
+            { id: 'videos', label: 'Videos', icon: '📹' },
+            { id: 'images', label: 'Images', icon: '🖼️' },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveMediaTab(tab.id as any)}
+              className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                activeMediaTab === tab.id
+                  ? 'bg-white/10 text-white'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <span className="text-sm">{tab.icon}</span>
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
 
-                  <div className="space-y-4">
-                    {/* Image upload for animate/image-to-video */}
-                    <div className="space-y-3.5 bg-black/15 p-4 rounded-xl border border-white/5">
-                      <span className="text-[11px] font-bold text-slate-300 block">Source Photo (Animate Image)</span>
-                      
-                      <div className="flex items-center space-x-3">
-                        <div className="relative flex-1">
-                          <input 
-                            type="file" 
-                            accept="image/*" 
-                            onChange={handleVideoSourceImageUpload} 
-                            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                          />
-                          <button className="w-full py-2 bg-[#0a0a0c] border border-white/10 hover:border-indigo-500/30 rounded-xl text-[11px] font-medium text-slate-400 transition-colors flex items-center justify-center">
-                            <Upload className="w-3.5 h-3.5 mr-1.5 text-slate-500" />
-                            {videoSourceImagePreview ? "Change Photo" : "Upload Photo to Animate"}
-                          </button>
-                        </div>
-
-                        {videoSourceImagePreview && (
-                          <div className="w-9 h-9 rounded-lg border border-white/10 overflow-hidden relative">
-                            <img src={videoSourceImagePreview} alt="source thumbnail" className="w-full h-full object-cover" />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Text Prompt */}
-                    <div className="space-y-1.5">
-                      <span className="text-[11px] font-bold text-slate-300">Video Motion Prompt</span>
-                      <textarea
-                        rows={2.5}
-                        value={videoPrompt}
-                        onChange={(e) => setVideoPrompt(e.target.value)}
-                        placeholder="Describe the action or subject motion (e.g. 'Cinematic tracking shot, neon waterfall in jungle, dramatic sunset'...) "
-                        className="w-full bg-[#0a0a0c] border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 resize-none"
-                      />
-                    </div>
-
-                    {/* Controls */}
-                    <div className="grid grid-cols-2 gap-4">
-                      {/* Aspect Ratio */}
-                      <div className="space-y-1.5">
-                        <span className="text-[10px] text-slate-400 font-mono">Aspect Ratio</span>
-                        <select
-                          value={videoAspectRatio}
-                          onChange={(e) => setVideoAspectRatio(e.target.value)}
-                          className="w-full bg-[#0a0a0c] border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
-                        >
-                          <option value="16:9">16:9 Landscape</option>
-                          <option value="9:16">9:16 Portrait</option>
-                        </select>
-                      </div>
-
-                      {/* Resolution */}
-                      <div className="space-y-1.5">
-                        <span className="text-[10px] text-slate-400 font-mono">Resolution</span>
-                        <select
-                          value={videoResolution}
-                          onChange={(e) => setVideoResolution(e.target.value)}
-                          className="w-full bg-[#0a0a0c] border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
-                        >
-                          <option value="720p">720p HD</option>
-                          <option value="1080p">1080p Full HD</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={handleGenerateVideo}
-                      disabled={videoJobStatus === "running" || (!videoPrompt.trim() && !videoSourceImageBase64)}
-                      className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-bold text-xs rounded-xl flex items-center justify-center transition-colors shadow-lg cursor-pointer shadow-indigo-600/10"
-                    >
-                      {videoJobStatus === "running" ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
-                          <span>Generating Veo Clip...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Video className="w-3.5 h-3.5 mr-2" />
-                          <span>Render Veo Video</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Rendering status or Final Video Output Preview */}
-              <div className="flex flex-col rounded-2xl border border-white/5 bg-[#0a0a0c] p-4 items-center justify-center min-h-[350px]">
-                {videoJobStatus === "running" ? (
-                  <div className="text-center space-y-4 max-w-xs animate-pulse">
-                    <Loader2 className="w-10 h-10 text-indigo-400 animate-spin mx-auto" />
-                    <h5 className="text-white font-semibold text-xs">Veo 3 Engine Rendering</h5>
-                    <p className="text-[10px] text-slate-400 font-mono italic leading-relaxed">
-                      &ldquo;{reassuringMessage}&rdquo;
-                    </p>
-                    <p className="text-[9px] text-slate-600">
-                      High-fidelity video rendering is computationally intense and typically completes in 30-90 seconds. Please keep this screen open.
-                    </p>
-                  </div>
-                ) : veoDownloadLoading ? (
-                  <div className="text-center space-y-3.5 max-w-xs">
-                    <Loader2 className="w-8 h-8 text-indigo-400 animate-spin mx-auto" />
-                    <h5 className="text-white font-semibold text-xs">Downloading Asset</h5>
-                    <p className="text-[10px] text-slate-500 font-mono">
-                      Securely pulling final generated video container from Google Cloud...
-                    </p>
-                  </div>
-                ) : veoResultUrl ? (
-                  <div className="w-full h-full flex flex-col justify-between items-center space-y-4">
-                    {isVideoFallback && (
-                      <div className="w-full bg-indigo-600/10 border border-indigo-500/20 rounded-xl p-3 flex items-center space-x-2 text-[10px] text-indigo-400">
-                        <Sparkles className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0 animate-pulse" />
-                        <span className="font-semibold">{videoMessage || "Served standard stock video because direct generation is restricted or your key has hit rate limits."}</span>
-                      </div>
-                    )}
-                    <div className="flex-1 w-full flex items-center justify-center overflow-hidden rounded-xl border border-white/5 bg-black relative">
-                      <video
-                        src={veoResultUrl}
-                        controls
-                        className="max-h-[320px] rounded-xl w-full"
-                        autoPlay
-                        loop
-                        muted
-                      />
-                    </div>
-
-                    <div className="w-full grid grid-cols-2 gap-3">
-                      <a
-                        href={veoResultUrl}
-                        download={`veo-video-${Date.now()}.mp4`}
-                        className="py-2.5 bg-zinc-800 hover:bg-zinc-750 text-white font-semibold text-xs rounded-xl flex items-center justify-center transition-colors"
-                      >
-                        <Download className="w-3.5 h-3.5 mr-1.5" />
-                        <span>Download MP4</span>
-                      </a>
-
-                      <button
-                        onClick={handleSendToVideoStudio}
-                        className="py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl flex items-center justify-center transition-colors shadow-lg cursor-pointer"
-                      >
-                        <ArrowRight className="w-3.5 h-3.5 mr-1.5" />
-                        <span>Add to Studio Timeline</span>
-                      </button>
-                    </div>
-                  </div>
+      {/* Generated Video List */}
+      <div className="flex-1 overflow-y-auto p-2 space-y-2 max-h-[280px] lg:max-h-none">
+        {videoHistory.length === 0 ? (
+          <div className="text-center p-6 space-y-2">
+            <div className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center mx-auto">
+              <Video className="w-5 h-5 text-slate-500" />
+            </div>
+            <p className="text-[10px] text-slate-500 leading-relaxed">Generated videos will appear here</p>
+          </div>
+        ) : (
+          videoHistory.filter(v => activeMediaTab === 'all' || activeMediaTab === 'videos').map((vid) => (
+            <div
+              key={vid.id}
+              className="flex items-center space-x-2 p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 cursor-pointer transition-all group"
+              onClick={() => vid.url && setVeoResultUrl(vid.url)}
+            >
+              {/* Thumbnail */}
+              <div className="w-16 h-10 rounded-lg bg-gradient-to-br from-indigo-900/50 to-violet-900/50 border border-white/10 flex-shrink-0 overflow-hidden flex items-center justify-center">
+                {vid.url ? (
+                  <video src={vid.url} className="w-full h-full object-cover" muted />
                 ) : (
-                  <div className="text-center space-y-3.5 p-6 max-w-sm">
-                    <div className="w-12 h-12 bg-white/5 border border-white/10 rounded-2xl flex items-center justify-center mx-auto">
-                      <FileVideo className="w-6 h-6 text-slate-500" />
-                    </div>
-                    <h5 className="text-white font-semibold text-xs">Video Studio Preview</h5>
-                    <p className="text-[10px] text-slate-500 leading-relaxed">
-                      Rendered high-fidelity motion videos will appear here ready for direct timeline importation.
-                    </p>
-                  </div>
+                  <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />
                 )}
               </div>
+              {/* Meta */}
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] text-white font-medium truncate">{vid.prompt.slice(0, 28) || 'AI Video'}</p>
+                <p className="text-[9px] text-slate-500">Created {vid.date}</p>
+                <div className="flex items-center space-x-1.5 mt-0.5">
+                  <span className="text-[9px] text-slate-400 font-mono">{vid.resolution}</span>
+                  <span className="text-slate-600">·</span>
+                  <span className="text-[9px] text-slate-400 font-mono">{vid.duration}</span>
+                </div>
+              </div>
+              {/* Download */}
+              {vid.url && (
+                <a
+                  href={vid.url}
+                  download={`flow-video-${vid.id}.mp4`}
+                  onClick={e => e.stopPropagation()}
+                  className="opacity-0 group-hover:opacity-100 p-1 rounded-lg bg-white/10 hover:bg-indigo-500/30 transition-all"
+                >
+                  <Download className="w-3 h-3 text-slate-300" />
+                </a>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Bottom actions */}
+      <div className="p-3 border-t border-white/5 space-y-1.5">
+        <button className="w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-xs text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer">
+          <Trash2 className="w-3.5 h-3.5" />
+          <span>Trash</span>
+        </button>
+      </div>
+    </div>
+
+    {/* MAIN: Video Preview + Generation */}
+    <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      {/* Video Preview */}
+      <div className="flex-1 flex items-center justify-center p-4 min-h-[200px] bg-black/20 border-b border-white/5">
+        {videoJobStatus === 'running' ? (
+          <div className="text-center space-y-3 max-w-xs">
+            <Loader2 className="w-10 h-10 text-indigo-400 animate-spin mx-auto" />
+            <p className="text-xs text-white font-semibold">Generating Video...</p>
+            <p className="text-[10px] text-slate-400 italic">&ldquo;{reassuringMessage}&rdquo;</p>
+          </div>
+        ) : veoDownloadLoading ? (
+          <div className="text-center space-y-3">
+            <Loader2 className="w-8 h-8 text-indigo-400 animate-spin mx-auto" />
+            <p className="text-xs text-slate-400">Downloading video asset...</p>
+          </div>
+        ) : veoResultUrl ? (
+          <div className="w-full max-w-lg space-y-3">
+            {isVideoFallback && (
+              <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-2 text-[10px] text-indigo-400 flex items-center space-x-2">
+                <Sparkles className="w-3 h-3 flex-shrink-0" />
+                <span>{videoMessage || 'Smart fallback video (API quota limit reached)'}</span>
+              </div>
+            )}
+            <div className="rounded-2xl overflow-hidden border border-white/10 bg-black">
+              <video src={veoResultUrl} controls autoPlay loop muted className="w-full max-h-[280px] object-contain" />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <a href={veoResultUrl} download={`flow-video-${Date.now()}.mp4`} className="flex items-center justify-center space-x-1.5 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs text-white font-semibold transition-colors">
+                <Download className="w-3.5 h-3.5" /><span>Download MP4</span>
+              </a>
+              <button onClick={handleSendToVideoStudio} className="flex items-center justify-center space-x-1.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs text-white font-bold transition-colors">
+                <ArrowRight className="w-3.5 h-3.5" /><span>Add to Timeline</span>
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center space-y-3 p-6">
+            <div className="w-14 h-14 bg-gradient-to-tr from-violet-600/20 to-indigo-600/20 border border-indigo-500/20 rounded-2xl flex items-center justify-center mx-auto">
+              <Video className="w-7 h-7 text-indigo-400" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-white">Google Flow Video Studio</p>
+              <p className="text-[10px] text-slate-400 mt-1">Powered by Veo 2 & Gemini</p>
             </div>
           </div>
         )}
+      </div>
+
+      {/* BOTTOM: Prompt input & controls (Google Flow chat-style) */}
+      <div className="p-4 space-y-3 bg-black/30">
+        {/* Source Photo Upload */}
+        <div className="flex items-center space-x-2">
+          <div className="relative">
+            <input type="file" accept="image/*" onChange={handleVideoSourceImageUpload} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
+            <button className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:border-white/20 text-[11px] text-slate-400 transition-colors">
+              <Upload className="w-3 h-3" />
+              <span>{videoSourceImagePreview ? 'Change Image' : 'Upload Image'}</span>
+            </button>
+          </div>
+          {videoSourceImagePreview && (
+            <img src={videoSourceImagePreview} alt="source" className="w-8 h-8 rounded-lg object-cover border border-white/10" />
+          )}
+          {/* Aspect / Resolution selectors */}
+          <select value={videoAspectRatio} onChange={e => setVideoAspectRatio(e.target.value)} className="ml-auto bg-[#0a0a0c] border border-white/10 rounded-lg px-2 py-1.5 text-[11px] text-slate-300 focus:outline-none focus:border-indigo-500">
+            <option value="16:9">16:9</option>
+            <option value="9:16">9:16</option>
+          </select>
+          <select value={videoResolution} onChange={e => setVideoResolution(e.target.value)} className="bg-[#0a0a0c] border border-white/10 rounded-lg px-2 py-1.5 text-[11px] text-slate-300 focus:outline-none focus:border-indigo-500">
+            <option value="720p">720p</option>
+            <option value="1080p">1080p</option>
+          </select>
+        </div>
+
+        {/* Prompt textarea + Generate button */}
+        <div className="flex items-end space-x-2">
+          <div className="flex-1 relative">
+            <textarea
+              rows={2}
+              value={videoPrompt}
+              onChange={e => setVideoPrompt(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && e.ctrlKey) handleGenerateVideo(); }}
+              placeholder="What do you want to create? (e.g. A 25-year-old Bengali woman talking to camera, UGC style, 9:16)"
+              className="w-full bg-[#0a0a0c] border border-white/10 rounded-xl px-3.5 py-2.5 pr-12 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"
+            />
+          </div>
+          <button
+            onClick={handleGenerateVideo}
+            disabled={videoJobStatus === 'running' || (!videoPrompt.trim() && !videoSourceImageBase64)}
+            className="p-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-white transition-colors flex-shrink-0 cursor-pointer"
+          >
+            {videoJobStatus === 'running' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+          </button>
+        </div>
+
+        {/* Gemini model badge */}
+        <div className="flex items-center space-x-2 text-[10px] text-slate-500">
+          <span className="flex items-center space-x-1 px-2 py-0.5 rounded-full bg-white/5 border border-white/10">
+            <Sparkles className="w-2.5 h-2.5 text-indigo-400" />
+            <span className="text-slate-400">Veo 2 · Gemini</span>
+          </span>
+          <span>Ctrl+Enter to generate</span>
+        </div>
+      </div>
+    </div>
+
+    {/* RIGHT: Scene Breakdown Panel (desktop only) */}
+    <div className="hidden xl:flex w-72 flex-col bg-black/30 border-l border-white/5 p-4 space-y-4">
+      <div>
+        <h4 className="text-xs font-bold text-white mb-3">Prompt Details</h4>
+        {videoPrompt ? (
+          <div className="text-[10px] text-slate-300 leading-relaxed bg-white/5 rounded-xl p-3 border border-white/10 max-h-32 overflow-y-auto">
+            {videoPrompt}
+          </div>
+        ) : (
+          <div className="text-[10px] text-slate-500 italic">No prompt yet. Type your scene description below.</div>
+        )}
+      </div>
+
+      {videoHistory.length > 0 && (
+        <div>
+          <h4 className="text-xs font-bold text-white mb-3">Scene History</h4>
+          <div className="space-y-2">
+            {videoHistory.slice(-4).map((vid, i) => (
+              <div key={vid.id} className="text-[10px] text-slate-400 bg-white/5 rounded-lg p-2 border border-white/5">
+                <p className="font-semibold text-slate-300">Scene {i + 1}</p>
+                <p className="truncate">{vid.prompt || 'Image to Video'}</p>
+                <p className="text-slate-600">{vid.date} · {vid.resolution}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="pt-2 border-t border-white/5">
+        <p className="text-[9px] text-slate-500 leading-relaxed">
+          Google Flow can make mistakes, so double check important information.
+        </p>
+      </div>
+    </div>
+  </div>
+)}
 
         {/* ===================================================================
             WORKSPACE LAYOUT: AI MUSIC STUDIO (LYRIA)

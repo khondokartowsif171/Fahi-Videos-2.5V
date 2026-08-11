@@ -1,5 +1,6 @@
 "use client";
-import React, { useEffect } from "react";
+
+import React from "react";
 
 export default function GlobalError({
   error,
@@ -8,24 +9,17 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  useEffect(() => {
-    console.error("Global error caught:", error);
-  }, [error]);
-
   return (
-    <html lang="en" className="dark">
-      <body className="bg-[#050810] text-slate-100 p-8 font-sans">
-        <div className="max-w-2xl mx-auto space-y-4 border border-red-500/30 bg-red-500/10 p-6 rounded-2xl">
-          <h2 className="text-xl font-bold text-red-400">Application Error Caught:</h2>
-          <pre className="text-xs bg-black/60 p-4 rounded-xl text-red-200 overflow-x-auto whitespace-pre-wrap font-mono">
-            {error?.message || String(error)}
-            {error?.stack ? `\n\nStack:\n${error.stack}` : ""}
-          </pre>
+    <html lang="en">
+      <body className="bg-[#050810] text-white flex items-center justify-center min-h-screen font-sans">
+        <div className="p-8 max-w-xl mx-auto bg-red-950/20 border border-red-500/30 rounded-2xl text-center space-y-4">
+          <h2 className="text-lg font-bold text-red-400">Application Error</h2>
+          <p className="text-xs font-mono text-red-300/80">{error?.message || "An unexpected application error occurred."}</p>
           <button
             onClick={() => reset()}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl"
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition-colors"
           >
-            Try Again
+            Try again
           </button>
         </div>
       </body>

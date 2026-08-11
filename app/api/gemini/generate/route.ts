@@ -67,27 +67,29 @@ async function generateContentWithModelFallback(ai: GoogleGenAI, payload: {
 
 export async function POST(req: NextRequest) {
   const apiKey = req.headers.get("x-gemini-api-key") || process.env.GEMINI_API_KEY;
+  let reqBody: any = {};
+  try {
+    reqBody = await req.json();
+  } catch (e) {
+    reqBody = {};
+  }
 
   // ── n8n Webhook Routing ──────────────────────────────────────────────────
-  // If the client passes 'x-n8n-webhook-url', we forward the full request
-  // body to that n8n webhook instead of calling Gemini directly.
-  // n8n workflow should receive: { prompt, model, apiKey, action, ...rest }
-  // and return: { text: "..." } (or any shape — we pass it through as-is).
+  // If client passes 'x-n8n-webhook-url', forward payload to n8n webhook.
+  // If n8n returns success, return n8n output. If n8n fails or 404s, fall back to direct Gemini.
   const n8nWebhookUrl = req.headers.get("x-n8n-webhook-url");
   if (n8nWebhookUrl) {
     try {
-      const body = await req.json();
       const n8nPayload = {
-        ...body,
+        ...reqBody,
         apiKey: apiKey || "",
-        action: body.task || "generate",
+        action: reqBody.task || "generate",
         source: "fahi-videos",
       };
 
       const n8nHeaders: Record<string, string> = { 
         "Content-Type": "application/json" 
       };
-      // Forward n8n API key if provided (for authenticated n8n instances)
       const n8nApiKey = req.headers.get("x-n8n-api-key");
       if (n8nApiKey) {
         n8nHeaders["X-N8N-API-KEY"] = n8nApiKey;
@@ -99,22 +101,15 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify(n8nPayload),
       });
 
-      if (!n8nResponse.ok) {
-        const errText = await n8nResponse.text();
-        return NextResponse.json(
-          { error: `n8n webhook error (${n8nResponse.status}): ${errText}` },
-          { status: n8nResponse.status }
-        );
+      if (n8nResponse.ok) {
+        const n8nData = await n8nResponse.json().catch(() => null);
+        if (n8nData && (n8nData.text || n8nData.content || n8nData.result)) {
+          return NextResponse.json({ ...n8nData, via: "n8n" });
+        }
       }
-
-      // Pass n8n's response directly back to the client
-      const n8nData = await n8nResponse.json().catch(() => ({ text: "" }));
-      return NextResponse.json({ ...n8nData, via: "n8n" });
+      console.warn(`[n8n Webhook] Webhook status ${n8nResponse.status}. Falling back seamlessly to Gemini AI.`);
     } catch (n8nErr: any) {
-      return NextResponse.json(
-        { error: `Failed to reach n8n webhook: ${n8nErr.message || n8nErr}` },
-        { status: 502 }
-      );
+      console.warn(`[n8n Webhook] Failed to reach n8n (${n8nErr.message}). Falling back seamlessly to Gemini AI.`);
     }
   }
   // ── End n8n Routing ──────────────────────────────────────────────────────
@@ -129,7 +124,7 @@ export async function POST(req: NextRequest) {
   });
 
   try {
-    const body = await req.json();
+    const body = reqBody;
     const { task } = body;
 
     if (task === "chat") {

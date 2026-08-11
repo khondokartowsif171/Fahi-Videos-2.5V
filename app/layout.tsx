@@ -2,6 +2,8 @@ import "./globals.css";
 import React from "react";
 import { Metadata, Viewport } from "next";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Fahi Vids — Professional Video Studio",
   description: "Download, edit, and create videos with AI — free, in your browser. No signup. No watermarks.",
