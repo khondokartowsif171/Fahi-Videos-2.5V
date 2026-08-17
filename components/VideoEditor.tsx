@@ -62,6 +62,14 @@ interface AudioTrack {
   category: string;
   duration: string;
   bpm: number;
+  url?: string;
+}
+
+interface BanglaVoice {
+  voiceId: string;
+  name: string;
+  gender: string;
+  tone: string;
 }
 
 interface CaptionItem {
@@ -294,6 +302,43 @@ export default function VideoEditor() {
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [banglaVoices, setBanglaVoices] = useState<BanglaVoice[]>([]);
+  const [selectedVoiceId, setSelectedVoiceId] = useState("");
+  const [voiceoverScript, setVoiceoverScript] = useState("");
+  const [generatingVoiceover, setGeneratingVoiceover] = useState(false);
+  const [voiceoverError, setVoiceoverError] = useState("");
+
+  useEffect(() => {
+    fetch("/api/elevenlabs/voices")
+      .then(r => r.json())
+      .then(d => {
+        setBanglaVoices(d.voices || []);
+        if (d.voices?.[0]) setSelectedVoiceId(d.voices[0].voiceId);
+      })
+      .catch(() => {});
+  }, []);
+
+  async function generateVoiceover() {
+    if (!voiceoverScript.trim() || !selectedVoiceId) return;
+    setGeneratingVoiceover(true);
+    setVoiceoverError("");
+    try {
+      const res = await fetch("/api/elevenlabs/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: voiceoverScript.trim(), voiceId: selectedVoiceId }),
+      });
+      if (!res.ok) throw new Error("Voice generation failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const voiceName = banglaVoices.find(v => v.voiceId === selectedVoiceId)?.name || "Voiceover";
+      setSelectedAudio({ id: "vo_" + Date.now(), name: `AI Voiceover — ${voiceName}`, category: "AI Voiceover", duration: "Generated", bpm: 0, url });
+    } catch (e) {
+      setVoiceoverError("Voice generation failed. Try again.");
+    } finally {
+      setGeneratingVoiceover(false);
+    }
+  }
   const [exportFormat, setExportFormat] = useState("mp4");
   const [exportResolution, setExportResolution] = useState("720p");
   const [exportQuality, setExportQuality] = useState("high");
@@ -1271,9 +1316,40 @@ Include:
         console.warn("Audio stream capture warning:", e);
     }
 
+    // Mix in the selected/generated audio track (voiceover or uploaded music) via Web Audio API
+    let mixAudioCtx: AudioContext | undefined;
+    let extraAudioEl: HTMLAudioElement | undefined;
+    let mixedAudioTrack: MediaStreamTrack | undefined;
+    if (selectedAudio?.url) {
+        try {
+            mixAudioCtx = new AudioContext();
+            const destination = mixAudioCtx.createMediaStreamDestination();
+
+            if (audioStream && !isMuted) {
+                const videoAudioSource = mixAudioCtx.createMediaStreamSource(new MediaStream([audioStream]));
+                const videoGain = mixAudioCtx.createGain();
+                videoGain.gain.value = volume;
+                videoAudioSource.connect(videoGain).connect(destination);
+            }
+
+            extraAudioEl = new Audio(selectedAudio.url);
+            extraAudioEl.crossOrigin = "anonymous";
+            const voiceSource = mixAudioCtx.createMediaElementSource(extraAudioEl);
+            voiceSource.connect(destination);
+
+            mixedAudioTrack = destination.stream.getAudioTracks()[0];
+        } catch (e) {
+            console.warn("Audio mix warning:", e);
+        }
+    }
+
     const tracks = canvasStream.getVideoTracks();
-    if (audioStream) tracks.push(audioStream);
-    
+    if (mixedAudioTrack) {
+        tracks.push(mixedAudioTrack);
+    } else if (audioStream) {
+        tracks.push(audioStream);
+    }
+
     const stream = new MediaStream(tracks);
     try {
         let mimeType = 'video/webm';
@@ -1302,6 +1378,8 @@ Include:
         }
         videoElement.removeEventListener('ended', handleEnded);
         setIsPlaying(false);
+        if (extraAudioEl) { extraAudioEl.pause(); }
+        if (mixAudioCtx) { mixAudioCtx.close().catch(() => {}); }
     };
 
     mediaRecorder.onstop = () => {
@@ -1339,7 +1417,11 @@ Include:
         setIsExporting(false);
         isDrawing = false;
     });
-    
+    if (extraAudioEl) {
+        extraAudioEl.currentTime = 0;
+        extraAudioEl.play().catch(e => console.warn("Voiceover autoplay prevented:", e));
+    }
+
     if (mediaRecorder.state === "inactive") {
         mediaRecorder.start(100);
     }
@@ -1350,6 +1432,7 @@ Include:
                  mediaRecorder.stop();
              }
              videoElement.pause();
+             if (extraAudioEl) { extraAudioEl.pause(); }
              isDrawing = false;
              return;
         }
@@ -2034,6 +2117,37 @@ Include:
                        </div>
 
                        <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-3">
+                          <div className="flex items-center space-x-2 text-emerald-400 font-medium text-xs">
+                            <Mic className="w-4 h-4" /> <span>AI Voiceover (Bangla)</span>
+                          </div>
+                          <textarea
+                            value={voiceoverScript}
+                            onChange={e => setVoiceoverScript(e.target.value)}
+                            placeholder="ভয়েসওভার স্ক্রিপ্ট লিখুন..."
+                            rows={3}
+                            className="w-full rounded-lg bg-black/30 border border-white/10 text-slate-200 text-xs p-2.5 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500/50 resize-none"
+                          />
+                          <select
+                            value={selectedVoiceId}
+                            onChange={e => setSelectedVoiceId(e.target.value)}
+                            className="w-full rounded-lg bg-black/30 border border-white/10 text-slate-200 text-xs p-2 focus:outline-none"
+                          >
+                            {banglaVoices.map(v => (
+                              <option key={v.voiceId} value={v.voiceId}>{v.name} — {v.tone}</option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={generateVoiceover}
+                            disabled={generatingVoiceover || !voiceoverScript.trim()}
+                            className="w-full flex items-center justify-center space-x-2 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-bold hover:bg-emerald-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            {generatingVoiceover ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                            <span>{generatingVoiceover ? "Generating..." : "Generate Voiceover"}</span>
+                          </button>
+                          {voiceoverError && <div className="text-[10px] text-red-400">{voiceoverError}</div>}
+                       </div>
+
+                       <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-3">
                           <div className="flex items-center justify-between">
                              <div className="flex items-center space-x-2 text-violet-400 font-medium text-xs">
                                <Music className="w-4 h-4" /> <span>Background Music</span>
@@ -2047,7 +2161,7 @@ Include:
                                <Plus className="w-3.5 h-3.5" /> <span>Upload Sound</span>
                                <input type="file" accept="audio/*" className="hidden" onChange={e => {
                                  if (e.target.files && e.target.files[0]) {
-                                   setSelectedAudio({ id: "c_"+Date.now(), name: e.target.files[0].name, category: "Upload", duration: "User", bpm: 120 });
+                                   setSelectedAudio({ id: "c_"+Date.now(), name: e.target.files[0].name, category: "Upload", duration: "User", bpm: 120, url: URL.createObjectURL(e.target.files[0]) });
                                  }
                                }} />
                              </label>
