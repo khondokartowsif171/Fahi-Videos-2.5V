@@ -18,15 +18,16 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { prompt, imageBase64, mimeType, aspectRatio, resolution } = body;
+    const { prompt, imageBase64, mimeType, aspectRatio, resolution, video } = body;
 
     // Build the payload
     const payload: any = {
       model: "veo-3.1-fast-generate-preview",
       config: {
         numberOfVideos: 1,
-        resolution: resolution || "720p",
-        aspectRatio: aspectRatio || "16:9",
+        // Extension requires 720p regardless of what the base clip used -- forcing it here
+        // rather than trusting the caller avoids a same-looking-but-silently-rejected request.
+        resolution: video ? "720p" : resolution || "720p",
       },
     };
 
@@ -39,6 +40,17 @@ export async function POST(req: NextRequest) {
         imageBytes: imageBase64,
         mimeType: mimeType || "image/png",
       };
+    }
+
+    if (video) {
+      // Extending a previous generation: pass its `video` object straight through (the raw
+      // object from that operation's `response.generatedVideos[0].video`, not just a URI string).
+      // Veo continues the SAME clip from this reference instead of starting a fresh one, and does
+      // not accept aspectRatio/image alongside it -- aspect ratio is inherited from the base clip.
+      payload.video = video;
+      delete payload.image;
+    } else {
+      payload.config.aspectRatio = aspectRatio || "16:9";
     }
 
     try {
