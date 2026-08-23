@@ -20,9 +20,26 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { prompt, imageBase64, mimeType, aspectRatio, resolution, video } = body;
 
-    // Build the payload
+    // The SDK deprecated top-level prompt/image/video args in favor of a single `source` object
+    // (GenerateVideosSource: {prompt?, image?, video?} -- image and video are mutually exclusive).
+    // Passing the old flat shape doesn't throw outright but silently fails to extend correctly.
+    const source: any = {};
+    if (prompt) source.prompt = prompt;
+
+    if (video) {
+      // Extending a previous generation: pass its `video` object straight through (the raw
+      // object from that operation's `response.generatedVideos[0].video`, not just a URI string).
+      source.video = video;
+    } else if (imageBase64) {
+      source.image = {
+        imageBytes: imageBase64,
+        mimeType: mimeType || "image/png",
+      };
+    }
+
     const payload: any = {
       model: "veo-3.1-fast-generate-preview",
+      source,
       config: {
         numberOfVideos: 1,
         // Extension requires 720p regardless of what the base clip used -- forcing it here
@@ -30,28 +47,8 @@ export async function POST(req: NextRequest) {
         resolution: video ? "720p" : resolution || "720p",
       },
     };
-
-    if (prompt) {
-      payload.prompt = prompt;
-    }
-
-    if (imageBase64) {
-      payload.image = {
-        imageBytes: imageBase64,
-        mimeType: mimeType || "image/png",
-      };
-    }
-
-    if (video) {
-      // Extending a previous generation: pass its `video` object straight through (the raw
-      // object from that operation's `response.generatedVideos[0].video`, not just a URI string).
-      // Veo continues the SAME clip from this reference instead of starting a fresh one, and does
-      // not accept aspectRatio/image alongside it -- aspect ratio is inherited from the base clip.
-      payload.video = video;
-      delete payload.image;
-    } else {
-      payload.config.aspectRatio = aspectRatio || "16:9";
-    }
+    // aspectRatio only applies to fresh generations -- an extend inherits it from the base clip.
+    if (!video) payload.config.aspectRatio = aspectRatio || "16:9";
 
     try {
       const operation = await ai.models.generateVideos(payload);
@@ -65,8 +62,8 @@ export async function POST(req: NextRequest) {
         }
       } catch (e) {}
 
-      console.log("Veo status: Active fallback simulation activated due to capacity constraints.");
-      
+      console.log("Veo generate failed, serving fallback. Real error:", cleanMessage);
+
       const pLower = (prompt || "").toLowerCase();
       let fallbackType = "abstract";
       if (pLower.includes("space") || pLower.includes("star") || pLower.includes("nebula") || pLower.includes("galaxy") || pLower.includes("cosmic")) {
