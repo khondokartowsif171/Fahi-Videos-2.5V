@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 import '../../../config/theme_colors.dart';
+import '../../../models/caption_model.dart';
 import '../../../models/track_item.dart';
+import '../../../providers/caption_provider.dart';
 import '../../../providers/editor_state_provider.dart';
+import '../../../providers/keyframe_provider.dart';
 import '../../../providers/timeline_provider.dart';
 
 class PreviewPlayer extends StatefulWidget {
@@ -15,7 +18,6 @@ class PreviewPlayer extends StatefulWidget {
 
 class _PreviewPlayerState extends State<PreviewPlayer> {
   VideoPlayerController? _controller;
-  String? _loadedUrl;
 
   @override
   void initState() {
@@ -31,7 +33,6 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
         ..initialize().then((_) {
           if (mounted) setState(() {});
         });
-      _loadedUrl = mainVideo.sourcePath;
     }
   }
 
@@ -53,8 +54,9 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
   Widget build(BuildContext context) {
     final editorState = context.watch<EditorStateProvider>();
     final timeline = context.watch<TimelineProvider>();
+    final captionProvider = context.watch<CaptionProvider>();
+    final keyframeProvider = context.watch<KeyframeProvider>();
 
-    // Sync playhead with video player controller
     if (_controller != null && _controller!.value.isInitialized) {
       if (timeline.isPlaying && !_controller!.value.isPlaying) {
         _controller!.play();
@@ -67,6 +69,11 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
       return timeline.currentTimeMs >= t.startTimeMs &&
           timeline.currentTimeMs <= (t.startTimeMs + t.durationMs);
     }).toList();
+
+    // Active AI Auto-Caption segment
+    final activeCaption = captionProvider.segments.where((seg) {
+      return timeline.currentTimeMs >= seg.startMs && timeline.currentTimeMs <= seg.endMs;
+    }).firstOrNull;
 
     return Container(
       color: Colors.black,
@@ -86,19 +93,39 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    // Video Layer
+                    // Video Layer with Keyframe Animation Interpolation
                     if (_controller != null && _controller!.value.isInitialized)
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: FittedBox(
-                          fit: BoxFit.cover,
-                          child: SizedBox(
-                            width: _controller!.value.size.width,
-                            height: _controller!.value.size.height,
-                            child: VideoPlayer(_controller!),
+                      Builder(builder: (_) {
+                        final mainVideo = timeline.videoTracks.firstOrNull;
+                        final kfProps = mainVideo != null
+                            ? keyframeProvider.interpolateClipProperties(mainVideo, timeline.currentTimeMs)
+                            : null;
+
+                        final scale = kfProps?['scale'] ?? 1.0;
+                        final rotation = kfProps?['rotation'] ?? 0.0;
+                        final opacity = (kfProps?['opacity'] ?? 1.0) as double;
+
+                        return Opacity(
+                          opacity: opacity.clamp(0.0, 1.0),
+                          child: Transform.rotate(
+                            angle: rotation,
+                            child: Transform.scale(
+                              scale: scale,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: FittedBox(
+                                  fit: BoxFit.cover,
+                                  child: SizedBox(
+                                    width: _controller!.value.size.width,
+                                    height: _controller!.value.size.height,
+                                    child: VideoPlayer(_controller!),
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
-                      )
+                        );
+                      })
                     else
                       Container(
                         color: const Color(0xFF14141E),
@@ -144,6 +171,46 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
                         ),
                       );
                     }),
+
+                    // Dynamic Karaoke Auto-Captions Display
+                    if (activeCaption != null)
+                      Positioned(
+                        bottom: 40,
+                        left: 16,
+                        right: 16,
+                        child: Center(
+                          child: Wrap(
+                            alignment: WrapAlignment.center,
+                            spacing: 6,
+                            children: activeCaption.words.map((w) {
+                              final isWordActive = timeline.currentTimeMs >= w.startMs && timeline.currentTimeMs <= w.endMs;
+
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: isWordActive
+                                      ? (activeCaption.style == CaptionStylePreset.hormoziYellow
+                                          ? AppColors.accent
+                                          : AppColors.primary)
+                                      : Colors.black45,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  w.word,
+                                  style: TextStyle(
+                                    color: isWordActive ? Colors.black : Colors.white,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                    shadows: const [
+                                      Shadow(color: Colors.black, blurRadius: 4, offset: Offset(1, 1)),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -186,7 +253,7 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
             ),
           ),
 
-          // Center Tap-to-Play Overlay
+          // Tap to Play Overlay
           if (!timeline.isPlaying)
             GestureDetector(
               onTap: () => timeline.setPlaying(true),

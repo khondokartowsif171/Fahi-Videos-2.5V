@@ -4,7 +4,10 @@ import '../../../config/theme_colors.dart';
 import '../../../providers/editor_state_provider.dart';
 import '../../../providers/timeline_provider.dart';
 import 'subtools/audio_mixer_sheet.dart';
+import 'subtools/beat_sync_sheet.dart';
+import 'subtools/captions_sheet.dart';
 import 'subtools/filters_effects_sheet.dart';
+import 'subtools/speed_curves_sheet.dart';
 import 'subtools/speed_ramping_sheet.dart';
 import 'subtools/text_sticker_sheet.dart';
 
@@ -61,6 +64,35 @@ class ToolbarBottom extends StatelessWidget {
           },
         ),
         _buildToolBtn(
+          icon: Icons.trending_up_rounded,
+          label: 'Velocity Curve',
+          color: AppColors.primary,
+          onTap: () {
+            showModalBottomSheet(
+              context: context,
+              backgroundColor: Colors.transparent,
+              builder: (_) => SpeedCurvesSheet(item: timeline.selectedItem!),
+            );
+          },
+        ),
+        _buildToolBtn(
+          icon: Icons.person_remove_rounded,
+          label: 'AI Cutout',
+          color: timeline.selectedItem!.isAutoCutoutActive ? AppColors.success : Colors.white70,
+          onTap: () {
+            timeline.selectedItem!.isAutoCutoutActive = !timeline.selectedItem!.isAutoCutoutActive;
+            timeline.updateTrackItem(timeline.selectedItem!);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(timeline.selectedItem!.isAutoCutoutActive
+                    ? '✨ AI Background Cutout Enabled (No Green Screen Needed)'
+                    : 'AI Cutout Disabled'),
+                backgroundColor: AppColors.surfaceLight,
+              ),
+            );
+          },
+        ),
+        _buildToolBtn(
           icon: Icons.volume_up_rounded,
           label: 'Volume',
           color: AppColors.success,
@@ -102,9 +134,28 @@ class ToolbarBottom extends StatelessWidget {
       physics: const BouncingScrollPhysics(),
       children: [
         _buildToolBtn(
-          icon: Icons.movie_edit,
-          label: 'Edit',
-          onTap: () {},
+          icon: Icons.closed_caption_rounded,
+          label: 'Auto Captions',
+          color: AppColors.accent,
+          onTap: () {
+            showModalBottomSheet(
+              context: context,
+              backgroundColor: Colors.transparent,
+              builder: (_) => const CaptionsSheet(),
+            );
+          },
+        ),
+        _buildToolBtn(
+          icon: Icons.graphic_eq_rounded,
+          label: 'Beat Sync',
+          color: AppColors.primary,
+          onTap: () {
+            showModalBottomSheet(
+              context: context,
+              backgroundColor: Colors.transparent,
+              builder: (_) => const BeatSyncSheet(),
+            );
+          },
         ),
         _buildToolBtn(
           icon: Icons.music_note_rounded,
@@ -142,14 +193,7 @@ class ToolbarBottom extends StatelessWidget {
         _buildToolBtn(
           icon: Icons.aspect_ratio_rounded,
           label: 'Ratio',
-          onTap: () {
-            _showRatioPicker(context, editorState);
-          },
-        ),
-        _buildToolBtn(
-          icon: Icons.palette_outlined,
-          label: 'Canvas',
-          onTap: () {},
+          onTap: () => _showRatioPicker(context, editorState),
         ),
       ],
     );
@@ -165,7 +209,7 @@ class ToolbarBottom extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Container(
-        width: 68,
+        width: 72,
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

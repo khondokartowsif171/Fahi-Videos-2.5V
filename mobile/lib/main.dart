@@ -4,7 +4,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'config/theme_colors.dart';
 import 'providers/ai_studio_provider.dart';
+import 'providers/caption_provider.dart';
 import 'providers/editor_state_provider.dart';
+import 'providers/keyframe_provider.dart';
 import 'providers/timeline_provider.dart';
 import 'screens/home_screen.dart';
 
@@ -34,6 +36,8 @@ class FahiVideosApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => TimelineProvider()),
         ChangeNotifierProvider(create: (_) => EditorStateProvider()),
         ChangeNotifierProvider(create: (_) => AiStudioProvider()),
+        ChangeNotifierProvider(create: (_) => CaptionProvider()),
+        ChangeNotifierProvider(create: (_) => KeyframeProvider()),
       ],
       child: MaterialApp(
         title: 'Fahi Videos Pro',

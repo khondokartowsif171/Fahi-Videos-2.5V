@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../config/theme_colors.dart';
 import '../providers/editor_state_provider.dart';
+import 'ai_studio/script_generator_screen.dart';
 import 'ai_studio/tts_generator_screen.dart';
 import 'ai_studio/veo_generator_screen.dart';
 import 'downloader/video_downloader_screen.dart';
 import 'editor/editor_screen.dart';
+import 'templates/template_hub_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -38,13 +40,14 @@ class HomeScreen extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: const [
                         Text('FAHI VIDEOS PRO', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
-                        Text('CapCut Pro + Google Veo 3.1 Studio', style: TextStyle(color: AppColors.primary, fontSize: 10, fontWeight: FontWeight.bold)),
+                        Text('CapCut Pro + Google Veo 3.1 Suite', style: TextStyle(color: AppColors.primary, fontSize: 10, fontWeight: FontWeight.bold)),
                       ],
                     ),
                     const Spacer(),
                     IconButton(
-                      icon: const Icon(Icons.settings_outlined, color: Colors.white70),
-                      onPressed: () {},
+                      icon: const Icon(Icons.dashboard_customize_outlined, color: AppColors.primary),
+                      tooltip: 'Template Marketplace',
+                      onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TemplateHubScreen())),
                     ),
                   ],
                 ),
@@ -61,7 +64,7 @@ class HomeScreen extends StatelessWidget {
                     Navigator.push(context, MaterialPageRoute(builder: (_) => const EditorScreen()));
                   },
                   child: Container(
-                    height: 120,
+                    height: 110,
                     decoration: BoxDecoration(
                       gradient: AppColors.primaryGradient,
                       borderRadius: BorderRadius.circular(20),
@@ -96,14 +99,14 @@ class HomeScreen extends StatelessWidget {
 
             const SliverToBoxAdapter(child: SizedBox(height: 24)),
 
-            // AI Power Tools Grid Hub
+            // AI Power Tools Grid Hub (Google Veo, Script Studio, ElevenLabs, Templates)
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('AI & Premium Tool Suite', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+                    const Text('World-Class AI Studio Suite', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 12),
                     Row(
                       children: [
@@ -121,11 +124,11 @@ class HomeScreen extends StatelessWidget {
                         Expanded(
                           child: _buildToolCard(
                             context: context,
-                            title: 'ElevenLabs Voice',
-                            subtitle: 'AI Voiceover Studio',
-                            icon: Icons.record_voice_over_rounded,
-                            gradient: const LinearGradient(colors: [AppColors.success, Color(0xFF00B0FF)]),
-                            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TtsGeneratorScreen())),
+                            title: 'AI Script & Hook',
+                            subtitle: 'Viral 30s Shorts',
+                            icon: Icons.psychology_rounded,
+                            gradient: const LinearGradient(colors: [Color(0xFFFF0055), Color(0xFF7928CA)]),
+                            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ScriptGeneratorScreen())),
                           ),
                         ),
                       ],
@@ -136,22 +139,22 @@ class HomeScreen extends StatelessWidget {
                         Expanded(
                           child: _buildToolCard(
                             context: context,
-                            title: 'Media Downloader',
-                            subtitle: 'YouTube, FB, TikTok',
-                            icon: Icons.download_for_offline_rounded,
-                            gradient: const LinearGradient(colors: [Color(0xFFFF9100), Color(0xFFFF5252)]),
-                            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const VideoDownloaderScreen())),
+                            title: 'ElevenLabs Voice',
+                            subtitle: 'AI Voiceover Studio',
+                            icon: Icons.record_voice_over_rounded,
+                            gradient: const LinearGradient(colors: [AppColors.success, Color(0xFF00B0FF)]),
+                            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TtsGeneratorScreen())),
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: _buildToolCard(
                             context: context,
-                            title: 'Speed Ramping',
-                            subtitle: 'Smooth Curves 10x',
-                            icon: Icons.speed_rounded,
-                            gradient: const LinearGradient(colors: [Color(0xFF7C4DFF), Color(0xFF536DFE)]),
-                            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EditorScreen())),
+                            title: 'Trending Templates',
+                            subtitle: 'CapCut Marketplace',
+                            icon: Icons.grid_view_rounded,
+                            gradient: const LinearGradient(colors: [Color(0xFFFF9100), Color(0xFFFF5252)]),
+                            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TemplateHubScreen())),
                           ),
                         ),
                       ],
@@ -169,9 +172,12 @@ class HomeScreen extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: const [
-                    Text('Recent Projects', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
-                    Text('See All', style: TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.bold)),
+                  children: [
+                    const Text('Recent Projects', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+                    InkWell(
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const VideoDownloaderScreen())),
+                      child: const Text('+ Download Video', style: TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.bold)),
+                    ),
                   ],
                 ),
               ),
@@ -183,9 +189,9 @@ class HomeScreen extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
-                  _buildProjectTile(context, 'Cyberpunk Reels Edit', '0:15', '9:16', '2 hours ago'),
+                  _buildProjectTile(context, 'Cyberpunk Reels Velocity', '0:15', '9:16', '2 hours ago'),
                   _buildProjectTile(context, 'Nordic Mountain Drone AI', '0:08', '16:9', 'Yesterday'),
-                  _buildProjectTile(context, 'YouTube Podcast Trailer', '0:45', '16:9', '3 days ago'),
+                  _buildProjectTile(context, 'Viral AI Talking Head', '0:30', '9:16', '3 days ago'),
                 ]),
               ),
             ),
@@ -217,13 +223,13 @@ class HomeScreen extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              width: 40,
-              height: 40,
+              width: 38,
+              height: 38,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: gradient,
               ),
-              child: Icon(icon, color: Colors.white, size: 20),
+              child: Icon(icon, color: Colors.white, size: 18),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -253,13 +259,13 @@ class HomeScreen extends StatelessWidget {
       child: Row(
         children: [
           Container(
-            width: 50,
-            height: 50,
+            width: 48,
+            height: 48,
             decoration: BoxDecoration(
               color: AppColors.surfaceLight,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Icon(Icons.movie_outlined, color: AppColors.primary, size: 24),
+            child: const Icon(Icons.movie_outlined, color: AppColors.primary, size: 22),
           ),
           const SizedBox(width: 12),
           Expanded(
