@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'clip_animation_model.dart';
+import 'color_grading_model.dart';
 import 'keyframe_model.dart';
 import 'speed_curve_model.dart';
+import 'transition_model.dart';
+import 'voice_effect_model.dart';
 
-enum TrackType { video, audio, text, sticker, effect }
+enum TrackType { video, audio, text, sticker, effect, overlay }
 
 class TrackItem {
   final String id;
@@ -22,12 +26,33 @@ class TrackItem {
   double opacity;
   double rotation;
   double scale;
-  Offset position; // Center offset in normalized (-1 to 1) or pixel coordinates
+  Offset position; // Center offset
 
-  // Keyframing & Speed Curves
+  // Transitions & In/Out Animations
+  TransitionPreset? transition;
+  int transitionDurationMs;
+  ClipAnimationPreset? inAnimation;
+  ClipAnimationPreset? outAnimation;
+  ClipAnimationPreset? comboAnimation;
+
+  // Audio / Voice Effects
+  VoiceEffectPreset? voiceEffect;
+  bool isNoiseReductionActive;
+
+  // Chroma Key (Green Screen)
+  Color? chromaKeyColor;
+  double chromaIntensity; // 0.0 to 1.0
+
+  // PIP / Overlay Blend Mode
+  BlendMode blendMode;
+
+  // Keyframing, Velocity Speed Curves & Cutout
   List<KeyframePoint> keyframes;
   SpeedCurvePreset? speedCurve;
   bool isAutoCutoutActive;
+
+  // Pro Color Grading
+  ColorGradingSettings colorGrading;
 
   // Text / Typography specific
   String? textContent;
@@ -37,11 +62,8 @@ class TrackItem {
   String? fontFamily;
   TextAlign textAlign;
 
-  // Filter & Color Grading
+  // Filter Name
   String? filterName;
-  double brightness; // -1.0 to 1.0
-  double contrast;   // 0.0 to 2.0
-  double saturation; // 0.0 to 2.0
 
   TrackItem({
     required this.id,
@@ -58,9 +80,20 @@ class TrackItem {
     this.rotation = 0.0,
     this.scale = 1.0,
     this.position = Offset.zero,
+    this.transition,
+    this.transitionDurationMs = 500,
+    this.inAnimation,
+    this.outAnimation,
+    this.comboAnimation,
+    this.voiceEffect,
+    this.isNoiseReductionActive = false,
+    this.chromaKeyColor,
+    this.chromaIntensity = 0.5,
+    this.blendMode = BlendMode.srcOver,
     List<KeyframePoint>? keyframes,
     this.speedCurve,
     this.isAutoCutoutActive = false,
+    ColorGradingSettings? colorGrading,
     this.textContent,
     this.textColor = Colors.white,
     this.backgroundColor,
@@ -68,11 +101,9 @@ class TrackItem {
     this.fontFamily,
     this.textAlign = TextAlign.center,
     this.filterName,
-    this.brightness = 0.0,
-    this.contrast = 1.0,
-    this.saturation = 1.0,
   })  : sourceEndMs = sourceEndMs ?? durationMs,
-        keyframes = keyframes ?? [];
+        keyframes = keyframes ?? [],
+        colorGrading = colorGrading ?? ColorGradingSettings();
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -88,7 +119,17 @@ class TrackItem {
         'opacity': opacity,
         'rotation': rotation,
         'scale': scale,
+        'transitionId': transition?.id,
+        'transitionDurationMs': transitionDurationMs,
+        'inAnimationId': inAnimation?.id,
+        'outAnimationId': outAnimation?.id,
+        'comboAnimationId': comboAnimation?.id,
+        'voiceEffectId': voiceEffect?.id,
+        'isNoiseReductionActive': isNoiseReductionActive,
+        'chromaKeyColor': chromaKeyColor?.value,
+        'chromaIntensity': chromaIntensity,
         'isAutoCutoutActive': isAutoCutoutActive,
+        'colorGrading': colorGrading.toJson(),
         'textContent': textContent,
         'textColor': textColor?.value,
         'backgroundColor': backgroundColor?.value,
@@ -110,7 +151,13 @@ class TrackItem {
         opacity: (json['opacity'] as num?)?.toDouble() ?? 1.0,
         rotation: (json['rotation'] as num?)?.toDouble() ?? 0.0,
         scale: (json['scale'] as num?)?.toDouble() ?? 1.0,
+        transition: json['transitionId'] != null ? TransitionPreset.presets.firstWhere((t) => t.id == json['transitionId'], orElse: () => TransitionPreset.presets.first) : null,
+        transitionDurationMs: json['transitionDurationMs'] as int? ?? 500,
+        isNoiseReductionActive: json['isNoiseReductionActive'] as bool? ?? false,
+        chromaKeyColor: json['chromaKeyColor'] != null ? Color(json['chromaKeyColor'] as int) : null,
+        chromaIntensity: (json['chromaIntensity'] as num?)?.toDouble() ?? 0.5,
         isAutoCutoutActive: json['isAutoCutoutActive'] as bool? ?? false,
+        colorGrading: json['colorGrading'] != null ? ColorGradingSettings.fromJson(json['colorGrading'] as Map<String, dynamic>) : ColorGradingSettings(),
         textContent: json['textContent'] as String?,
         textColor: json['textColor'] != null ? Color(json['textColor'] as int) : Colors.white,
         backgroundColor: json['backgroundColor'] != null ? Color(json['backgroundColor'] as int) : null,
@@ -133,9 +180,20 @@ class TrackItem {
     double? rotation,
     double? scale,
     Offset? position,
+    TransitionPreset? transition,
+    int? transitionDurationMs,
+    ClipAnimationPreset? inAnimation,
+    ClipAnimationPreset? outAnimation,
+    ClipAnimationPreset? comboAnimation,
+    VoiceEffectPreset? voiceEffect,
+    bool? isNoiseReductionActive,
+    Color? chromaKeyColor,
+    double? chromaIntensity,
+    BlendMode? blendMode,
     List<KeyframePoint>? keyframes,
     SpeedCurvePreset? speedCurve,
     bool? isAutoCutoutActive,
+    ColorGradingSettings? colorGrading,
     String? textContent,
     Color? textColor,
     Color? backgroundColor,
@@ -143,9 +201,6 @@ class TrackItem {
     String? fontFamily,
     TextAlign? textAlign,
     String? filterName,
-    double? brightness,
-    double? contrast,
-    double? saturation,
   }) {
     return TrackItem(
       id: id ?? this.id,
@@ -162,9 +217,20 @@ class TrackItem {
       rotation: rotation ?? this.rotation,
       scale: scale ?? this.scale,
       position: position ?? this.position,
+      transition: transition ?? this.transition,
+      transitionDurationMs: transitionDurationMs ?? this.transitionDurationMs,
+      inAnimation: inAnimation ?? this.inAnimation,
+      outAnimation: outAnimation ?? this.outAnimation,
+      comboAnimation: comboAnimation ?? this.comboAnimation,
+      voiceEffect: voiceEffect ?? this.voiceEffect,
+      isNoiseReductionActive: isNoiseReductionActive ?? this.isNoiseReductionActive,
+      chromaKeyColor: chromaKeyColor ?? this.chromaKeyColor,
+      chromaIntensity: chromaIntensity ?? this.chromaIntensity,
+      blendMode: blendMode ?? this.blendMode,
       keyframes: keyframes ?? List.from(this.keyframes),
       speedCurve: speedCurve ?? this.speedCurve,
       isAutoCutoutActive: isAutoCutoutActive ?? this.isAutoCutoutActive,
+      colorGrading: colorGrading ?? this.colorGrading.copyWith(),
       textContent: textContent ?? this.textContent,
       textColor: textColor ?? this.textColor,
       backgroundColor: backgroundColor ?? this.backgroundColor,
@@ -172,9 +238,6 @@ class TrackItem {
       fontFamily: fontFamily ?? this.fontFamily,
       textAlign: textAlign ?? this.textAlign,
       filterName: filterName ?? this.filterName,
-      brightness: brightness ?? this.brightness,
-      contrast: contrast ?? this.contrast,
-      saturation: saturation ?? this.saturation,
     );
   }
 }
