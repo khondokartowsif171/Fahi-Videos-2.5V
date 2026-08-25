@@ -14,7 +14,7 @@
     <application
         android:label="Fahi Videos Pro"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@android:drawable/sym_def_app_icon"
         android:requestLegacyExternalStorage="true"
         android:usesCleartextTraffic="true">
         <activity
