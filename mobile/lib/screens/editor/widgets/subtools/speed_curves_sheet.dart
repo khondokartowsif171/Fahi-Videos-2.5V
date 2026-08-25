@@ -6,12 +6,27 @@ import '../../../../models/track_item.dart';
 import '../../../../providers/timeline_provider.dart';
 
 class SpeedCurvesSheet extends StatelessWidget {
-  final TrackItem item;
-  const SpeedCurvesSheet({super.key, required this.item});
+  final TrackItem? item;
+  const SpeedCurvesSheet({super.key, this.item});
 
   @override
   Widget build(BuildContext context) {
-    final timeline = context.read<TimelineProvider>();
+    final timeline = context.watch<TimelineProvider>();
+    final targetItem = item ?? timeline.selectedItem;
+
+    if (targetItem == null) {
+      return Container(
+        height: 200,
+        padding: const EdgeInsets.all(20),
+        decoration: const BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: const Center(
+          child: Text('Select a clip first to apply speed curves', style: TextStyle(color: Colors.white60)),
+        ),
+      );
+    }
 
     return Container(
       height: 380,
@@ -45,12 +60,12 @@ class SpeedCurvesSheet extends StatelessWidget {
               ),
               itemBuilder: (ctx, i) {
                 final preset = SpeedCurvePreset.presets[i];
-                final isSelected = item.speedCurve?.id == preset.id;
+                final isSelected = targetItem.speedCurve?.id == preset.id;
 
                 return GestureDetector(
                   onTap: () {
-                    item.speedCurve = preset;
-                    timeline.updateTrackItem(item);
+                    targetItem.speedCurve = preset;
+                    timeline.updateTrackItem(targetItem);
                     Navigator.pop(context);
                   },
                   child: Container(
