@@ -26,11 +26,13 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Setup local.properties & assets
+      - name: Configure Native Android Harness
+        working-directory: mobile
         run: |
-          mkdir -p mobile/assets
-          touch mobile/assets/.gitkeep
-          echo "flutter.sdk=$FLUTTER_ROOT" > mobile/android/local.properties
+          flutter create . --org com.fahivideos.pro --platforms android --project-name fahi_videos_mobile
+          mkdir -p assets
+          touch assets/.gitkeep
+          echo "flutter.sdk=$FLUTTER_ROOT" > android/local.properties
 
       - name: Install Dependencies
         working-directory: mobile
@@ -38,7 +40,7 @@ jobs:
 
       - name: Build Android APK (Release)
         working-directory: mobile
-        run: flutter build apk --release --android-skip-build-dependency-validation --no-tree-shake-icons
+        run: flutter build apk --release --no-tree-shake-icons
 
       - name: Upload Universal APK Artifact
         uses: actions/upload-artifact@v4
