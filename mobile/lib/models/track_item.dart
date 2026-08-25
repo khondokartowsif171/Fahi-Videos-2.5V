@@ -74,6 +74,50 @@ class TrackItem {
   })  : sourceEndMs = sourceEndMs ?? durationMs,
         keyframes = keyframes ?? [];
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'type': type.name,
+        'title': title,
+        'sourcePath': sourcePath,
+        'startTimeMs': startTimeMs,
+        'durationMs': durationMs,
+        'sourceStartMs': sourceStartMs,
+        'sourceEndMs': sourceEndMs,
+        'speed': speed,
+        'volume': volume,
+        'opacity': opacity,
+        'rotation': rotation,
+        'scale': scale,
+        'isAutoCutoutActive': isAutoCutoutActive,
+        'textContent': textContent,
+        'textColor': textColor?.value,
+        'backgroundColor': backgroundColor?.value,
+        'fontSize': fontSize,
+        'filterName': filterName,
+      };
+
+  factory TrackItem.fromJson(Map<String, dynamic> json) => TrackItem(
+        id: json['id'] as String,
+        type: TrackType.values.firstWhere((e) => e.name == json['type'], orElse: () => TrackType.video),
+        title: json['title'] as String? ?? 'Clip',
+        sourcePath: json['sourcePath'] as String?,
+        startTimeMs: json['startTimeMs'] as int? ?? 0,
+        durationMs: json['durationMs'] as int? ?? 5000,
+        sourceStartMs: json['sourceStartMs'] as int? ?? 0,
+        sourceEndMs: json['sourceEndMs'] as int? ?? 5000,
+        speed: (json['speed'] as num?)?.toDouble() ?? 1.0,
+        volume: (json['volume'] as num?)?.toDouble() ?? 1.0,
+        opacity: (json['opacity'] as num?)?.toDouble() ?? 1.0,
+        rotation: (json['rotation'] as num?)?.toDouble() ?? 0.0,
+        scale: (json['scale'] as num?)?.toDouble() ?? 1.0,
+        isAutoCutoutActive: json['isAutoCutoutActive'] as bool? ?? false,
+        textContent: json['textContent'] as String?,
+        textColor: json['textColor'] != null ? Color(json['textColor'] as int) : Colors.white,
+        backgroundColor: json['backgroundColor'] != null ? Color(json['backgroundColor'] as int) : null,
+        fontSize: (json['fontSize'] as num?)?.toDouble() ?? 24.0,
+        filterName: json['filterName'] as String?,
+      );
+
   TrackItem copyWith({
     String? id,
     TrackType? type,

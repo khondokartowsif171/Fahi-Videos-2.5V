@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
+import 'package:video_player/video_player.dart';
 import '../models/track_item.dart';
 
 class TimelineProvider extends ChangeNotifier {
@@ -33,44 +35,63 @@ class TimelineProvider extends ChangeNotifier {
       _tracks.where((t) => t.type == TrackType.sticker).toList();
 
   TimelineProvider() {
-    _initSampleProject();
+    _initDefaultProject();
   }
 
-  void _initSampleProject() {
-    final sampleVideo = TrackItem(
-      id: const Uuid().v4(),
-      type: TrackType.video,
-      title: 'Main Clip.mp4',
-      sourcePath: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-      startTimeMs: 0,
-      durationMs: 8000,
-      sourceStartMs: 0,
-      sourceEndMs: 8000,
-    );
-
-    final sampleAudio = TrackItem(
-      id: const Uuid().v4(),
-      type: TrackType.audio,
-      title: 'Cinematic BGM.mp3',
-      startTimeMs: 0,
-      durationMs: 8000,
-      volume: 0.8,
-    );
-
-    final sampleText = TrackItem(
-      id: const Uuid().v4(),
-      type: TrackType.text,
-      title: 'Title Text',
-      textContent: 'FAHI VIDEOS PRO',
-      startTimeMs: 1000,
-      durationMs: 4000,
-      fontSize: 28,
-      textColor: Colors.cyanAccent,
-    );
-
-    _tracks.addAll([sampleVideo, sampleAudio, sampleText]);
+  void _initDefaultProject() {
+    _tracks.clear();
     _recalcTotalDuration();
     _saveState();
+  }
+
+  void loadProjectTracks(List<TrackItem> items) {
+    _tracks.clear();
+    _tracks.addAll(items);
+    _selectedItem = _tracks.firstOrNull;
+    _currentTimeMs = 0;
+    _recalcTotalDuration();
+    _saveState();
+    notifyListeners();
+  }
+
+  Future<void> importMediaFile(String filePath, {required TrackType type, String? title}) async {
+    int detectedDurationMs = 5000;
+
+    if (type == TrackType.video && File(filePath).existsSync()) {
+      try {
+        final ctrl = VideoPlayerController.file(File(filePath));
+        await ctrl.initialize();
+        detectedDurationMs = ctrl.value.duration.inMilliseconds;
+        await ctrl.dispose();
+      } catch (_) {
+        detectedDurationMs = 5000;
+      }
+    }
+
+    // Find the end time of the last track of this type
+    int startOffset = 0;
+    final existingOfType = _tracks.where((t) => t.type == type).toList();
+    if (existingOfType.isNotEmpty) {
+      final lastItem = existingOfType.reduce((a, b) => (a.startTimeMs + a.durationMs) > (b.startTimeMs + b.durationMs) ? a : b);
+      startOffset = lastItem.startTimeMs + lastItem.durationMs;
+    }
+
+    final newItem = TrackItem(
+      id: const Uuid().v4(),
+      type: type,
+      title: title ?? (filePath.split(Platform.pathSeparator).lastOrNull ?? 'Clip'),
+      sourcePath: filePath,
+      startTimeMs: startOffset,
+      durationMs: detectedDurationMs,
+      sourceStartMs: 0,
+      sourceEndMs: detectedDurationMs,
+    );
+
+    _tracks.add(newItem);
+    _selectedItem = newItem;
+    _recalcTotalDuration();
+    _saveState();
+    notifyListeners();
   }
 
   void seekTo(int timeMs) {

@@ -1,7 +1,12 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../config/theme_colors.dart';
+import '../models/track_item.dart';
 import '../providers/editor_state_provider.dart';
+import '../providers/timeline_provider.dart';
+import '../services/project_manager_service.dart';
 import 'ai_studio/script_generator_screen.dart';
 import 'ai_studio/tts_generator_screen.dart';
 import 'ai_studio/veo_generator_screen.dart';
@@ -9,8 +14,130 @@ import 'downloader/video_downloader_screen.dart';
 import 'editor/editor_screen.dart';
 import 'templates/template_hub_screen.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  List<LocalProject> _projects = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProjects();
+  }
+
+  Future<void> _loadProjects() async {
+    final list = await ProjectManagerService.getProjects();
+    if (mounted) {
+      setState(() {
+        _projects = list;
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _handleNewProjectChoice(BuildContext context, {required bool fromGallery}) async {
+    final timeline = context.read<TimelineProvider>();
+    final editorState = context.read<EditorStateProvider>();
+
+    if (fromGallery) {
+      final picker = ImagePicker();
+      final picked = await picker.pickVideo(source: ImageSource.gallery);
+      if (picked != null && mounted) {
+        final title = picked.name.split('.').first;
+        editorState.setProjectName(title);
+        timeline.loadProjectTracks([]);
+        await timeline.importMediaFile(picked.path, type: TrackType.video, title: picked.name);
+
+        final newProj = LocalProject(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          title: title,
+          previewVideoPath: picked.path,
+          durationMs: timeline.totalDurationMs,
+          aspectRatio: '9:16',
+          updatedAt: DateTime.now(),
+          tracks: timeline.tracks,
+        );
+        await ProjectManagerService.saveProject(newProj);
+        _loadProjects();
+
+        if (mounted) {
+          Navigator.push(context, MaterialPageRoute(builder: (_) => const EditorScreen()));
+        }
+      }
+    } else {
+      editorState.setProjectName('Project ${DateTime.now().minute}:${DateTime.now().second}');
+      timeline.loadProjectTracks([]);
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const EditorScreen()));
+    }
+  }
+
+  void _showNewProjectModal(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) {
+        return Container(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Create New Video Project', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.15), shape: BoxShape.circle),
+                  child: const Icon(Icons.video_library_rounded, color: AppColors.primary, size: 22),
+                ),
+                title: const Text('Import Video from Gallery', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                subtitle: const Text('Select a video from your phone storage', style: TextStyle(color: Colors.white38, fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _handleNewProjectChoice(context, fromGallery: true);
+                },
+              ),
+              const Divider(color: Colors.white10),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: AppColors.secondary.withOpacity(0.15), shape: BoxShape.circle),
+                  child: const Icon(Icons.auto_awesome_rounded, color: AppColors.secondary, size: 22),
+                ),
+                title: const Text('Generate with Google Flow / Veo AI', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                subtitle: const Text('Create video from text/image prompt', style: TextStyle(color: Colors.white38, fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const VeoGeneratorScreen()));
+                },
+              ),
+              const Divider(color: Colors.white10),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: Colors.white10, shape: BoxShape.circle),
+                  child: const Icon(Icons.edit_note_rounded, color: Colors.white70, size: 22),
+                ),
+                title: const Text('Start Blank Project', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                subtitle: const Text('Open empty multi-track canvas', style: TextStyle(color: Colors.white38, fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _handleNewProjectChoice(context, fromGallery: false);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -59,10 +186,7 @@ class HomeScreen extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: GestureDetector(
-                  onTap: () {
-                    context.read<EditorStateProvider>().setProjectName('Project ${DateTime.now().minute}:${DateTime.now().second}');
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => const EditorScreen()));
-                  },
+                  onTap: () => _showNewProjectModal(context),
                   child: Container(
                     height: 110,
                     decoration: BoxDecoration(
@@ -87,7 +211,7 @@ class HomeScreen extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: const [
                             Text('New Project', style: TextStyle(color: Colors.black, fontSize: 20, fontWeight: FontWeight.w900)),
-                            Text('Start CapCut Multi-Track Editing', style: TextStyle(color: Colors.black87, fontSize: 12, fontWeight: FontWeight.w600)),
+                            Text('Import Video from Gallery or AI', style: TextStyle(color: Colors.black87, fontSize: 12, fontWeight: FontWeight.w600)),
                           ],
                         ),
                       ],
@@ -99,7 +223,7 @@ class HomeScreen extends StatelessWidget {
 
             const SliverToBoxAdapter(child: SizedBox(height: 24)),
 
-            // AI Power Tools Grid Hub (Google Veo, Script Studio, ElevenLabs, Templates)
+            // AI Power Tools Grid Hub
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -166,7 +290,7 @@ class HomeScreen extends StatelessWidget {
 
             const SliverToBoxAdapter(child: SizedBox(height: 28)),
 
-            // Recent Projects List
+            // Recent Projects Header
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -185,16 +309,84 @@ class HomeScreen extends StatelessWidget {
 
             const SliverToBoxAdapter(child: SizedBox(height: 12)),
 
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              sliver: SliverList(
-                delegate: SliverChildListDelegate([
-                  _buildProjectTile(context, 'Cyberpunk Reels Velocity', '0:15', '9:16', '2 hours ago'),
-                  _buildProjectTile(context, 'Nordic Mountain Drone AI', '0:08', '16:9', 'Yesterday'),
-                  _buildProjectTile(context, 'Viral AI Talking Head', '0:30', '9:16', '3 days ago'),
-                ]),
+            // Real Projects List
+            if (_projects.isEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Center(
+                    child: Column(
+                      children: const [
+                        Icon(Icons.video_library_outlined, size: 40, color: Colors.white24),
+                        SizedBox(height: 8),
+                        Text('No projects yet', style: TextStyle(color: Colors.white54, fontSize: 13)),
+                        SizedBox(height: 4),
+                        Text('Tap "+ New Project" to import and edit your video', style: TextStyle(color: Colors.white24, fontSize: 11)),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (ctx, i) {
+                      final p = _projects[i];
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.surfaceBorder),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: AppColors.surfaceLight,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(Icons.movie_outlined, color: AppColors.primary, size: 22),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(p.title, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                                  const SizedBox(height: 4),
+                                  Text('${(p.durationMs / 1000).toStringAsFixed(1)}s • ${p.aspectRatio}', style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.edit_rounded, color: AppColors.primary, size: 20),
+                              onPressed: () {
+                                context.read<EditorStateProvider>().setProjectName(p.title);
+                                context.read<TimelineProvider>().loadProjectTracks(p.tracks);
+                                Navigator.push(context, MaterialPageRoute(builder: (_) => const EditorScreen()));
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline_rounded, color: Colors.white30, size: 18),
+                              onPressed: () async {
+                                await ProjectManagerService.deleteProject(p.id);
+                                _loadProjects();
+                              },
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    childCount: _projects.length,
+                  ),
+                ),
               ),
-            ),
 
             const SliverToBoxAdapter(child: SizedBox(height: 30)),
           ],
@@ -243,49 +435,6 @@ class HomeScreen extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildProjectTile(BuildContext context, String title, String duration, String ratio, String time) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.surfaceBorder),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: AppColors.surfaceLight,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(Icons.movie_outlined, color: AppColors.primary, size: 22),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                Text('$duration • $ratio • $time', style: const TextStyle(color: Colors.white38, fontSize: 11)),
-              ],
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.edit_rounded, color: AppColors.primary, size: 20),
-            onPressed: () {
-              context.read<EditorStateProvider>().setProjectName(title);
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const EditorScreen()));
-            },
-          ),
-        ],
       ),
     );
   }
