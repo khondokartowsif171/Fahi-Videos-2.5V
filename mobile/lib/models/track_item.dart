@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'keyframe_model.dart';
+import 'speed_curve_model.dart';
 
 enum TrackType { video, audio, text, sticker, effect }
 
@@ -21,6 +23,11 @@ class TrackItem {
   double rotation;
   double scale;
   Offset position; // Center offset in normalized (-1 to 1) or pixel coordinates
+
+  // Keyframing & Speed Curves
+  List<KeyframePoint> keyframes;
+  SpeedCurvePreset? speedCurve;
+  bool isAutoCutoutActive;
 
   // Text / Typography specific
   String? textContent;
@@ -51,6 +58,9 @@ class TrackItem {
     this.rotation = 0.0,
     this.scale = 1.0,
     this.position = Offset.zero,
+    List<KeyframePoint>? keyframes,
+    this.speedCurve,
+    this.isAutoCutoutActive = false,
     this.textContent,
     this.textColor = Colors.white,
     this.backgroundColor,
@@ -61,7 +71,8 @@ class TrackItem {
     this.brightness = 0.0,
     this.contrast = 1.0,
     this.saturation = 1.0,
-  }) : sourceEndMs = sourceEndMs ?? durationMs;
+  })  : sourceEndMs = sourceEndMs ?? durationMs,
+        keyframes = keyframes ?? [];
 
   TrackItem copyWith({
     String? id,
@@ -78,6 +89,9 @@ class TrackItem {
     double? rotation,
     double? scale,
     Offset? position,
+    List<KeyframePoint>? keyframes,
+    SpeedCurvePreset? speedCurve,
+    bool? isAutoCutoutActive,
     String? textContent,
     Color? textColor,
     Color? backgroundColor,
@@ -104,6 +118,9 @@ class TrackItem {
       rotation: rotation ?? this.rotation,
       scale: scale ?? this.scale,
       position: position ?? this.position,
+      keyframes: keyframes ?? List.from(this.keyframes),
+      speedCurve: speedCurve ?? this.speedCurve,
+      isAutoCutoutActive: isAutoCutoutActive ?? this.isAutoCutoutActive,
       textContent: textContent ?? this.textContent,
       textColor: textColor ?? this.textColor,
       backgroundColor: backgroundColor ?? this.backgroundColor,

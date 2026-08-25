@@ -4,6 +4,7 @@ import '../../config/theme_colors.dart';
 import '../../providers/editor_state_provider.dart';
 import '../../providers/timeline_provider.dart';
 import 'widgets/export_dialog.dart';
+import 'widgets/keyframe_bar.dart';
 import 'widgets/preview_player.dart';
 import 'widgets/timeline_view.dart';
 import 'widgets/toolbar_bottom.dart';
@@ -39,7 +40,6 @@ class EditorScreen extends StatelessWidget {
           ],
         ),
         actions: [
-          // Export Button
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: ElevatedButton.icon(
@@ -71,6 +71,9 @@ class EditorScreen extends StatelessWidget {
               flex: 5,
               child: PreviewPlayer(),
             ),
+
+            // Keyframe Diamond Action Bar
+            KeyframeBar(),
 
             // Bottom Half: Multi-Track Timeline & Controls
             Expanded(
