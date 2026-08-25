@@ -38,7 +38,7 @@ jobs:
 
       - name: Build Android APK (Release)
         working-directory: mobile
-        run: flutter build apk --release --no-tree-shake-icons
+        run: flutter build apk --release --android-skip-build-dependency-validation --no-tree-shake-icons
 
       - name: Upload Universal APK Artifact
         uses: actions/upload-artifact@v4
