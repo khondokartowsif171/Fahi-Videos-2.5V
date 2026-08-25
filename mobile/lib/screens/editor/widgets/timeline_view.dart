@@ -139,7 +139,20 @@ class _TimelineViewState extends State<TimelineView> {
 
                             const SizedBox(height: 6),
 
-                            // Track 2: Audio / Voice Lane
+                            // Track 2: Overlay / PIP Lane
+                            _buildTrackLane(
+                              context: context,
+                              timeline: timeline,
+                              type: TrackType.overlay,
+                              title: 'Overlay / PIP',
+                              icon: Icons.layers_rounded,
+                              color: const Color(0xFF00B0FF),
+                              pxPerMs: pxPerMs,
+                            ),
+
+                            const SizedBox(height: 6),
+
+                            // Track 3: Audio / Voice Lane
                             _buildTrackLane(
                               context: context,
                               timeline: timeline,
@@ -153,7 +166,7 @@ class _TimelineViewState extends State<TimelineView> {
 
                             const SizedBox(height: 6),
 
-                            // Track 3: Text Lane
+                            // Track 4: Text Lane
                             _buildTrackLane(
                               context: context,
                               timeline: timeline,
@@ -166,7 +179,7 @@ class _TimelineViewState extends State<TimelineView> {
 
                             const SizedBox(height: 6),
 
-                            // Track 4: Effects Lane
+                            // Track 5: Effects Lane
                             _buildTrackLane(
                               context: context,
                               timeline: timeline,
