@@ -1,0 +1,59 @@
+name: Build & Release Fahi-Videos iOS
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    name: Build iOS App (.ipa)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Configure Native iOS Harness
+        working-directory: mobile
+        run: |
+          flutter create . --org com.fahivideos.pro --platforms ios --project-name fahi_videos_mobile
+          mkdir -p assets
+          touch assets/.gitkeep
+
+      - name: Add iOS Permissions to Info.plist
+        working-directory: mobile/ios/Runner
+        run: |
+          plutil -insert NSCameraUsageDescription -string "Fahi Videos Pro requires camera access to record and generate video content." Info.plist || true
+          plutil -insert NSMicrophoneUsageDescription -string "Fahi Videos Pro requires microphone access to record voiceovers and audio." Info.plist || true
+          plutil -insert NSPhotoLibraryUsageDescription -string "Fahi Videos Pro requires photo library access to import and export your videos." Info.plist || true
+          plutil -insert NSPhotoLibraryAddUsageDescription -string "Fahi Videos Pro needs permission to save exported videos to your gallery." Info.plist || true
+
+      - name: Install Dependencies
+        working-directory: mobile
+        run: flutter pub get
+
+      - name: Build iOS App (Release No CodeSign)
+        working-directory: mobile
+        run: flutter build ios --release --no-codesign
+
+      - name: Package Payload into Sideloadable IPA
+        working-directory: mobile
+        run: |
+          mkdir -p build/ios/ipa_payload/Payload
+          cp -r build/ios/iphoneos/Runner.app build/ios/ipa_payload/Payload/
+          cd build/ios/ipa_payload
+          zip -r ../../../FahiVideosPro-iOS.ipa Payload
+          cd ../../..
+
+      - name: Upload iOS IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Fahi-Videos-Pro-iOS-IPA
+          path: FahiVideosPro-iOS.ipa
