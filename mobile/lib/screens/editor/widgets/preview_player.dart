@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 import '../../../config/theme_colors.dart';
@@ -18,26 +20,48 @@ class PreviewPlayer extends StatefulWidget {
 
 class _PreviewPlayerState extends State<PreviewPlayer> {
   VideoPlayerController? _controller;
+  String? _loadedSourcePath;
 
   @override
   void initState() {
     super.initState();
-    _initVideo();
+    _checkAndInitVideo();
   }
 
-  void _initVideo() {
+  void _checkAndInitVideo() {
     final timeline = context.read<TimelineProvider>();
     final mainVideo = timeline.videoTracks.firstOrNull;
-    if (mainVideo?.sourcePath != null && mainVideo!.sourcePath!.startsWith('http')) {
-      _controller = VideoPlayerController.networkUrl(Uri.parse(mainVideo.sourcePath!))
-        ..initialize().then((_) {
-          if (mounted) setState(() {});
-        });
+
+    if (mainVideo?.sourcePath != null && mainVideo!.sourcePath != _loadedSourcePath) {
+      _controller?.dispose();
+      _loadedSourcePath = mainVideo.sourcePath!;
+
+      final path = _loadedSourcePath!;
+      if (path.startsWith('http')) {
+        _controller = VideoPlayerController.networkUrl(Uri.parse(path));
+      } else if (File(path).existsSync()) {
+        _controller = VideoPlayerController.file(File(path));
+      }
+
+      _controller?.initialize().then((_) {
+        if (mounted) {
+          setState(() {});
+          _controller?.addListener(_onVideoProgress);
+        }
+      });
+    }
+  }
+
+  void _onVideoProgress() {
+    if (_controller != null && _controller!.value.isPlaying && mounted) {
+      final posMs = _controller!.value.position.inMilliseconds;
+      context.read<TimelineProvider>().seekTo(posMs);
     }
   }
 
   @override
   void dispose() {
+    _controller?.removeListener(_onVideoProgress);
     _controller?.dispose();
     super.dispose();
   }
@@ -50,12 +74,26 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
     return '${min.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}.${milli.toString().padLeft(2, '0')}';
   }
 
+  Future<void> _pickVideoFromGallery() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickVideo(source: ImageSource.gallery);
+    if (picked != null && mounted) {
+      await context.read<TimelineProvider>().importMediaFile(picked.path, type: TrackType.video, title: picked.name);
+      _checkAndInitVideo();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final editorState = context.watch<EditorStateProvider>();
     final timeline = context.watch<TimelineProvider>();
     final captionProvider = context.watch<CaptionProvider>();
     final keyframeProvider = context.watch<KeyframeProvider>();
+
+    final mainVideo = timeline.videoTracks.firstOrNull;
+    if (mainVideo?.sourcePath != _loadedSourcePath) {
+      _checkAndInitVideo();
+    }
 
     if (_controller != null && _controller!.value.isInitialized) {
       if (timeline.isPlaying && !_controller!.value.isPlaying) {
@@ -96,7 +134,6 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
                     // Video Layer with Keyframe Animation Interpolation
                     if (_controller != null && _controller!.value.isInitialized)
                       Builder(builder: (_) {
-                        final mainVideo = timeline.videoTracks.firstOrNull;
                         final kfProps = mainVideo != null
                             ? keyframeProvider.interpolateClipProperties(mainVideo, timeline.currentTimeMs)
                             : null;
@@ -127,16 +164,30 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
                         );
                       })
                     else
-                      Container(
-                        color: const Color(0xFF14141E),
-                        child: Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.movie_creation_outlined, size: 48, color: AppColors.primary.withOpacity(0.5)),
-                              const SizedBox(height: 8),
-                              const Text('Fahi Videos Canvas', style: TextStyle(color: Colors.white54, fontSize: 12)),
-                            ],
+                      GestureDetector(
+                        onTap: _pickVideoFromGallery,
+                        child: Container(
+                          color: const Color(0xFF14141E),
+                          child: Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 56,
+                                  height: 56,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: AppColors.primary.withOpacity(0.15),
+                                    border: Border.all(color: AppColors.primary, width: 1.5),
+                                  ),
+                                  child: const Icon(Icons.add_photo_alternate_rounded, size: 28, color: AppColors.primary),
+                                ),
+                                const SizedBox(height: 12),
+                                const Text('Tap to Import Video / Photo', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 4),
+                                const Text('Select from phone gallery', style: TextStyle(color: Colors.white38, fontSize: 11)),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -254,7 +305,7 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
           ),
 
           // Tap to Play Overlay
-          if (!timeline.isPlaying)
+          if (!timeline.isPlaying && _controller != null && _controller!.value.isInitialized)
             GestureDetector(
               onTap: () => timeline.setPlaying(true),
               child: Container(
