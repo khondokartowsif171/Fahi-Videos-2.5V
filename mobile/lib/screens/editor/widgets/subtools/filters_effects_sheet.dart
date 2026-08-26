@@ -52,9 +52,6 @@ class FiltersEffectsSheet extends StatelessWidget {
                   onTap: () {
                     if (targetItem != null) {
                       targetItem.filterName = preset.id;
-                      targetItem.brightness = preset.brightness;
-                      targetItem.contrast = preset.contrast;
-                      targetItem.saturation = preset.saturation;
                       timeline.updateTrackItem(targetItem);
                     }
                   },
