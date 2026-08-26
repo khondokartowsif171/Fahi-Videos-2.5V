@@ -1,4 +1,4 @@
-name: Build & Release Fahi-Videos APK
+name: Build & Release Fahi-vids APK
 
 on:
   push:
@@ -43,5 +43,5 @@ jobs:
       - name: Upload Universal APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Fahi-Videos-Pro-Release-APK
+          name: Fahi-vids-Pro-Release-APK
           path: mobile/build/app/outputs/flutter-apk/app-release.apk

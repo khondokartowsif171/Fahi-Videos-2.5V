@@ -1,4 +1,4 @@
-name: Build & Release Fahi-Videos iOS
+name: Build & Release Fahi-vids iOS
 
 on:
   push:
@@ -30,10 +30,10 @@ jobs:
       - name: Add iOS Permissions to Info.plist
         working-directory: mobile/ios/Runner
         run: |
-          plutil -insert NSCameraUsageDescription -string "Fahi Videos Pro requires camera access to record and generate video content." Info.plist || true
-          plutil -insert NSMicrophoneUsageDescription -string "Fahi Videos Pro requires microphone access to record voiceovers and audio." Info.plist || true
-          plutil -insert NSPhotoLibraryUsageDescription -string "Fahi Videos Pro requires photo library access to import and export your videos." Info.plist || true
-          plutil -insert NSPhotoLibraryAddUsageDescription -string "Fahi Videos Pro needs permission to save exported videos to your gallery." Info.plist || true
+          plutil -insert NSCameraUsageDescription -string "Fahi-vids requires camera access to record and generate video content." Info.plist || true
+          plutil -insert NSMicrophoneUsageDescription -string "Fahi-vids requires microphone access to record voiceovers and audio." Info.plist || true
+          plutil -insert NSPhotoLibraryUsageDescription -string "Fahi-vids requires photo library access to import and export your videos." Info.plist || true
+          plutil -insert NSPhotoLibraryAddUsageDescription -string "Fahi-vids needs permission to save exported videos to your gallery." Info.plist || true
 
       - name: Install Dependencies
         working-directory: mobile
@@ -48,12 +48,12 @@ jobs:
           mkdir -p ipa_temp/Payload
           cp -r mobile/build/ios/iphoneos/Runner.app ipa_temp/Payload/
           cd ipa_temp
-          zip -qr ../FahiVideosPro-iOS.ipa Payload
+          zip -qr ../FahiVidsPro-iOS.ipa Payload
           cd ..
-          ls -lh FahiVideosPro-iOS.ipa
+          ls -lh FahiVidsPro-iOS.ipa
 
       - name: Upload iOS IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Fahi-Videos-Pro-iOS-IPA
-          path: FahiVideosPro-iOS.ipa
+          name: Fahi-vids-Pro-iOS-IPA
+          path: FahiVidsPro-iOS.ipa
