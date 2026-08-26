@@ -242,7 +242,8 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
                             child: Transform.rotate(
                               angle: rotation,
                               child: Transform.scale(
-                                scale: scale,
+                                scaleX: (mainVideo?.isFlippedHorizontal ?? false) ? -scale : scale,
+                                scaleY: (mainVideo?.isFlippedVertical ?? false) ? -scale : scale,
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(4),
                                   child: Stack(

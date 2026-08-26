@@ -14,6 +14,7 @@ class TimelineProvider extends ChangeNotifier {
   bool _isPlaying = false;
   TrackItem? _selectedItem;
   double _zoomLevel = 1.0; // 0.5x to 3.0x timeline scale
+  bool _isGlobalMuted = false;
 
   List<TrackItem> get tracks => _tracks;
   int get currentTimeMs => _currentTimeMs;
@@ -21,6 +22,7 @@ class TimelineProvider extends ChangeNotifier {
   bool get isPlaying => _isPlaying;
   TrackItem? get selectedItem => _selectedItem;
   double get zoomLevel => _zoomLevel;
+  bool get isGlobalMuted => _isGlobalMuted;
 
   // Filter tracks by category
   List<TrackItem> get videoTracks =>
@@ -54,6 +56,11 @@ class TimelineProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void toggleGlobalMute() {
+    _isGlobalMuted = !_isGlobalMuted;
+    notifyListeners();
+  }
+
   Future<void> importMediaFile(String filePath, {required TrackType type, String? title}) async {
     int detectedDurationMs = 5000;
 
@@ -68,7 +75,6 @@ class TimelineProvider extends ChangeNotifier {
       }
     }
 
-    // Find the end time of the last track of this type
     int startOffset = 0;
     final existingOfType = _tracks.where((t) => t.type == type).toList();
     if (existingOfType.isNotEmpty) {
@@ -150,7 +156,6 @@ class TimelineProvider extends ChangeNotifier {
     if (_selectedItem == null) return;
     final item = _selectedItem!;
 
-    // Check if playhead is strictly inside the clip bounds
     if (_currentTimeMs <= item.startTimeMs ||
         _currentTimeMs >= (item.startTimeMs + item.durationMs)) {
       return;
@@ -159,11 +164,9 @@ class TimelineProvider extends ChangeNotifier {
     final firstPartDuration = _currentTimeMs - item.startTimeMs;
     final secondPartDuration = item.durationMs - firstPartDuration;
 
-    // Modify original clip to end at playhead
     item.durationMs = firstPartDuration;
     item.sourceEndMs = item.sourceStartMs + (firstPartDuration * item.speed).round();
 
-    // Create second clip starting from playhead
     final secondItem = item.copyWith(
       id: const Uuid().v4(),
       title: '${item.title} (Part 2)',
@@ -179,7 +182,87 @@ class TimelineProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Trim selected clip start/end (CapCut Trim feature)
+  /// Duplicate selected clip (CapCut Copy feature)
+  void duplicateSelectedItem() {
+    if (_selectedItem == null) return;
+    final item = _selectedItem!;
+    final newItem = item.copyWith(
+      id: const Uuid().v4(),
+      title: '${item.title} (Copy)',
+      startTimeMs: item.startTimeMs + item.durationMs,
+    );
+    _tracks.add(newItem);
+    _selectedItem = newItem;
+    _recalcTotalDuration();
+    _saveState();
+    notifyListeners();
+  }
+
+  /// Extract Audio from Video (CapCut Extract Audio feature)
+  void extractAudioFromSelected() {
+    if (_selectedItem == null || _selectedItem!.type != TrackType.video) return;
+    final item = _selectedItem!;
+    
+    // Mute source video clip
+    item.volume = 0.0;
+
+    // Create extracted audio track
+    final extractedAudio = TrackItem(
+      id: const Uuid().v4(),
+      type: TrackType.audio,
+      title: 'Audio: ${item.title}',
+      sourcePath: item.sourcePath,
+      startTimeMs: item.startTimeMs,
+      durationMs: item.durationMs,
+      sourceStartMs: item.sourceStartMs,
+      sourceEndMs: item.sourceEndMs,
+      volume: 1.0,
+    );
+
+    _tracks.add(extractedAudio);
+    _saveState();
+    notifyListeners();
+  }
+
+  /// Freeze Frame at current playhead (CapCut Freeze feature)
+  void freezeSelectedAtPlayhead() {
+    if (_selectedItem == null) return;
+    final item = _selectedItem!;
+    
+    const freezeDurationMs = 3000;
+    final freezeItem = item.copyWith(
+      id: const Uuid().v4(),
+      title: 'Freeze Frame',
+      startTimeMs: _currentTimeMs,
+      durationMs: freezeDurationMs,
+      isFrozen: true,
+      speed: 0.0,
+    );
+
+    _tracks.add(freezeItem);
+    _recalcTotalDuration();
+    _saveState();
+    notifyListeners();
+  }
+
+  /// Toggle Reverse Playback
+  void toggleReverseSelected() {
+    if (_selectedItem == null) return;
+    _selectedItem!.isReversed = !_selectedItem!.isReversed;
+    _saveState();
+    notifyListeners();
+  }
+
+  /// Replace Selected Media source
+  void replaceSelectedMedia(String newPath, String newTitle) {
+    if (_selectedItem == null) return;
+    _selectedItem!.sourcePath = newPath;
+    _selectedItem!.title = newTitle;
+    _saveState();
+    notifyListeners();
+  }
+
+  /// Trim selected clip start/end
   void trimSelectedItem({int? newStartMs, int? newDurationMs}) {
     if (_selectedItem == null) return;
     if (newStartMs != null) _selectedItem!.startTimeMs = newStartMs;

@@ -17,9 +17,9 @@ class EditorScreen extends StatelessWidget {
     final editorState = context.watch<EditorStateProvider>();
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: const Color(0xFF0C0C12),
       appBar: AppBar(
-        backgroundColor: AppColors.surface,
+        backgroundColor: const Color(0xFF14141E),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: Colors.white),
@@ -28,20 +28,40 @@ class EditorScreen extends StatelessWidget {
         title: Row(
           children: [
             Container(
-              width: 8,
-              height: 8,
+              width: 7,
+              height: 7,
               decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.primary),
             ),
             const SizedBox(width: 8),
             Text(
               editorState.projectName,
-              style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
             ),
           ],
         ),
         actions: [
+          // CapCut Resolution Badge
+          Container(
+            margin: const EdgeInsets.symmetric(vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.white12, width: 0.5),
+            ),
+            child: const Row(
+              children: [
+                Text('1080P', style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold)),
+                SizedBox(width: 2),
+                Icon(Icons.arrow_drop_down, color: Colors.white70, size: 14),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // CapCut Blue Export Button
           Padding(
-            padding: const EdgeInsets.only(right: 12),
+            padding: const EdgeInsets.only(right: 12, top: 10, bottom: 10),
             child: ElevatedButton.icon(
               onPressed: () {
                 showDialog(
@@ -54,11 +74,11 @@ class EditorScreen extends StatelessWidget {
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.black,
                 elevation: 0,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               ),
-              icon: const Icon(Icons.arrow_upward_rounded, size: 16),
-              label: const Text('Export', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              icon: const Icon(Icons.arrow_upward_rounded, size: 14),
+              label: const Text('Export', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
             ),
           ),
         ],
@@ -81,7 +101,7 @@ class EditorScreen extends StatelessWidget {
               child: TimelineView(),
             ),
 
-            // Bottom CapCut Toolbars
+            // Bottom CapCut Toolbars (Level 1 / Level 2)
             ToolbarBottom(),
           ],
         ),
