@@ -22,11 +22,22 @@ class TrackItem {
 
   // Video & Visual Attributes
   double speed; // 0.1 to 10.0
-  double volume; // 0.0 to 2.0
+  double volume; // 0.0 to 10.0 (1000%)
   double opacity;
   double rotation;
   double scale;
   Offset position; // Center offset
+
+  // Transform / Crop & Flip
+  bool isFlippedHorizontal;
+  bool isFlippedVertical;
+  double cropAspectRatio; // 0.0 = free, 9/16, 16/9, 1/1, etc.
+  
+  // Playback Features
+  bool isReversed;
+  bool isFrozen;
+  double fadeInSec; // 0.0 to 10.0
+  double fadeOutSec; // 0.0 to 10.0
 
   // Transitions & In/Out Animations
   TransitionPreset? transition;
@@ -80,6 +91,13 @@ class TrackItem {
     this.rotation = 0.0,
     this.scale = 1.0,
     this.position = Offset.zero,
+    this.isFlippedHorizontal = false,
+    this.isFlippedVertical = false,
+    this.cropAspectRatio = 0.0,
+    this.isReversed = false,
+    this.isFrozen = false,
+    this.fadeInSec = 0.0,
+    this.fadeOutSec = 0.0,
     this.transition,
     this.transitionDurationMs = 500,
     this.inAnimation,
@@ -119,6 +137,13 @@ class TrackItem {
         'opacity': opacity,
         'rotation': rotation,
         'scale': scale,
+        'isFlippedHorizontal': isFlippedHorizontal,
+        'isFlippedVertical': isFlippedVertical,
+        'cropAspectRatio': cropAspectRatio,
+        'isReversed': isReversed,
+        'isFrozen': isFrozen,
+        'fadeInSec': fadeInSec,
+        'fadeOutSec': fadeOutSec,
         'transitionId': transition?.id,
         'transitionDurationMs': transitionDurationMs,
         'inAnimationId': inAnimation?.id,
@@ -151,6 +176,13 @@ class TrackItem {
         opacity: (json['opacity'] as num?)?.toDouble() ?? 1.0,
         rotation: (json['rotation'] as num?)?.toDouble() ?? 0.0,
         scale: (json['scale'] as num?)?.toDouble() ?? 1.0,
+        isFlippedHorizontal: json['isFlippedHorizontal'] as bool? ?? false,
+        isFlippedVertical: json['isFlippedVertical'] as bool? ?? false,
+        cropAspectRatio: (json['cropAspectRatio'] as num?)?.toDouble() ?? 0.0,
+        isReversed: json['isReversed'] as bool? ?? false,
+        isFrozen: json['isFrozen'] as bool? ?? false,
+        fadeInSec: (json['fadeInSec'] as num?)?.toDouble() ?? 0.0,
+        fadeOutSec: (json['fadeOutSec'] as num?)?.toDouble() ?? 0.0,
         transition: json['transitionId'] != null ? TransitionPreset.presets.firstWhere((t) => t.id == json['transitionId'], orElse: () => TransitionPreset.presets.first) : null,
         transitionDurationMs: json['transitionDurationMs'] as int? ?? 500,
         isNoiseReductionActive: json['isNoiseReductionActive'] as bool? ?? false,
@@ -180,6 +212,13 @@ class TrackItem {
     double? rotation,
     double? scale,
     Offset? position,
+    bool? isFlippedHorizontal,
+    bool? isFlippedVertical,
+    double? cropAspectRatio,
+    bool? isReversed,
+    bool? isFrozen,
+    double? fadeInSec,
+    double? fadeOutSec,
     TransitionPreset? transition,
     int? transitionDurationMs,
     ClipAnimationPreset? inAnimation,
@@ -217,6 +256,13 @@ class TrackItem {
       rotation: rotation ?? this.rotation,
       scale: scale ?? this.scale,
       position: position ?? this.position,
+      isFlippedHorizontal: isFlippedHorizontal ?? this.isFlippedHorizontal,
+      isFlippedVertical: isFlippedVertical ?? this.isFlippedVertical,
+      cropAspectRatio: cropAspectRatio ?? this.cropAspectRatio,
+      isReversed: isReversed ?? this.isReversed,
+      isFrozen: isFrozen ?? this.isFrozen,
+      fadeInSec: fadeInSec ?? this.fadeInSec,
+      fadeOutSec: fadeOutSec ?? this.fadeOutSec,
       transition: transition ?? this.transition,
       transitionDurationMs: transitionDurationMs ?? this.transitionDurationMs,
       inAnimation: inAnimation ?? this.inAnimation,
