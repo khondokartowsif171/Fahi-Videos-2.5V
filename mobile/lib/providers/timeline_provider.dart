@@ -105,6 +105,11 @@ class TimelineProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void updatePlaybackPosition(int timeMs) {
+    _currentTimeMs = timeMs.clamp(0, _totalDurationMs);
+    notifyListeners();
+  }
+
   void setPlaying(bool playing) {
     _isPlaying = playing;
     notifyListeners();
