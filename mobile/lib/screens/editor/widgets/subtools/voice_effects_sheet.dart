@@ -4,13 +4,16 @@ import '../../../../config/theme_colors.dart';
 import '../../../../models/voice_effect_model.dart';
 import '../../../../providers/timeline_provider.dart';
 
+import '../../../../models/track_item.dart';
+
 class VoiceEffectsSheet extends StatelessWidget {
-  const VoiceEffectsSheet({super.key});
+  final TrackItem? item;
+  const VoiceEffectsSheet({super.key, this.item});
 
   @override
   Widget build(BuildContext context) {
     final timeline = context.watch<TimelineProvider>();
-    final selectedItem = timeline.selectedItem;
+    final selectedItem = item ?? timeline.selectedItem ?? timeline.videoTracks.firstOrNull;
 
     return Container(
       height: 380,
