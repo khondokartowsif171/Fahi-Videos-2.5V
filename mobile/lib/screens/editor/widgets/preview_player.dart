@@ -7,6 +7,7 @@ import '../../../config/color_matrix_helper.dart';
 import '../../../config/theme_colors.dart';
 import '../../../models/caption_model.dart';
 import '../../../models/clip_animation_model.dart';
+import '../../../models/color_grading_model.dart';
 import '../../../models/track_item.dart';
 import '../../../models/transition_model.dart';
 import '../../../providers/caption_provider.dart';
@@ -490,7 +491,7 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
       return Opacity(
         opacity: (0.8 * (1.0 - progress)).clamp(0.0, 1.0),
         child: Container(
-          color: (progress * 10).toInt() % 2 == 0 ? Colors.cyanAccent.withOpacity(0.4) : Colors.magentaAccent.withOpacity(0.4),
+          color: (progress * 10).toInt() % 2 == 0 ? Colors.cyanAccent.withOpacity(0.4) : Colors.pinkAccent.withOpacity(0.4),
         ),
       );
     }
