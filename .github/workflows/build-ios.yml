@@ -44,13 +44,13 @@ jobs:
         run: flutter build ios --release --no-codesign
 
       - name: Package Payload into Sideloadable IPA
-        working-directory: mobile
         run: |
-          mkdir -p build/ios/ipa_payload/Payload
-          cp -r build/ios/iphoneos/Runner.app build/ios/ipa_payload/Payload/
-          cd build/ios/ipa_payload
-          zip -r ../../../FahiVideosPro-iOS.ipa Payload
-          cd ../../..
+          mkdir -p ipa_temp/Payload
+          cp -r mobile/build/ios/iphoneos/Runner.app ipa_temp/Payload/
+          cd ipa_temp
+          zip -qr ../FahiVideosPro-iOS.ipa Payload
+          cd ..
+          ls -lh FahiVideosPro-iOS.ipa
 
       - name: Upload iOS IPA Artifact
         uses: actions/upload-artifact@v4
