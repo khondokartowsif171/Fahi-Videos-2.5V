@@ -36,6 +36,7 @@ class _ToolbarBottomState extends State<ToolbarBottom> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (_) => sheet,
     );
@@ -82,7 +83,7 @@ class _ToolbarBottomState extends State<ToolbarBottom> {
     final isClipSelected = timeline.selectedItem != null || _isClipEditMode;
 
     return Container(
-      height: 74,
+      height: 76,
       decoration: const BoxDecoration(
         color: Color(0xFF101017),
         border: Border(top: BorderSide(color: Colors.white10, width: 0.5)),
@@ -98,7 +99,7 @@ class _ToolbarBottomState extends State<ToolbarBottom> {
     return ListView(
       scrollDirection: Axis.horizontal,
       physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       children: [
         // 1. Edit (Switches to Clip Edit Mode)
         _buildToolBtn(
@@ -180,7 +181,7 @@ class _ToolbarBottomState extends State<ToolbarBottom> {
         // 10. Auto Captions (Alex Hormozi)
         _buildToolBtn(
           icon: Icons.subtitles_rounded,
-          label: 'Auto Captions',
+          label: 'Captions',
           color: const Color(0xFFFFD54F),
           onTap: () => _openSheet(context, const CaptionsSheet()),
         ),
@@ -200,31 +201,37 @@ class _ToolbarBottomState extends State<ToolbarBottom> {
   // LEVEL 2: CapCut Clip Edit Toolbar
   // ==========================================
   Widget _buildClipEditToolbar(BuildContext context, TimelineProvider timeline) {
+    final activeItem = timeline.selectedItem ?? timeline.videoTracks.firstOrNull;
+
     return ListView(
       scrollDirection: Axis.horizontal,
       physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
       children: [
         // Back to Main Menu Button
-        GestureDetector(
-          onTap: () {
-            timeline.selectItem(null);
-            setState(() => _isClipEditMode = false);
-          },
-          child: Container(
-            margin: const EdgeInsets.only(right: 6),
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: Colors.white70),
-                SizedBox(height: 2),
-                Text('Main', style: TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.bold)),
-              ],
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: () {
+              timeline.selectItem(null);
+              setState(() => _isClipEditMode = false);
+            },
+            child: Container(
+              margin: const EdgeInsets.only(right: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: Colors.white70),
+                  SizedBox(height: 3),
+                  Text('Main', style: TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.bold)),
+                ],
+              ),
             ),
           ),
         ),
@@ -242,7 +249,7 @@ class _ToolbarBottomState extends State<ToolbarBottom> {
           icon: Icons.speed_rounded,
           label: 'Speed',
           color: const Color(0xFFFF9100),
-          onTap: () => _openSheet(context, SpeedCurvesSheet(item: timeline.selectedItem)),
+          onTap: () => _openSheet(context, SpeedCurvesSheet(item: activeItem)),
         ),
 
         // 3. Animation (In / Out / Combo)
@@ -250,7 +257,7 @@ class _ToolbarBottomState extends State<ToolbarBottom> {
           icon: Icons.animation_rounded,
           label: 'Animation',
           color: const Color(0xFFFF4081),
-          onTap: () => _openSheet(context, ClipAnimationsSheet(item: timeline.selectedItem)),
+          onTap: () => _openSheet(context, ClipAnimationsSheet(item: activeItem)),
         ),
 
         // 4. Cutout & Remove BG
@@ -258,7 +265,7 @@ class _ToolbarBottomState extends State<ToolbarBottom> {
           icon: Icons.person_search_rounded,
           label: 'Cutout',
           color: const Color(0xFF76FF03),
-          onTap: () => _openSheet(context, CutoutSheet(item: timeline.selectedItem)),
+          onTap: () => _openSheet(context, CutoutSheet(item: activeItem)),
         ),
 
         // 5. Crop, Rotate & Transform
@@ -266,7 +273,7 @@ class _ToolbarBottomState extends State<ToolbarBottom> {
           icon: Icons.crop_rounded,
           label: 'Transform',
           color: const Color(0xFF00E5FF),
-          onTap: () => _openSheet(context, CropTransformSheet(item: timeline.selectedItem)),
+          onTap: () => _openSheet(context, CropTransformSheet(item: activeItem)),
         ),
 
         // 6. Volume & Fade
@@ -274,7 +281,7 @@ class _ToolbarBottomState extends State<ToolbarBottom> {
           icon: Icons.volume_up_rounded,
           label: 'Volume',
           color: const Color(0xFF00E676),
-          onTap: () => _openSheet(context, VolumeFadeSheet(item: timeline.selectedItem)),
+          onTap: () => _openSheet(context, VolumeFadeSheet(item: activeItem)),
         ),
 
         // 7. Voice FX
@@ -282,7 +289,7 @@ class _ToolbarBottomState extends State<ToolbarBottom> {
           icon: Icons.record_voice_over_rounded,
           label: 'Voice FX',
           color: const Color(0xFF00E676),
-          onTap: () => _openSheet(context, VoiceEffectsSheet(item: timeline.selectedItem)),
+          onTap: () => _openSheet(context, VoiceEffectsSheet(item: activeItem)),
         ),
 
         // 8. Extract Audio
@@ -352,8 +359,8 @@ class _ToolbarBottomState extends State<ToolbarBottom> {
           label: 'Delete',
           color: const Color(0xFFFF5252),
           onTap: () {
-            if (timeline.selectedItem != null) {
-              timeline.removeTrackItem(timeline.selectedItem!.id);
+            if (activeItem != null) {
+              timeline.removeTrackItem(activeItem.id);
             }
           },
         ),
@@ -367,25 +374,28 @@ class _ToolbarBottomState extends State<ToolbarBottom> {
     required Color color,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-          color: Colors.transparent,
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 22, color: color),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-            ),
-          ],
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 22, color: color),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
         ),
       ),
     );

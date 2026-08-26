@@ -63,15 +63,43 @@ class _TimelineViewState extends State<TimelineView> {
             ),
             child: Row(
               children: [
-                // Play / Pause
-                IconButton(
-                  onPressed: () => timeline.setPlaying(!timeline.isPlaying),
-                  icon: Icon(
-                    timeline.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                    color: AppColors.primary,
-                    size: 22,
+                // CapCut Play / Pause Pill Button
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () => timeline.setPlaying(!timeline.isPlaying),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: timeline.isPlaying ? AppColors.primary.withOpacity(0.15) : Colors.white.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: timeline.isPlaying ? AppColors.primary : Colors.white12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            timeline.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                            color: timeline.isPlaying ? AppColors.primary : Colors.white,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            timeline.isPlaying ? 'Pause' : 'Play',
+                            style: TextStyle(
+                              color: timeline.isPlaying ? AppColors.primary : Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
+
+                const SizedBox(width: 6),
 
                 // Undo
                 IconButton(
@@ -359,6 +387,7 @@ class _TimelineViewState extends State<TimelineView> {
               bottom: 2,
               width: width,
               child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
                 onTap: () => timeline.selectItem(item),
                 child: Container(
                   decoration: BoxDecoration(
