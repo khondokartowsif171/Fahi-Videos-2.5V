@@ -40,7 +40,7 @@ class FahiVideosApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => KeyframeProvider()),
       ],
       child: MaterialApp(
-        title: 'Fahi Videos Pro',
+        title: 'Fahi-vids',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           brightness: Brightness.dark,
