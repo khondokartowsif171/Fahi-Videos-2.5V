@@ -4,8 +4,11 @@ import '../../../../config/theme_colors.dart';
 import '../../../../models/transition_model.dart';
 import '../../../../providers/timeline_provider.dart';
 
+import '../../../../models/track_item.dart';
+
 class TransitionsSheet extends StatefulWidget {
-  const TransitionsSheet({super.key});
+  final TrackItem? item;
+  const TransitionsSheet({super.key, this.item});
 
   @override
   State<TransitionsSheet> createState() => _TransitionsSheetState();
@@ -30,7 +33,7 @@ class _TransitionsSheetState extends State<TransitionsSheet> with SingleTickerPr
   @override
   Widget build(BuildContext context) {
     final timeline = context.watch<TimelineProvider>();
-    final selectedItem = timeline.selectedItem;
+    final selectedItem = widget.item ?? timeline.selectedItem ?? timeline.videoTracks.firstOrNull;
 
     return Container(
       height: 380,

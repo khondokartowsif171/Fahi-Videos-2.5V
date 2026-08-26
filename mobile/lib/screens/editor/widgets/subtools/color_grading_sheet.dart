@@ -3,13 +3,16 @@ import 'package:provider/provider.dart';
 import '../../../../config/theme_colors.dart';
 import '../../../../providers/timeline_provider.dart';
 
+import '../../../../models/track_item.dart';
+
 class ColorGradingSheet extends StatelessWidget {
-  const ColorGradingSheet({super.key});
+  final TrackItem? item;
+  const ColorGradingSheet({super.key, this.item});
 
   @override
   Widget build(BuildContext context) {
     final timeline = context.watch<TimelineProvider>();
-    final selectedItem = timeline.selectedItem;
+    final selectedItem = item ?? timeline.selectedItem ?? timeline.videoTracks.firstOrNull;
     final cg = selectedItem?.colorGrading;
 
     return Container(
