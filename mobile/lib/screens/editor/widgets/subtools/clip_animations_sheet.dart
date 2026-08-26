@@ -4,8 +4,11 @@ import '../../../../config/theme_colors.dart';
 import '../../../../models/clip_animation_model.dart';
 import '../../../../providers/timeline_provider.dart';
 
+import '../../../../models/track_item.dart';
+
 class ClipAnimationsSheet extends StatefulWidget {
-  const ClipAnimationsSheet({super.key});
+  final TrackItem? item;
+  const ClipAnimationsSheet({super.key, this.item});
 
   @override
   State<ClipAnimationsSheet> createState() => _ClipAnimationsSheetState();
@@ -29,7 +32,7 @@ class _ClipAnimationsSheetState extends State<ClipAnimationsSheet> with SingleTi
   @override
   Widget build(BuildContext context) {
     final timeline = context.watch<TimelineProvider>();
-    final selectedItem = timeline.selectedItem;
+    final selectedItem = widget.item ?? timeline.selectedItem ?? timeline.videoTracks.firstOrNull;
 
     return Container(
       height: 380,
