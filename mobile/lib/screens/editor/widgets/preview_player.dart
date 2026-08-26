@@ -3,9 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
+import '../../../config/color_matrix_helper.dart';
 import '../../../config/theme_colors.dart';
 import '../../../models/caption_model.dart';
+import '../../../models/clip_animation_model.dart';
 import '../../../models/track_item.dart';
+import '../../../models/transition_model.dart';
 import '../../../providers/caption_provider.dart';
 import '../../../providers/editor_state_provider.dart';
 import '../../../providers/keyframe_provider.dart';
@@ -21,6 +24,8 @@ class PreviewPlayer extends StatefulWidget {
 class _PreviewPlayerState extends State<PreviewPlayer> {
   VideoPlayerController? _controller;
   String? _loadedSourcePath;
+  double _appliedSpeed = 1.0;
+  double _appliedVolume = 1.0;
 
   @override
   void initState() {
@@ -33,6 +38,7 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
     final mainVideo = timeline.videoTracks.firstOrNull;
 
     if (mainVideo?.sourcePath != null && mainVideo!.sourcePath != _loadedSourcePath) {
+      _controller?.removeListener(_onVideoProgress);
       _controller?.dispose();
       _loadedSourcePath = mainVideo.sourcePath!;
 
@@ -47,8 +53,25 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
         if (mounted) {
           setState(() {});
           _controller?.addListener(_onVideoProgress);
+          _applyAudioAndSpeedSettings(mainVideo);
         }
       });
+    } else if (mainVideo != null && _controller != null && _controller!.value.isInitialized) {
+      _applyAudioAndSpeedSettings(mainVideo);
+    }
+  }
+
+  void _applyAudioAndSpeedSettings(TrackItem mainVideo) {
+    if (_controller == null || !_controller!.value.isInitialized) return;
+
+    if (_appliedSpeed != mainVideo.speed) {
+      _appliedSpeed = mainVideo.speed.clamp(0.1, 10.0);
+      _controller?.setPlaybackSpeed(_appliedSpeed);
+    }
+
+    if (_appliedVolume != mainVideo.volume) {
+      _appliedVolume = mainVideo.volume.clamp(0.0, 2.0);
+      _controller?.setVolume(_appliedVolume);
     }
   }
 
@@ -93,6 +116,8 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
     final mainVideo = timeline.videoTracks.firstOrNull;
     if (mainVideo?.sourcePath != _loadedSourcePath) {
       _checkAndInitVideo();
+    } else if (mainVideo != null) {
+      _applyAudioAndSpeedSettings(mainVideo);
     }
 
     if (_controller != null && _controller!.value.isInitialized) {
@@ -105,6 +130,12 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
 
     final activeTexts = timeline.textTracks.where((t) {
       return timeline.currentTimeMs >= t.startTimeMs &&
+          timeline.currentTimeMs <= (t.startTimeMs + t.durationMs);
+    }).toList();
+
+    final activeOverlays = timeline.tracks.where((t) {
+      return t.type == TrackType.overlay &&
+          timeline.currentTimeMs >= t.startTimeMs &&
           timeline.currentTimeMs <= (t.startTimeMs + t.durationMs);
     }).toList();
 
@@ -131,31 +162,111 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    // Video Layer with Keyframe Animation Interpolation
+                    // Main Video Track Layer with Color Matrix, Transitions, Animations & Keyframes
                     if (_controller != null && _controller!.value.isInitialized)
                       Builder(builder: (_) {
+                        final currentMs = timeline.currentTimeMs;
                         final kfProps = mainVideo != null
-                            ? keyframeProvider.interpolateClipProperties(mainVideo, timeline.currentTimeMs)
+                            ? keyframeProvider.interpolateClipProperties(mainVideo, currentMs)
                             : null;
 
-                        final scale = kfProps?['scale'] ?? 1.0;
-                        final rotation = kfProps?['rotation'] ?? 0.0;
-                        final opacity = (kfProps?['opacity'] ?? 1.0) as double;
+                        double scale = kfProps?['scale'] ?? 1.0;
+                        double rotation = kfProps?['rotation'] ?? 0.0;
+                        double opacity = (kfProps?['opacity'] ?? 1.0) as double;
+                        Offset position = mainVideo?.position ?? Offset.zero;
+
+                        // 1. In-Animation calculation
+                        if (mainVideo?.inAnimation != null) {
+                          final inDurationMs = (mainVideo!.inAnimation!.defaultDurationSec * 1000).round();
+                          final elapsed = currentMs - mainVideo.startTimeMs;
+                          if (elapsed >= 0 && elapsed < inDurationMs) {
+                            final progress = (elapsed / inDurationMs).clamp(0.0, 1.0);
+                            if (mainVideo.inAnimation!.id == 'in_fade') {
+                              opacity *= progress;
+                            } else if (mainVideo.inAnimation!.id == 'in_zoom1') {
+                              scale *= (0.3 + 0.7 * progress);
+                            } else if (mainVideo.inAnimation!.id == 'in_zoom2') {
+                              scale *= (1.8 - 0.8 * progress);
+                            }
+                          }
+                        }
+
+                        // 2. Out-Animation calculation
+                        if (mainVideo?.outAnimation != null) {
+                          final outDurationMs = 500;
+                          final remaining = (mainVideo!.startTimeMs + mainVideo.durationMs) - currentMs;
+                          if (remaining >= 0 && remaining < outDurationMs) {
+                            final progress = (remaining / outDurationMs).clamp(0.0, 1.0);
+                            if (mainVideo.outAnimation!.id == 'out_fade') {
+                              opacity *= progress;
+                            } else if (mainVideo.outAnimation!.id == 'out_zoom') {
+                              scale *= (0.2 + 0.8 * progress);
+                            }
+                          }
+                        }
+
+                        // 3. Color Grading & Filter Shader Matrix
+                        final matrix = ColorMatrixHelper.generateCombinedMatrix(
+                          adjustments: mainVideo?.colorGrading ?? ColorGradingSettings(),
+                          filterId: mainVideo?.filterName,
+                        );
+
+                        Widget videoContent = ColorFiltered(
+                          colorFilter: ColorFilter.matrix(matrix),
+                          child: FittedBox(
+                            fit: BoxFit.cover,
+                            child: SizedBox(
+                              width: _controller!.value.size.width,
+                              height: _controller!.value.size.height,
+                              child: VideoPlayer(_controller!),
+                            ),
+                          ),
+                        );
+
+                        // 4. Chroma Key Blend (if green screen is active)
+                        if (mainVideo?.chromaKeyColor != null) {
+                          videoContent = ColorFiltered(
+                            colorFilter: ColorFilter.mode(
+                              mainVideo!.chromaKeyColor!.withOpacity(mainVideo.chromaIntensity),
+                              BlendMode.dstOut,
+                            ),
+                            child: videoContent,
+                          );
+                        }
 
                         return Opacity(
                           opacity: opacity.clamp(0.0, 1.0),
-                          child: Transform.rotate(
-                            angle: rotation,
-                            child: Transform.scale(
-                              scale: scale,
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(4),
-                                child: FittedBox(
-                                  fit: BoxFit.cover,
-                                  child: SizedBox(
-                                    width: _controller!.value.size.width,
-                                    height: _controller!.value.size.height,
-                                    child: VideoPlayer(_controller!),
+                          child: Transform.translate(
+                            offset: position,
+                            child: Transform.rotate(
+                              angle: rotation,
+                              child: Transform.scale(
+                                scale: scale,
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      videoContent,
+
+                                      // Vignette Overlay
+                                      if ((mainVideo?.colorGrading.vignette ?? 0.0) > 0.05)
+                                        Container(
+                                          decoration: BoxDecoration(
+                                            gradient: RadialGradient(
+                                              radius: 0.85,
+                                              colors: [
+                                                Colors.transparent,
+                                                Colors.black.withOpacity(mainVideo!.colorGrading.vignette.clamp(0.0, 0.9)),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+
+                                      // 5. Transition Overlay (Flash / Fade)
+                                      if (mainVideo?.transition != null)
+                                        _buildTransitionOverlay(mainVideo!.transition!, currentMs, mainVideo),
+                                    ],
                                   ),
                                 ),
                               ),
@@ -191,6 +302,42 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
                           ),
                         ),
                       ),
+
+                    // Active Overlay / PIP Tracks
+                    ...activeOverlays.map((overlayItem) {
+                      return Positioned(
+                        left: overlayItem.position.dx,
+                        top: overlayItem.position.dy,
+                        child: Transform.rotate(
+                          angle: overlayItem.rotation,
+                          child: Transform.scale(
+                            scale: overlayItem.scale,
+                            child: Opacity(
+                              opacity: overlayItem.opacity.clamp(0.0, 1.0),
+                              child: Container(
+                                width: 140,
+                                height: 90,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: AppColors.primary, width: 1),
+                                  color: Colors.black87,
+                                ),
+                                child: Center(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.layers_rounded, color: AppColors.primary, size: 20),
+                                      const SizedBox(height: 4),
+                                      Text(overlayItem.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 10)),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
 
                     // Active Text Overlays
                     ...activeTexts.map((textItem) {
@@ -322,5 +469,32 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
         ],
       ),
     );
+  }
+
+  Widget _buildTransitionOverlay(TransitionPreset transition, int currentMs, TrackItem item) {
+    final transDurationMs = item.transitionDurationMs;
+    final elapsed = currentMs - item.startTimeMs;
+    if (elapsed < 0 || elapsed > transDurationMs) return const SizedBox.shrink();
+
+    final progress = (elapsed / transDurationMs).clamp(0.0, 1.0);
+
+    if (transition.id == 'fade_white') {
+      return Container(
+        color: Colors.white.withOpacity((1.0 - progress).clamp(0.0, 1.0)),
+      );
+    } else if (transition.id == 'fade_black') {
+      return Container(
+        color: Colors.black.withOpacity((1.0 - progress).clamp(0.0, 1.0)),
+      );
+    } else if (transition.id == 'rgb_glitch') {
+      return Opacity(
+        opacity: (0.8 * (1.0 - progress)).clamp(0.0, 1.0),
+        child: Container(
+          color: (progress * 10).toInt() % 2 == 0 ? Colors.cyanAccent.withOpacity(0.4) : Colors.magentaAccent.withOpacity(0.4),
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
   }
 }
