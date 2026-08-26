@@ -430,7 +430,7 @@ class _TimelineViewState extends State<TimelineView> {
                               color: Colors.white,
                               borderRadius: BorderRadius.horizontal(left: Radius.circular(3)),
                             ),
-                            child: const Center(
+                            child: Center(
                               child: Container(
                                 width: 2,
                                 height: 12,
@@ -449,7 +449,7 @@ class _TimelineViewState extends State<TimelineView> {
                               color: Colors.white,
                               borderRadius: BorderRadius.horizontal(right: Radius.circular(3)),
                             ),
-                            child: const Center(
+                            child: Center(
                               child: Container(
                                 width: 2,
                                 height: 12,
