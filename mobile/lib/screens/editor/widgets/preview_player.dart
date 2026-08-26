@@ -401,7 +401,7 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                                   decoration: BoxDecoration(
-                                    color: textItem.textBackgroundColor,
+                                    color: textItem.backgroundColor ?? Colors.black54,
                                     borderRadius: BorderRadius.circular(6),
                                     border: Border.all(color: Colors.white24),
                                   ),
