@@ -48,6 +48,19 @@ class EditorStateProvider extends ChangeNotifier {
     }
   }
 
+  String get aspectRatioName {
+    switch (_aspectRatio) {
+      case AspectRatioPreset.ratio9_16:
+        return '9:16';
+      case AspectRatioPreset.ratio16_9:
+        return '16:9';
+      case AspectRatioPreset.ratio1_1:
+        return '1:1';
+      case AspectRatioPreset.ratio4_5:
+        return '4:5';
+    }
+  }
+
   void setProjectName(String name) {
     _projectName = name;
     notifyListeners();
