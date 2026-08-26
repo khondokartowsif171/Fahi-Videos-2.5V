@@ -435,14 +435,14 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
                                 border: Border.all(color: AppColors.primary.withOpacity(0.6), width: 1.5),
                               ),
                               child: Text(
-                                activeCaption.text.toUpperCase(),
+                                activeCaption.fullText.toUpperCase(),
                                 textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: Color(int.parse('0xFF${activeCaption.style.highlightColor.replaceAll('#', '')}')),
-                                  fontSize: activeCaption.style.fontSize,
+                                style: const TextStyle(
+                                  color: AppColors.primary,
+                                  fontSize: 16,
                                   fontWeight: FontWeight.w900,
                                   letterSpacing: 1.2,
-                                  shadows: const [
+                                  shadows: [
                                     Shadow(color: Colors.black, blurRadius: 4, offset: Offset(2, 2)),
                                   ],
                                 ),
