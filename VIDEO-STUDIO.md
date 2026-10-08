@@ -33,10 +33,18 @@ appropriate CORS response headers. Unsupported video inputs report an error.
   settings.
 
 This is a mobile web editor, not a native app or complete CapCut implementation.
-Curve speed ramps, keyframe animation, transitions, chroma key, subject cutout,
-tracking and CapCut's proprietary asset library are not implemented by this
-change. Physical iOS/Android recording and downloaded output still require
+Transform keyframes, custom speed curves, fade-through-black transitions and
+chroma key are implemented. Keyframe interpolation, speed curves, fade alpha
+and key-color processing are shared between preview and export. Chroma processing
+is capped at 1280px and uses alpha feathering; source audio follows the transition
+fade. Curves apply to each clip; timeline time remains source seconds, so output
+length changes with speed. Cross-dissolves, automatic subject cutout, tracking
+and CapCut's proprietary asset library are not implemented. Physical iOS/Android recording and downloaded output still require
 device validation. Browser download permission was denied during this session,
-so the export test did not inspect an actual downloaded recording. Full Next
-production build is blocked by this environment's child-process spawn EPERM;
-successful type checking is reported separately from full build validation.
+so the export test did not inspect an actual downloaded recording. Full Next production build now passes after isolating preview build artifacts.
+Set FAHI_PREVIEW_DIR=.next-mobile-preview for a development preview that can run
+alongside a production build; ordinary builds keep the default .next directory.
+
+Dynamic-tool validation: keyframes at 0s and 1.5s produced 1.5x preview zoom at
+0.75s; Slow middle produced 0.25x media playback at the clip midpoint. Chroma key
+was inspected using a generated green-screen clip with a red foreground box.

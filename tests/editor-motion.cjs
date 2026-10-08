@@ -1,0 +1,14 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),Module=require('node:module');
+const root=path.resolve(__dirname,'..');const ts=require(path.join(root,'node_modules/typescript'));const filename=path.join(root,'lib/editor-motion.ts');const moduleUnderTest=new Module(filename,module);moduleUnderTest._compile(ts.transpileModule(fs.readFileSync(filename,'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.CommonJS}}).outputText,filename);
+const {transformAt,speedAt,fadeAt,keyPixels}=moduleUnderTest.exports;
+const fallback={x:0,y:0,zoom:1,rotation:0,opacity:100};
+const frames=[{time:4,x:100,y:-50,zoom:2,rotation:90,opacity:0},{time:0,...fallback}];
+assert.deepEqual(transformAt([],3,fallback),fallback);
+assert.deepEqual(transformAt(frames,2,fallback),{x:50,y:-25,zoom:1.5,rotation:45,opacity:50});
+assert.equal(transformAt(frames,-1,fallback).zoom,1);assert.equal(transformAt(frames,8,fallback).zoom,2);assert.equal(frames[0].time,4);
+assert.equal(speedAt([],0.5),1);assert.equal(speedAt([{position:1,speed:2},{position:0,speed:0.5}],0.5),1.25);
+assert.equal(fadeAt(0,2,0.5),0);assert.equal(fadeAt(0.25,2,0.5),0.5);assert.equal(fadeAt(1,2,0.5),1);assert.equal(fadeAt(1.75,2,0.5),0.5);assert.equal(fadeAt(1,2,0),1);
+assert.equal(fadeAt(0.1,0.2,2),1);
+const pixels=new Uint8ClampedArray([0,255,0,255,255,0,0,255,0,230,0,255,0,255,0,128]);
+keyPixels(pixels,'#00ff00',10,30);assert.equal(pixels[3],0);assert.equal(pixels[7],255);assert.equal(pixels[11],128);assert.equal(pixels[15],0);assert.deepEqual(Array.from(pixels.slice(0,3)),[0,255,0]);
+console.log('PASS: keyframe interpolation, endpoint holding, custom speed interpolation, symmetric clip fades, short-clip bounds and chroma alpha feathering');
