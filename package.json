@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit --incremental false",
-    "test:aura": "node tests/aura-server.cjs"
+    "test:aura": "node tests/aura-server.cjs",
+    "test:editor": "node tests/timeline-export.cjs"
   },
   "dependencies": {
     "@distube/ytdl-core": "^4.16.12",

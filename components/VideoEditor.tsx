@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import "./video-editor.css";
+import { recordTimeline } from "@/lib/timeline-export";
 import { useHistory } from "@/hooks/useHistory";
 import {
   Undo2, Redo2, Search, ChevronDown, Maximize2, VolumeX, Volume2,
@@ -39,6 +41,8 @@ interface TextOverlay {
   text: string;
   x: number; // percentage 0-100
   y: number; // percentage 0-100
+  start?: number;
+  end?: number;
   fontSize: number;
   fontFamily: string;
   color: string;
@@ -95,32 +99,77 @@ export interface VideoClipItem {
   objectUrl: string;
   duration: number;
   startOffset?: number;
+  sourceDuration?: number;
 }
 
-const getMediaDuration = (file: File): Promise<number> => {
-  return new Promise((resolve) => {
-    const video = document.createElement("video");
-    video.preload = "metadata";
-    const url = URL.createObjectURL(file);
-    video.onloadedmetadata = () => {
-      const d = video.duration;
-      URL.revokeObjectURL(url);
-      resolve(d && isFinite(d) && d > 0 ? d : 6);
-    };
-    video.onerror = () => {
-      URL.revokeObjectURL(url);
-      resolve(6);
-    };
-    video.src = url;
-  });
-};
+const getMediaDuration = (file: File): Promise<number> => new Promise((resolve, reject) => {
+  const video = document.createElement('video'); const url = URL.createObjectURL(file);
+  const cleanup = () => { clearTimeout(timeout); video.removeAttribute('src'); video.load(); URL.revokeObjectURL(url); };
+  const timeout = setTimeout(() => { cleanup(); reject(new Error('Video loading timed out: ' + file.name)); }, 15000);
+  video.preload = 'metadata';
+  video.onloadedmetadata = () => { const duration = video.duration; cleanup(); Number.isFinite(duration) && duration > 0 ? resolve(duration) : reject(new Error('Unsupported video: ' + file.name)); };
+  video.onerror = () => { cleanup(); reject(new Error('Cannot read ' + file.name + '. Try an MP4 with H.264 video.')); };
+  video.src = url;
+});
 
 export default function VideoEditor() {
-  const [videoClips, setVideoClips] = useState<VideoClipItem[]>([]);
+  const [editorState, setEditorState, { undo, redo, canUndo, canRedo }] = useHistory({
+    videoClips: [] as VideoClipItem[],
+    cropBox: {left: 0, top: 0, width: 100, height: 100},
+    opacity: 100, exposure: 100, lumetriContrast: 200, lumetriSat: 1, temp: 0, tint: 0,
+    brightness: 100,
+    contrast: 100,
+    saturation: 100,
+    sepia: 0,
+    blur: 0,
+    rotate: 0,
+    flipH: false,
+    flipV: false,
+    zoom: 1,
+    panX: 0,
+    panY: 0,
+    trimStart: 0,
+    trimEnd: 0,
+    playbackSpeed: 1,
+    volume: 1,
+    isMuted: false,
+    aspectRatio: "9:16" as "9:16" | "16:9" | "1:1" | "4:5" | "21:9",
+    bgStyle: "black" as "black" | "purple_glow" | "cyber_gradient" | "blur_low" | "blur_high",
+    splitPoints: [] as number[],
+    textOverlays: [] as TextOverlay[],
+    stickerOverlays: [] as StickerOverlay[],
+    selectedAudio: null as AudioTrack | null,
+    autoCaptionsEnabled: false,
+    captionStyle: "tiktok_yellow" as "tiktok_yellow" | "black_bar" | "neon" | "white_bold",
+    captionItems: [] as CaptionItem[],
+    selectedFilter: "original",
+    filterIntensity: 100,
+    selectedEffect: "none",
+    effectIntensity: 80,
+    overlayMedia: null as OverlayMedia | null,
+    aiAvatar: null as string | null,
+    aiAvatarScript: "",
+    coverImage: "" as string
+  });
+
+  const videoClips = editorState.videoClips;
+  const setVideoClips = useCallback((value: React.SetStateAction<VideoClipItem[]>) => {
+    setEditorState(prev => ({...prev, videoClips: typeof value === 'function' ? value(prev.videoClips) : value}));
+  }, [setEditorState]);
+  const importedUrls = useRef(new Set<string>());
+  useEffect(() => () => { importedUrls.current.forEach(url => URL.revokeObjectURL(url)); }, []);
   const [activeVideoIndex, setActiveVideoIndex] = useState(0);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const previewAreaRef = useRef<HTMLDivElement>(null);
+  const [previewBounds, setPreviewBounds] = useState({width: 340, height: 340});
+  useEffect(() => {
+    const area = previewAreaRef.current; if (!area) return;
+    const measure = () => setPreviewBounds({width: area.clientWidth, height: area.clientHeight});
+    const observer = new ResizeObserver(measure); observer.observe(area); measure();
+    return () => observer.disconnect();
+  }, []);
   const [isFullscreenPreview, setIsFullscreenPreview] = useState(false);
   
   // Timing state
@@ -156,41 +205,6 @@ export default function VideoEditor() {
   const videoFile = activeClipInfo ? activeClipInfo.clip.file : null;
   const objectUrl = activeClipInfo ? activeClipInfo.clip.objectUrl : "";
   
-  const [editorState, setEditorState, { undo, redo, canUndo, canRedo }] = useHistory({
-    brightness: 100,
-    contrast: 100,
-    saturation: 100,
-    sepia: 0,
-    blur: 0,
-    rotate: 0,
-    flipH: false,
-    flipV: false,
-    zoom: 1,
-    panX: 0,
-    panY: 0,
-    trimStart: 0,
-    trimEnd: 0,
-    playbackSpeed: 1,
-    volume: 1,
-    isMuted: false,
-    aspectRatio: "9:16" as "9:16" | "16:9" | "1:1" | "4:5" | "21:9",
-    bgStyle: "black" as "black" | "purple_glow" | "cyber_gradient" | "blur_low" | "blur_high",
-    splitPoints: [] as number[],
-    textOverlays: [] as TextOverlay[],
-    stickerOverlays: [] as StickerOverlay[],
-    selectedAudio: null as AudioTrack | null,
-    autoCaptionsEnabled: false,
-    captionStyle: "tiktok_yellow" as "tiktok_yellow" | "black_bar" | "neon" | "white_bold",
-    captionItems: [] as CaptionItem[],
-    selectedFilter: "original",
-    filterIntensity: 100,
-    selectedEffect: "none",
-    effectIntensity: 80,
-    overlayMedia: null as OverlayMedia | null,
-    aiAvatar: null as string | null,
-    aiAvatarScript: "",
-    coverImage: "" as string
-  });
 
   const updateState = useCallback((key: keyof typeof editorState, value: any) => {
     setEditorState(prev => ({
@@ -346,6 +360,8 @@ export default function VideoEditor() {
   // Active Tool Panel
   const [activeTool, setActiveTool] = useState<string | null>(null);
 
+  const [timelineScale, setTimelineScale] = useState(40);
+
   // Selected Timeline Clip state
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
 
@@ -353,12 +369,18 @@ export default function VideoEditor() {
   const [flowLabTab, setFlowLabTab] = useState<"projects" | "edit" | "assets" | "fx" | "ai_veo" | "export">("edit");
 
   // Lumetri Color Controls state (matching Google Flow Lab right inspector sidebar)
-  const [opacity, setOpacity] = useState(100);
-  const [exposure, setExposure] = useState(100);
-  const [lumetriContrast, setLumetriContrast] = useState(200);
-  const [lumetriSat, setLumetriSat] = useState(1.0);
-  const [temp, setTemp] = useState(-2.0);
-  const [tint, setTint] = useState(0.0);
+  const opacity = editorState.opacity;
+  const setOpacity = (value: number) => updateState('opacity', value);
+  const exposure = editorState.exposure;
+  const setExposure = (value: number) => updateState('exposure', value);
+  const lumetriContrast = editorState.lumetriContrast;
+  const setLumetriContrast = (value: number) => updateState('lumetriContrast', value);
+  const lumetriSat = editorState.lumetriSat;
+  const setLumetriSat = (value: number) => updateState('lumetriSat', value);
+  const temp = editorState.temp;
+  const setTemp = (value: number) => updateState('temp', value);
+  const tint = editorState.tint;
+  const setTint = (value: number) => updateState('tint', value);
 
   // Google Veo & Omni AI Generation Engine state
   const [veoPrompt, setVeoPrompt] = useState("");
@@ -400,12 +422,8 @@ export default function VideoEditor() {
   const pendingSeekTimeRef = useRef<number | null>(null);
 
   // Freeform Custom Crop Box Bounds state (left, top, width, height in %)
-  const [cropBox, setCropBox] = useState<{ left: number; top: number; width: number; height: number }>({
-    left: 5,
-    top: 5,
-    width: 90,
-    height: 90
-  });
+  const cropBox = editorState.cropBox;
+  const setCropBox = (value: React.SetStateAction<typeof cropBox>) => updateState('cropBox', value);
 
   const isDraggingCropBoxRef = useRef<"move" | "top-left" | "top-right" | "bottom-left" | "bottom-right" | null>(null);
   const cropBoxStartRef = useRef<{ clientX: number; clientY: number; box: { left: number; top: number; width: number; height: number } }>({
@@ -505,7 +523,7 @@ export default function VideoEditor() {
       if (e.cancelable) e.preventDefault();
       const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
       const deltaX = clientX - trimStartRef.current.clientX;
-      const deltaSeconds = deltaX / 15; // 15px per second scale
+      const deltaSeconds = deltaX / timelineScale; // 15px per second scale
 
       const edge = isTrimmingClipRef.current;
       const { clipId, initialDuration, initialStartOffset } = trimStartRef.current;
@@ -515,7 +533,7 @@ export default function VideoEditor() {
           if (c.id !== clipId) return c;
 
           if (edge === "right") {
-            const newDuration = Math.max(0.5, initialDuration + deltaSeconds);
+            const newDuration = Math.max(0.2, Math.min((c.sourceDuration || initialStartOffset + initialDuration) - initialStartOffset, initialDuration + deltaSeconds));
             return { ...c, duration: parseFloat(newDuration.toFixed(2)) };
           } else if (edge === "left") {
             const maxDelta = initialDuration - 0.5;
@@ -548,7 +566,7 @@ export default function VideoEditor() {
       window.removeEventListener("touchmove", handleTrimMove);
       window.removeEventListener("touchend", handleTrimEnd);
     };
-  }, []);
+  }, [timelineScale, setVideoClips]);
 
   // Transient Text Editing state
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
@@ -630,13 +648,17 @@ export default function VideoEditor() {
     if (!files || files.length === 0) return;
     const newItems: VideoClipItem[] = [];
     for (const file of files) {
+      let dur: number;
+      try { dur = await getMediaDuration(file); } catch (error) { alert(error instanceof Error ? error.message : "Unsupported video"); continue; }
       const url = URL.createObjectURL(file);
-      const dur = await getMediaDuration(file);
+      importedUrls.current.add(url);
+
       newItems.push({
         id: "clip_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7),
         file,
         name: file.name,
         objectUrl: url,
+        sourceDuration: dur,
         duration: dur
       });
     }
@@ -644,12 +666,8 @@ export default function VideoEditor() {
     if (newItems.length > 0) {
       setSelectedClipId(newItems[0].id);
     }
-    setIsPlaying(true);
-    setTimeout(() => {
-      if (videoRef.current) {
-        videoRef.current.play().catch(e => console.warn("Auto-play error:", e));
-      }
-    }, 150);
+    setIsPlaying(false);
+
   }, []);
 
   useEffect(() => {
@@ -674,10 +692,7 @@ export default function VideoEditor() {
   // Reorder or remove clip items
   const handleRemoveClip = (id: string) => {
     setVideoClips((prev) => {
-      const target = prev.find((c) => c.id === id);
-      if (target) {
-        URL.revokeObjectURL(target.objectUrl);
-      }
+
       return prev.filter((c) => c.id !== id);
     });
   };
@@ -784,9 +799,9 @@ export default function VideoEditor() {
   const handleLoadedMetadata = () => {
       if (videoRef.current && activeClipInfo) {
           const realDur = videoRef.current.duration;
-          if (realDur && isFinite(realDur) && Math.abs(realDur - activeClipInfo.duration) > 0.5 && !activeClipInfo.clip.startOffset) {
+          if (realDur && isFinite(realDur) && !activeClipInfo.clip.sourceDuration) {
               setVideoClips((prev) =>
-                  prev.map((c) => (c.id === activeClipInfo.clip.id ? { ...c, duration: realDur } : c))
+                  prev.map((c) => (c.id === activeClipInfo.clip.id ? { ...c, sourceDuration: realDur } : c))
               );
           }
       }
@@ -1117,13 +1132,18 @@ Include:
       b -= (15 * (effectIntensity / 100));
     }
 
+    if (selectedEffect === 'glitch') { hue += effectIntensity * 1.8; c += effectIntensity * 0.4; }
+    if (selectedEffect === 'neon') { s += effectIntensity; c += effectIntensity * 0.5; }
+    if (selectedEffect === 'vhs') { sep += effectIntensity * 0.45; s *= 1 - effectIntensity / 250; bl += effectIntensity / 160; }
+    if (selectedEffect === 'golden') { sep += effectIntensity * 0.5; b += effectIntensity * 0.12; }
+    sep += Math.max(0, temp) * 4; hue += temp * 3 + tint * 5;
     // Incorporate Lumetri controls from right inspector panel
     b = (b * (exposure / 100));
     c = (c * (lumetriContrast / 200));
     s = (s * lumetriSat);
 
     return `brightness(${b}%) contrast(${c}%) saturate(${s}%) sepia(${sep}%) blur(${bl}px) hue-rotate(${hue}deg) invert(${invert}%) opacity(${opacity}%)`;
-  }, [brightness, contrast, saturation, sepia, blur, selectedFilter, filterIntensity, selectedEffect, effectIntensity, exposure, lumetriContrast, lumetriSat, opacity]);
+  }, [brightness, contrast, saturation, sepia, blur, selectedFilter, filterIntensity, selectedEffect, effectIntensity, exposure, lumetriContrast, lumetriSat, opacity, temp, tint]);
 
   const scaleX = flipH ? -1 : 1;
   const scaleY = flipV ? -1 : 1;
@@ -1260,216 +1280,69 @@ Include:
   }, [currentTime, captionItems, autoCaptionsEnabled]);
 
   // Export process with full overlays
-  const startRealExport = () => {
-    if (!videoRef.current || !videoFile) return;
-
-    setShowExportModal(false);
-    setIsExporting(true);
-    setExportProgress(0);
-
-    const videoElement = videoRef.current;
-    videoElement.currentTime = trimStart;
-    
-    const canvas = document.createElement("canvas");
-    let width = 1280;
-    let height = 720;
-    
-    if (exportResolution === "1080p") {
-        width = 1920; height = 1080;
-    } else if (exportResolution === "720p") {
-        width = 1280; height = 720;
-    } else if (exportResolution === "480p") {
-        width = 854; height = 480;
-    }
-
-    if (aspectRatio === "1:1") {
-        const side = Math.min(width, height);
-        width = side; height = side;
-    } else if (aspectRatio === "9:16") {
-        const temp = width;
-        width = height; height = temp;
-    } else if (aspectRatio === "4:5") {
-        height = Math.round(width * 1.25);
-    }
-    
-    canvas.width = width;
-    canvas.height = height;
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-        setIsExporting(false);
-        return;
-    }
-
-    let mediaRecorder: MediaRecorder | null = null;
-    let chunks: Blob[] = [];
-
-    const canvasStream = canvas.captureStream(30);
-    let audioStream: MediaStreamTrack | undefined;
+  const startRealExport = async () => {
+    if (!videoClips.length || isExporting) return;
+    setShowExportModal(false); setIsExporting(true); setExportProgress(0);
+    setIsPlaying(false); videoRef.current?.pause();
+    const canvas = document.createElement('canvas');
+    const shortSide = exportResolution === '1080p' ? 1080 : exportResolution === '480p' ? 480 : 720;
+    const [ratioWidth, ratioHeight] = aspectRatio.split(':').map(Number);
+    const ratio = ratioWidth / ratioHeight;
+    const width = Math.round((ratio >= 1 ? shortSide * ratio : shortSide) / 2) * 2;
+    const height = Math.round((ratio >= 1 ? shortSide : shortSide / ratio) / 2) * 2;
+    canvas.width = width; canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) { setIsExporting(false); return; }
+    const previewWidth = videoRef.current?.parentElement?.clientWidth || 340;
+    const previewScale = width / previewWidth;
+    let overlayImage: HTMLImageElement | undefined;
     try {
-        if ((videoElement as any).captureStream) {
-            audioStream = (videoElement as any).captureStream().getAudioTracks()[0];
-        } else if ((videoElement as any).mozCaptureStream) {
-            audioStream = (videoElement as any).mozCaptureStream().getAudioTracks()[0];
-        }
-    } catch (e) {
-        console.warn("Audio stream capture warning:", e);
-    }
-
-    // Mix in the selected/generated audio track (voiceover or uploaded music) via Web Audio API
-    let mixAudioCtx: AudioContext | undefined;
-    let extraAudioEl: HTMLAudioElement | undefined;
-    let mixedAudioTrack: MediaStreamTrack | undefined;
-    if (selectedAudio?.url) {
-        try {
-            mixAudioCtx = new AudioContext();
-            const destination = mixAudioCtx.createMediaStreamDestination();
-
-            if (audioStream && !isMuted) {
-                const videoAudioSource = mixAudioCtx.createMediaStreamSource(new MediaStream([audioStream]));
-                const videoGain = mixAudioCtx.createGain();
-                videoGain.gain.value = volume;
-                videoAudioSource.connect(videoGain).connect(destination);
-            }
-
-            extraAudioEl = new Audio(selectedAudio.url);
-            extraAudioEl.crossOrigin = "anonymous";
-            const voiceSource = mixAudioCtx.createMediaElementSource(extraAudioEl);
-            voiceSource.connect(destination);
-
-            mixedAudioTrack = destination.stream.getAudioTracks()[0];
-        } catch (e) {
-            console.warn("Audio mix warning:", e);
-        }
-    }
-
-    const tracks = canvasStream.getVideoTracks();
-    if (mixedAudioTrack) {
-        tracks.push(mixedAudioTrack);
-    } else if (audioStream) {
-        tracks.push(audioStream);
-    }
-
-    const stream = new MediaStream(tracks);
-    try {
-        let mimeType = 'video/webm';
-        if (exportFormat === "mp4" && MediaRecorder.isTypeSupported('video/mp4; codecs=h264')) {
-            mimeType = 'video/mp4; codecs=h264';
-        } else if (MediaRecorder.isTypeSupported('video/webm')) {
-            mimeType = 'video/webm';
-        }
-        
-        let videoBitsPerSecond = 8000000;
-        if (exportQuality === "medium") videoBitsPerSecond = 5000000;
-        if (exportQuality === "low") videoBitsPerSecond = 2500000;
-        
-        mediaRecorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond });
-    } catch (e) {
-        mediaRecorder = new MediaRecorder(stream);
-    }
-
-    mediaRecorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) chunks.push(e.data);
-    };
-
-    const handleEnded = () => {
-        if (mediaRecorder && mediaRecorder.state !== "inactive") {
-             mediaRecorder.stop();
-        }
-        videoElement.removeEventListener('ended', handleEnded);
-        setIsPlaying(false);
-        if (extraAudioEl) { extraAudioEl.pause(); }
-        if (mixAudioCtx) { mixAudioCtx.close().catch(() => {}); }
-    };
-
-    mediaRecorder.onstop = () => {
-        const blob = new Blob(chunks, { type: mediaRecorder?.mimeType || 'video/webm' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.style.display = 'none';
-        a.href = url;
-        a.download = `VideoStudio_Edit_${Date.now()}.${(mediaRecorder?.mimeType || '').includes('mp4') ? 'mp4' : 'webm'}`;
-        document.body.appendChild(a);
-        a.click();
-        
-        setTimeout(() => {
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-        }, 100);
-        
-        setIsExporting(false);
-        setExportProgress(100);
-        setTimeout(() => setExportProgress(0), 3000);
-        
-        logActivity({
-            type: "video_edit",
-            title: videoFile?.name || "Video Studio Edit",
-            metadata: { format: mediaRecorder?.mimeType || 'video/webm', toolCount: 14 }
-        });
-    };
-
-    videoElement.addEventListener('ended', handleEnded);
-
-    setIsPlaying(true);
-    let isDrawing = true;
-    videoElement.play().catch(e => {
-        console.error("Autoplay prevented:", e);
-        setIsExporting(false);
-        isDrawing = false;
-    });
-    if (extraAudioEl) {
-        extraAudioEl.currentTime = 0;
-        extraAudioEl.play().catch(e => console.warn("Voiceover autoplay prevented:", e));
-    }
-
-    if (mediaRecorder.state === "inactive") {
-        mediaRecorder.start(100);
-    }
-
-    const drawFrame = () => {
-        if (trimEnd > 0 && videoElement.currentTime >= trimEnd) {
-             if (mediaRecorder.state !== "inactive") {
-                 mediaRecorder.stop();
-             }
-             videoElement.pause();
-             if (extraAudioEl) { extraAudioEl.pause(); }
-             isDrawing = false;
-             return;
-        }
-        if (!isDrawing) return;
-
-        ctx.fillStyle = "#000000";
-        ctx.fillRect(0, 0, width, height);
-
-        ctx.save();
-        ctx.filter = filterStyle;
-        ctx.translate(width / 2, height / 2);
-        ctx.rotate((rotate * Math.PI) / 180);
-        ctx.scale(scaleX * zoom, scaleY * zoom);
-
-        const vWidth = videoElement.videoWidth || width;
-        const vHeight = videoElement.videoHeight || height;
-        const vRatio = vWidth / vHeight;
-        const cRatio = width / height;
-
-        let drawWidth = width;
-        let drawHeight = height;
-        if (vRatio > cRatio) {
-            drawHeight = width / vRatio;
-        } else {
-            drawWidth = height * vRatio;
-        }
-
-        ctx.drawImage(videoElement, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
-        ctx.restore();
-
+      if (overlayMedia) {
+        overlayImage = new Image(); overlayImage.crossOrigin = 'anonymous'; overlayImage.src = overlayMedia.url;
+        await overlayImage.decode();
+      }
+      await document.fonts.ready;
+      const blob = await recordTimeline({
+        clips: videoClips, canvas, format: exportFormat, quality: exportQuality,
+        speed: playbackSpeed, volume: isMuted ? 0 : volume, audioUrl: selectedAudio?.url,
+        start: trimStart, end: trimEnd > trimStart ? trimEnd : duration,
+        progress: setExportProgress,
+        draw: (videoElement, timelineTime) => {
+          ctx.fillStyle = '#000'; ctx.fillRect(0, 0, width, height);
+          if (bgStyle === 'purple_glow' || bgStyle === 'cyber_gradient') {
+            const gradient = ctx.createLinearGradient(0, 0, width, height);
+            gradient.addColorStop(0, bgStyle === 'purple_glow' ? '#581c87' : '#083344');
+            gradient.addColorStop(1, '#312e81'); ctx.fillStyle = gradient; ctx.fillRect(0, 0, width, height);
+          } else if (bgStyle === 'blur_low' || bgStyle === 'blur_high') {
+            ctx.save(); ctx.filter = 'blur(' + (bgStyle === 'blur_low' ? 12 : 28) + 'px)';
+            ctx.drawImage(videoElement, 0, 0, width, height); ctx.restore();
+          }
+          ctx.save(); ctx.filter = filterStyle;
+          ctx.translate(width / 2 + panX * previewScale, height / 2 + panY * previewScale);
+          ctx.rotate(rotate * Math.PI / 180);
+          ctx.scale(scaleX * zoom, scaleY * zoom);
+          const cropScale = Math.min(100 / cropBox.width, 100 / cropBox.height);
+          ctx.scale(cropScale, cropScale);
+          ctx.translate((50 - cropBox.left - cropBox.width / 2) * 3 * previewScale,
+            (50 - cropBox.top - cropBox.height / 2) * 3 * previewScale);
+          const fit = Math.min(width / videoElement.videoWidth, height / videoElement.videoHeight);
+          const dw = videoElement.videoWidth * fit, dh = videoElement.videoHeight * fit;
+          ctx.drawImage(videoElement, -dw / 2, -dh / 2, dw, dh); ctx.restore();
+          if (overlayImage && overlayMedia) {
+            const ow = width * 0.3 * overlayMedia.scale;
+            const oh = ow * overlayImage.naturalHeight / overlayImage.naturalWidth;
+            const position = overlayMedia.position;
+            const ox = position.includes('left') ? width * 0.03 : position.includes('right') ? width * 0.97 - ow : (width - ow) / 2;
+            const oy = position.includes('top') ? height * 0.03 : position.includes('bottom') ? height * 0.97 - oh : (height - oh) / 2;
+            ctx.save(); ctx.globalAlpha = overlayMedia.opacity / 100; ctx.drawImage(overlayImage, ox, oy, ow, oh); ctx.restore();
+          }
         // Draw Text Overlays on Canvas
-        textOverlays.forEach(txt => {
+        textOverlays.filter(t => timelineTime >= (t.start || 0) && timelineTime < (t.end || duration)).forEach(txt => {
           ctx.save();
           const tx = (txt.x / 100) * width;
           const ty = (txt.y / 100) * height;
-          ctx.font = `bold ${txt.fontSize * 1.5}px ${txt.fontFamily}`;
-          ctx.textAlign = txt.align;
+          ctx.font = `bold ${txt.fontSize * previewScale}px ${txt.fontFamily}`;
+          ctx.textAlign = "center"; ctx.textBaseline = "middle";
           
           if (txt.preset === "tiktok_yellow") {
             ctx.fillStyle = "#FFE600";
@@ -1494,17 +1367,18 @@ Include:
           ctx.save();
           const sx = (st.x / 100) * width;
           const sy = (st.y / 100) * height;
-          ctx.font = `${32 * st.scale}px sans-serif`;
-          ctx.fillText(st.emoji, sx, sy);
+          ctx.font = `${32 * st.scale * previewScale}px sans-serif`;
+          ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(st.emoji, sx, sy);
           ctx.restore();
         });
 
+        const currentCaption = captionItems.find(c => timelineTime >= c.start && timelineTime < c.end);
         // Draw Captions
         if (autoCaptionsEnabled && currentCaption) {
           ctx.save();
           const cx = width / 2;
           const cy = height * 0.85;
-          ctx.font = `bold 28px sans-serif`;
+          ctx.font = `bold ${28 * previewScale}px sans-serif`;
           ctx.textAlign = "center";
           ctx.fillStyle = "#FFE600";
           ctx.strokeStyle = "#000000";
@@ -1514,17 +1388,17 @@ Include:
           ctx.restore();
         }
 
-        if (videoDuration && videoDuration > 0) {
-            const currentExportTime = Math.max(0, videoElement.currentTime - trimStart);
-            const exportDuration = trimEnd > trimStart ? trimEnd - trimStart : videoDuration;
-            setExportProgress((currentExportTime / exportDuration) * 100);
-        }
-        
-        requestAnimationFrame(drawFrame);
-    };
 
-    const videoDuration = videoElement.duration;
-    drawFrame();
+        }
+      });
+      const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
+      anchor.href = url; anchor.download = 'FahiVids_' + Date.now() + (blob.type.includes('mp4') ? '.mp4' : '.webm');
+      document.body.appendChild(anchor); anchor.click(); anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      logActivity({type: 'video_edit', title: videoClips[0].name, metadata: {format: blob.type, clips: videoClips.length}});
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Video export failed');
+    } finally { setIsExporting(false); }
   };
 
   // Aspect ratio class mapper
@@ -1579,7 +1453,7 @@ Include:
           {/* Left: X close + Search */}
           <div className="flex items-center space-x-2">
               <button
-                onClick={() => setVideoClips([])}
+                onClick={() => { setIsPlaying(false); setActiveTool(null); setSelectedClipId(null); }}
                 className="p-1.5 text-slate-300 hover:text-white hover:bg-white/8 rounded-lg transition-colors"
                 title="Close"
               >
@@ -1587,7 +1461,7 @@ Include:
               </button>
               <button
                 className="p-1.5 text-slate-400 hover:text-white hover:bg-white/8 rounded-lg transition-colors"
-                title="Search"
+                title="Add video" onClick={() => (document.querySelector('input[accept="video/*"]') as HTMLInputElement | null)?.click()}
               >
                   <Search className="w-4.5 h-4.5" />
               </button>
@@ -1606,14 +1480,14 @@ Include:
 
               <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10">
                   <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-                  <span className="text-xs font-bold text-white">AI UHD</span>
+                  <span className="text-xs font-bold text-white">{aspectRatio}</span>
                   <ChevronDown className="w-3 h-3 text-slate-400" />
               </div>
           </div>
 
           {/* Right: Export button */}
           <button
-            onClick={() => setShowExportModal(true)}
+            disabled={!videoClips.length || isExporting} onClick={() => setShowExportModal(true)}
             className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold text-white transition-all"
             style={{ background: 'linear-gradient(135deg, #06B6D4, #3B82F6)', boxShadow: '0 0 16px rgba(6,182,212,0.4)' }}
           >
@@ -1626,7 +1500,7 @@ Include:
       <div className="flex flex-1 overflow-hidden flex-col md:flex-row">
           
           {/* CENTER: Video Preview (FIXED 42vh ON MOBILE SO PREVIEW IS ALWAYS VISIBLE) */}
-          <div className={`w-full h-[42vh] sm:h-[48vh] md:h-auto md:flex-1 relative flex flex-col p-1.5 sm:p-2 md:p-4 overflow-hidden shrink-0 md:shrink order-1 ${bgStyleClass}`}>
+          <div className={`fahi-editor-preview w-full h-[min(42dvh,360px)] sm:h-[48dvh] md:h-auto md:flex-1 relative flex flex-col p-1.5 sm:p-2 md:p-4 overflow-hidden shrink-0 md:shrink order-1 ${bgStyleClass}`}>
               
               {/* Export Progress Overlay */}
               {isExporting && (
@@ -1635,7 +1509,7 @@ Include:
                     <div className="absolute inset-0 rounded-full border-4 border-indigo-500/20 border-t-indigo-400 animate-spin" />
                     <Sparkles className="w-6 h-6 text-indigo-400" />
                   </div>
-                  <p className="text-white font-bold text-lg tracking-wide">Exporting Cinematic Cut...</p>
+                  <p className="text-white font-bold text-lg tracking-wide">Exporting timeline...</p><p className="text-xs text-slate-300 px-4 text-center">Keep this tab open and your screen awake until export finishes.</p>
                   <div className="w-64 bg-white/10 rounded-full h-2 overflow-hidden">
                     <div className="bg-gradient-to-r from-cyan-400 via-indigo-500 to-violet-500 h-full transition-all duration-200" style={{ width: `${exportProgress}%` }} />
                   </div>
@@ -1643,13 +1517,14 @@ Include:
                 </div>
               )}
 
-              <div className="flex-1 flex items-center justify-center relative min-h-0 h-full">
+              <div ref={previewAreaRef} className="flex-1 flex items-center justify-center relative min-h-0 h-full">
                   {videoFile ? (
-                      <div className={`relative w-full h-full max-h-full mx-auto ${aspectClass} rounded-xl md:rounded-2xl overflow-hidden shadow-2xl transition-all duration-300 group flex items-center justify-center bg-black/90`} style={{ boxShadow: '0 0 0 1px rgba(99,102,241,0.3), 0 0 40px rgba(99,102,241,0.1)' }}>
+                      <div className={`relative mx-auto rounded-xl md:rounded-2xl overflow-hidden shadow-2xl transition-all duration-300 group flex items-center justify-center`} style={{ width: Math.min(previewBounds.width, previewBounds.height * Number(aspectRatio.split(':')[0]) / Number(aspectRatio.split(':')[1])), height: Math.min(previewBounds.height, previewBounds.width * Number(aspectRatio.split(':')[1]) / Number(aspectRatio.split(':')[0])), background: bgStyle === 'purple_glow' ? 'linear-gradient(135deg,#581c87,#312e81)' : bgStyle === 'cyber_gradient' ? 'linear-gradient(135deg,#083344,#312e81)' : '#000', boxShadow: '0 0 0 1px rgba(99,102,241,0.3)' }}>
+                          {(bgStyle === 'blur_low' || bgStyle === 'blur_high') && <video src={objectUrl} muted playsInline className="absolute inset-0 w-full h-full object-cover" style={{filter: 'blur(' + (bgStyle === 'blur_low' ? 12 : 28) + 'px)'}} onLoadedData={e => { e.currentTarget.currentTime = videoRef.current?.currentTime || 0; }} />}
                           <video
                               ref={videoRef}
                               src={objectUrl || undefined}
-                              className="w-full h-full object-contain max-h-full bg-black/90"
+                              className="relative w-full h-full object-contain max-h-full"
                               style={{
                                   filter: filterStyle,
                                   transform: cropTransformStyle
@@ -1657,11 +1532,23 @@ Include:
                               onTimeUpdate={handleTimeUpdate}
                               onLoadedMetadata={handleLoadedMetadata}
                               onLoadedData={handleVideoLoadedData}
-                              onEnded={() => setIsPlaying(false)}
+                              onEnded={() => {
+                                const index = clipOffsets.findIndex(c => c.clip.id === activeClipId);
+                                if (index >= 0 && index < clipOffsets.length - 1) setCurrentTime(clipOffsets[index + 1].start);
+                                else setIsPlaying(false);
+                              }}
                           />
 
+                          {overlayMedia && <img src={overlayMedia.url} alt={overlayMedia.title} className="absolute pointer-events-none" style={{
+                            width: (30 * overlayMedia.scale) + '%', opacity: overlayMedia.opacity / 100,
+                            left: overlayMedia.position.includes('left') ? '3%' : overlayMedia.position.includes('right') ? undefined : '50%',
+                            right: overlayMedia.position.includes('right') ? '3%' : undefined,
+                            top: overlayMedia.position.includes('top') ? '3%' : overlayMedia.position.includes('bottom') ? undefined : '50%',
+                            bottom: overlayMedia.position.includes('bottom') ? '3%' : undefined,
+                            transform: overlayMedia.position === 'center' ? 'translate(-50%, -50%)' : undefined
+                          }} />}
                           {/* Render Text Overlays */}
-                          {textOverlays.map((t) => (
+                          {textOverlays.filter(t => currentTime >= (t.start || 0) && currentTime < (t.end || duration)).map((t) => (
                             <div
                               key={t.id}
                               className={`absolute pointer-events-auto cursor-pointer select-none px-2 py-1 rounded transition-transform ${editingTextId === t.id ? "ring-2 ring-indigo-400 bg-black/40" : ""}`}
@@ -1676,7 +1563,7 @@ Include:
                                 style={{
                                   fontFamily: t.fontFamily,
                                   fontSize: `${t.fontSize}px`,
-                                  color: t.color,
+                                  color: t.preset === "tiktok_yellow" ? "#FFE600" : t.preset === "neon_cyan" ? "#FFFFFF" : t.color,
                                   textShadow: t.preset === "tiktok_yellow" 
                                     ? "2px 2px 0px #000, -2px -2px 0px #000, 2px -2px 0px #000, -2px 2px 0px #000" 
                                     : t.preset === "neon_cyan" 
@@ -1795,7 +1682,7 @@ Include:
                           <label className="bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-400 hover:to-violet-400 text-white px-6 py-2.5 md:px-8 md:py-3 rounded-xl font-bold text-xs md:text-sm cursor-pointer shadow-[0_0_20px_rgba(99,102,241,0.3)] transition-all flex items-center space-x-2 z-10">
                               <Plus className="w-4 h-4 md:w-5 md:h-5" />
                               <span>Upload Video</span>
-                              <input type="file" accept="video/*" multiple className="hidden" onChange={handleFileUpload} />
+                              <input id="studio-video-import" type="file" accept="video/*" multiple className="hidden" onChange={handleFileUpload} />
                           </label>
                       </div>
                   )}
@@ -1831,10 +1718,10 @@ Include:
                           >
                             <Captions className="w-4 h-4" />
                           </button>
-                          <button onClick={undo} disabled={!canUndo} className={`p-1.5 rounded-lg transition-colors ${!canUndo ? 'opacity-30 text-slate-600' : 'text-slate-300 hover:text-white'}`}>
+                          <button aria-label="Undo" onClick={undo} disabled={!canUndo} className={`p-1.5 rounded-lg transition-colors ${!canUndo ? 'opacity-30 text-slate-600' : 'text-slate-300 hover:text-white'}`}>
                             <Undo2 className="w-4 h-4" />
                           </button>
-                          <button onClick={redo} disabled={!canRedo} className={`p-1.5 rounded-lg transition-colors ${!canRedo ? 'opacity-30 text-slate-600' : 'text-slate-300 hover:text-white'}`}>
+                          <button aria-label="Redo" onClick={redo} disabled={!canRedo} className={`p-1.5 rounded-lg transition-colors ${!canRedo ? 'opacity-30 text-slate-600' : 'text-slate-300 hover:text-white'}`}>
                             <Redo2 className="w-4 h-4" />
                           </button>
                         </div>
@@ -1867,7 +1754,7 @@ Include:
           </div>
 
           {/* RIGHT PANEL: Properties (Desktop Only - Hidden on Mobile for clean CapCut layout) */}
-          <div className="hidden md:flex w-64 shrink-0 flex-col min-h-0 overflow-y-auto overflow-x-hidden z-30 order-last border-l border-white/10" style={{ backgroundColor: 'rgba(8,10,18,0.95)' }}>
+          <div data-open={Boolean(activeTool && activeTool !== 'crop')} className={`fahi-tool-panel ${activeTool && activeTool !== 'crop' ? 'flex' : 'hidden'} fixed bottom-[calc(64px+env(safe-area-inset-bottom))] inset-x-0 max-h-[48dvh] rounded-t-2xl border-t md:static md:flex md:w-64 md:max-h-none md:rounded-none shrink-0 flex-col min-h-0 overflow-y-auto overflow-x-hidden z-30 order-last border-l border-white/10`} style={{ backgroundColor: 'rgba(8,10,18,0.95)' }}>
               
               {/* Context Header */}
               <div className="px-4 py-3 border-b sticky top-0 bg-[rgba(8,10,18,0.95)] z-10 backdrop-blur-md flex items-center justify-between" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
@@ -1954,7 +1841,7 @@ Include:
 
                        <div className="space-y-2">
                           <div className="flex justify-between items-center">
-                              <span className="text-slate-400 text-xs font-medium">Speed Ramp</span>
+                              <span className="text-slate-400 text-xs font-medium">Playback speed</span>
                               <span className="text-indigo-400 font-mono text-[10px] bg-indigo-500/10 border border-indigo-500/20 px-1.5 py-0.5 rounded">{playbackSpeed}x</span>
                           </div>
                           <div className="grid grid-cols-3 gap-2">
@@ -2061,6 +1948,19 @@ Include:
                     </div>
                   )}
 
+                  {activeTool === 'overlay' && <div className="space-y-4">
+                    <label className="block p-3 rounded-lg bg-indigo-500 text-white text-center cursor-pointer">Add image overlay
+                      <input type="file" accept="image/*" className="hidden" onChange={e => { const file = e.target.files?.[0]; if (!file) return; const url = URL.createObjectURL(file); importedUrls.current.add(url); setOverlayMedia({id: crypto.randomUUID(), url, title: file.name, position: 'center', opacity: 100, scale: 1}); }} />
+                    </label>
+                    {overlayMedia && <>
+                      <select aria-label="Overlay position" value={overlayMedia.position} onChange={e => setOverlayMedia({...overlayMedia, position: e.target.value as OverlayMedia['position']})} className="w-full bg-slate-900 p-3 rounded-lg">
+                        {['top-left','top-right','center','bottom-left','bottom-right'].map(position => <option key={position}>{position}</option>)}
+                      </select>
+                      <label className="block text-xs">Opacity {overlayMedia.opacity}%<input aria-label="Overlay opacity" className="w-full" type="range" min="0" max="100" value={overlayMedia.opacity} onChange={e => setOverlayMedia({...overlayMedia, opacity: Number(e.target.value)})} /></label>
+                      <label className="block text-xs">Size<input aria-label="Overlay size" className="w-full" type="range" min="0.2" max="3" step="0.1" value={overlayMedia.scale} onChange={e => setOverlayMedia({...overlayMedia, scale: Number(e.target.value)})} /></label>
+                      <button className="w-full p-3 text-red-300" onClick={() => setOverlayMedia(null)}>Remove overlay</button>
+                    </>}
+                  </div>}
                   {activeTool === "text" && (
                     <div className="space-y-5">
                        <div className="space-y-2">
@@ -2086,6 +1986,18 @@ Include:
 
                        {editingTextId && (
                          <div className="space-y-2 pt-2 border-t border-white/10">
+                            {(() => {
+                              const text = textOverlays.find(t => t.id === editingTextId); if (!text) return null;
+                              const patch = (changes: Partial<TextOverlay>) => setTextOverlays((items: TextOverlay[]) => items.map(t => t.id === text.id ? {...t, ...changes} : t));
+                              return <div className="space-y-3">
+                                <input aria-label="Selected text" className="w-full bg-slate-900 p-3 rounded" value={text.text} onChange={e => patch({text: e.target.value})} />
+                                <div className="flex gap-3"><label className="text-xs">Color<input aria-label="Text color" type="color" value={text.color} onChange={e => patch({color: e.target.value})} /></label>
+                                  <label className="text-xs">Size<input aria-label="Text size" type="number" min="8" max="120" className="w-20 bg-slate-900 p-2" value={text.fontSize} onChange={e => patch({fontSize: Math.max(8, Math.min(120, Number(e.target.value)))})} /></label></div>
+                                {(['x','y'] as const).map(axis => <label key={axis} className="block text-xs">Position {axis.toUpperCase()}<input aria-label={'Text position ' + axis} className="w-full" type="range" min="0" max="100" value={text[axis]} onChange={e => patch({[axis]: Number(e.target.value)})} /></label>)}
+                                <div className="flex gap-2"><label className="text-xs">Start (s)<input aria-label="Text start" type="number" min="0" max={duration} step="0.1" className="w-24 bg-slate-900 p-2" value={text.start || 0} onChange={e => patch({start: Math.max(0, Math.min((text.end || duration) - 0.1, Number(e.target.value)))})} /></label>
+                                  <label className="text-xs">End (s)<input aria-label="Text end" type="number" min={(text.start || 0) + 0.1} max={duration} step="0.1" className="w-24 bg-slate-900 p-2" value={text.end || duration} onChange={e => patch({end: Math.min(duration, Math.max((text.start || 0) + 0.1, Number(e.target.value)))})} /></label></div>
+                              </div>;
+                            })()}
                             <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider block">Styles for selected</span>
                             <div className="flex flex-wrap gap-2">
                                {["tiktok_yellow", "neon_cyan", "outline_white"].map(s => (
@@ -2159,7 +2071,7 @@ Include:
                           <div className="space-y-2">
                              <label className="flex items-center justify-center space-x-2 py-2 rounded-lg bg-violet-500/10 border border-violet-500/30 text-violet-300 text-xs font-bold cursor-pointer hover:bg-violet-500/20 transition-colors">
                                <Plus className="w-3.5 h-3.5" /> <span>Upload Sound</span>
-                               <input type="file" accept="audio/*" className="hidden" onChange={e => {
+                               <input id="audio-upload" type="file" accept="audio/*" className="hidden" onChange={e => {
                                  if (e.target.files && e.target.files[0]) {
                                    setSelectedAudio({ id: "c_"+Date.now(), name: e.target.files[0].name, category: "Upload", duration: "User", bpm: 120, url: URL.createObjectURL(e.target.files[0]) });
                                  }
@@ -2169,25 +2081,6 @@ Include:
                           </div>
                        </div>
 
-                       <div className="space-y-2">
-                          <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider block">Preset Tracks</span>
-                          <div className="flex flex-col space-y-2">
-                             {[
-                                { id: "a1", name: "Phonk Cyber Beat", cat: "Trending" },
-                                { id: "a2", name: "Lo-Fi Aesthetic Chill", cat: "Relax" },
-                                { id: "a3", name: "Epic Cinematic Horns", cat: "Trailer" },
-                                { id: "a4", name: "Upbeat Vlog Acoustic", cat: "Vlog" }
-                             ].map(tr => (
-                               <button key={tr.id} onClick={() => setSelectedAudio({ id: tr.id, name: tr.name, category: tr.cat, duration: "2:00", bpm: 120 })} className={`p-2.5 rounded-lg text-left border flex items-center justify-between transition-colors ${selectedAudio?.id === tr.id ? "bg-violet-500/20 border-violet-500 text-violet-300" : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"}`}>
-                                 <div>
-                                   <div className="font-bold text-[11px] truncate">{tr.name}</div>
-                                   <div className="text-[9px] text-slate-500">{tr.cat}</div>
-                                 </div>
-                                 {selectedAudio?.id === tr.id && <Check className="w-3.5 h-3.5 text-violet-400" />}
-                               </button>
-                             ))}
-                          </div>
-                       </div>
                     </div>
                   )}
 
@@ -2195,11 +2088,11 @@ Include:
                     <div className="grid grid-cols-2 gap-2">
                        {[
                          { id: "none", name: "None" },
-                         { id: "glitch", name: "80s Glitch" },
+                         { id: "glitch", name: "Hue Shift" },
                          { id: "neon", name: "Cyber Neon" },
                          { id: "vhs", name: "Retro VHS" },
-                         { id: "grain", name: "Film Grain" },
-                         { id: "blur", name: "Motion Blur" },
+                         { id: "grain", name: "Contrast Boost" },
+                         { id: "blur", name: "Soft Blur" },
                          { id: "golden", name: "Gold Glow" }
                        ].map(eff => (
                          <button key={eff.id} onClick={() => setSelectedEffect(eff.id)} className={`py-3 px-2 rounded-xl text-center border font-semibold text-[11px] transition-colors ${selectedEffect === eff.id ? "bg-indigo-500/20 border-indigo-500 text-indigo-300" : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"}`}>
@@ -2618,8 +2511,8 @@ Include:
                     <div className="space-y-4">
                        {/* Active Clip Header */}
                        <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                          <span className="font-bold text-xs text-white truncate max-w-[140px]">{activeClipInfo?.clip.name || "City_Aerial_01"}</span>
-                          <span className="text-[10px] bg-white/10 text-slate-300 px-2 py-0.5 rounded font-mono">{formatTime(activeClipInfo?.duration || 6)}</span>
+                          <span className="font-bold text-xs text-white truncate max-w-[140px]">{activeClipInfo?.clip.name || "No clip selected"}</span>
+                          <span className="text-[10px] bg-white/10 text-slate-300 px-2 py-0.5 rounded font-mono">{formatTime(activeClipInfo?.duration || 0)}</span>
                        </div>
 
                        {/* Opacity Slider */}
@@ -2637,9 +2530,9 @@ Include:
                           <div className="grid grid-cols-3 gap-2 text-[10px]">
                              <div className="bg-white/5 p-1.5 rounded border border-white/10"><span className="text-slate-500">X:</span> <span className="text-white font-mono">{panX}</span></div>
                              <div className="bg-white/5 p-1.5 rounded border border-white/10"><span className="text-slate-500">Y:</span> <span className="text-white font-mono">{panY}</span></div>
-                             <div className="bg-white/5 p-1.5 rounded border border-white/10"><span className="text-slate-500">Z:</span> <span className="text-white font-mono">30</span></div>
-                             <div className="bg-white/5 p-1.5 rounded border border-white/10"><span className="text-slate-500">W:</span> <span className="text-white font-mono">1080</span></div>
-                             <div className="bg-white/5 p-1.5 rounded border border-white/10"><span className="text-slate-500">H:</span> <span className="text-white font-mono">1920</span></div>
+                             <div className="bg-white/5 p-1.5 rounded border border-white/10"><span className="text-slate-500">Zoom:</span> <span className="text-white font-mono">{zoom.toFixed(1)}x</span></div>
+                             <div className="bg-white/5 p-1.5 rounded border border-white/10"><span className="text-slate-500">W:</span> <span className="text-white font-mono">{videoRef.current?.videoWidth || 0}</span></div>
+                             <div className="bg-white/5 p-1.5 rounded border border-white/10"><span className="text-slate-500">H:</span> <span className="text-white font-mono">{videoRef.current?.videoHeight || 0}</span></div>
                              <div className="bg-white/5 p-1.5 rounded border border-white/10"><span className="text-slate-500">R:</span> <span className="text-white font-mono">{rotate}°</span></div>
                           </div>
                        </div>
@@ -2709,9 +2602,9 @@ Include:
       <div className="shrink-0 flex flex-col z-20" style={{ height: '192px', backgroundColor: 'rgba(5,8,16,1)', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
           
           {/* Timeline Toolbar */}
-          <div className="h-10 flex items-center justify-between px-4 border-b border-white/5">
+          <div className="h-11 flex items-center justify-between px-2 md:px-4 border-b border-white/5">
               <div className="flex items-center space-x-3">
-                  <button onClick={togglePlayPause} className="w-7 h-7 rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 flex items-center justify-center text-white hover:scale-105 transition-transform">
+                  <button aria-label={isPlaying ? "Pause" : "Play"} onClick={togglePlayPause} className="w-7 h-7 rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 flex items-center justify-center text-white hover:scale-105 transition-transform">
                      {isPlaying ? <Pause className="w-3 h-3 fill-current" /> : <Play className="w-3 h-3 fill-current ml-0.5" />}
                   </button>
                   <span className="font-mono text-xs text-slate-300 tracking-wider">
@@ -2728,7 +2621,7 @@ Include:
                  <div className="w-px h-4 bg-white/10 mx-1" />
                  <div className="hidden sm:flex items-center space-x-2 pl-1">
                     <ZoomIn className="w-3.5 h-3.5 text-slate-500" />
-                    <input type="range" className="w-20 accent-indigo-500 h-1 bg-white/10 rounded-full" />
+                    <input aria-label="Timeline zoom" type="range" min="20" max="120" value={timelineScale} onChange={e => setTimelineScale(Number(e.target.value))} className="w-20 accent-indigo-500 h-1 bg-white/10 rounded-full" />
                  </div>
               </div>
           </div>
@@ -2736,7 +2629,7 @@ Include:
           {/* Timecode Ruler & Tracks area */}
           <div className="flex-1 flex flex-col overflow-hidden relative">
              <div className="h-5 flex items-center px-24 border-b border-white/5">
-                <input type="range" min="0" max={duration || 100} step="0.05" value={currentTime} onChange={handleScrub} className="w-full accent-indigo-400 h-0.5 bg-transparent cursor-pointer relative z-20" />
+                <input type="range" min="0" max={duration || 100} aria-label="Timeline playhead" step="0.05" value={currentTime} onChange={handleScrub} className="w-full accent-indigo-400 h-0.5 bg-transparent cursor-pointer relative z-20" />
              </div>
 
              <div className="flex-1 flex overflow-y-auto overflow-x-hidden relative">
@@ -2784,12 +2677,12 @@ Include:
                  <div className="flex-1 overflow-x-auto overflow-y-hidden relative pt-1 pb-1">
                     {/* Playhead line overlay */}
                     {duration > 0 && (
-                       <div className="absolute top-0 bottom-0 w-px bg-indigo-400 z-30 pointer-events-none" style={{ left: `${(currentTime / duration) * 100}%` }}>
+                       <div className="absolute top-0 bottom-0 w-px bg-indigo-400 z-30 pointer-events-none" style={{ left: 10 + currentTime * timelineScale + Math.max(0, clipOffsets.findIndex(c => c.clip.id === activeClipId)) * 4 }}>
                           <div className="w-2 h-2 bg-indigo-400 rotate-45 -translate-x-1/2 -translate-y-1 shadow-[0_0_8px_rgba(99,102,241,0.8)]" />
                        </div>
                     )}
                     
-                    <div className="flex flex-col space-y-1 min-w-full px-2" style={{ width: 'max-content' }}>
+                    <div className="flex flex-col space-y-1 min-w-full px-2" style={{ width: Math.max(300, duration * timelineScale + videoClips.length * 4 + 100) }}>
                        {/* Video Track */}
                        <div className="h-9 rounded-lg flex items-center p-0.5 space-x-1" style={{ backgroundColor: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.2)' }}>
                           {videoClips.map((clip, idx) => {
@@ -2804,7 +2697,7 @@ Include:
                                       ? "bg-indigo-500/40 border-2 border-white text-white shadow-[0_0_12px_rgba(255,255,255,0.4)] z-10 overflow-visible" 
                                       : "bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 overflow-hidden"
                                   }`} 
-                                  style={{ minWidth: '95px', width: `${widthPercent}%` }}
+                                  style={{ flexShrink: 0, width: `${clip.duration * timelineScale}px`, minWidth: '8px' }}
                                 >
                                    {/* CapCut Drag Trimming Handles on selected clip */}
                                    {isSelected && (
@@ -2985,7 +2878,7 @@ Include:
             {/* Crop / AI expand tabs */}
             <div className="flex border-b border-white/10 px-4">
               <button className="py-2.5 mr-4 text-sm font-bold text-cyan-400 border-b-2 border-cyan-400">Crop</button>
-              <button className="py-2.5 text-sm font-medium text-slate-400 hover:text-white">AI expand</button>
+
             </div>
 
             {/* Rotate ruler */}
@@ -3047,7 +2940,7 @@ Include:
         )}
 
         {/* Main footer bar */}
-        <div className="h-[60px] flex items-center w-full overflow-hidden">
+        <div className="fahi-editor-footer min-h-[64px] pb-[env(safe-area-inset-bottom)] flex items-center w-full overflow-hidden">
           {activeTool && activeTool !== 'crop' ? (
             /* Sub-tool level: Back + context tools */
             <div className="flex items-center w-full overflow-x-auto scrollbar-none px-2 py-1 space-x-1">
@@ -3065,9 +2958,9 @@ Include:
                 <>
                   {[
                     { icon: Scissors, label: 'Split', fn: handleSplitClip, color: 'text-indigo-400' },
-                    { icon: Layers, label: 'Fade', fn: () => {}, color: 'text-slate-300' },
-                    { icon: Volume2, label: 'Volume', fn: () => setIsMuted(!isMuted), color: 'text-slate-300' },
-                    { icon: Wand2, label: 'Animations', fn: () => setActiveTool('effects'), color: 'text-cyan-400' },
+                    { icon: Copy, label: 'Duplicate', fn: () => { const clip = videoClips.find(c => c.id === selectedClipId); if (clip) setVideoClips(prev => [...prev, {...clip, id: crypto.randomUUID()}]); }, color: 'text-slate-300' },
+                    { icon: Volume2, label: 'Volume', fn: () => setActiveTool('audio'), color: 'text-slate-300' },
+                    { icon: Wand2, label: 'Color FX', fn: () => setActiveTool('effects'), color: 'text-cyan-400' },
                     { icon: Sparkles, label: 'Effects', fn: () => setActiveTool('effects'), color: 'text-violet-400' },
                     { icon: Trash2, label: 'Delete', fn: () => selectedClipId && handleRemoveClip(selectedClipId), color: 'text-red-400' },
                   ].map((t, i) => (
@@ -3083,9 +2976,9 @@ Include:
               {activeTool === 'audio' && (
                 <>
                   {[
-                    { icon: Plus, label: 'Add', fn: () => {}, color: 'text-violet-400' },
-                    { icon: Volume2, label: 'Volume', fn: () => setIsMuted(!isMuted), color: 'text-slate-300' },
-                    { icon: Music, label: 'Effects', fn: () => {}, color: 'text-slate-300' },
+                    { icon: Plus, label: 'Add', fn: () => document.getElementById('audio-upload')?.click(), color: 'text-violet-400' },
+                    { icon: Volume2, label: 'Volume', fn: () => setActiveTool('audio'), color: 'text-slate-300' },
+
                     { icon: Trash2, label: 'Delete', fn: () => setSelectedAudio(null), color: 'text-red-400' },
                   ].map((t, i) => (
                     <button key={i} onClick={t.fn} className={`flex flex-col items-center justify-center min-w-[52px] py-2 ${t.color} hover:text-white shrink-0 transition-colors`}>
@@ -3101,8 +2994,8 @@ Include:
                 <>
                   {[
                     { icon: Plus, label: 'Add Text', fn: handleAddTextOverlay, color: 'text-yellow-400' },
-                    { icon: Type, label: 'Style', fn: () => {}, color: 'text-slate-300' },
-                    { icon: AlignCenter, label: 'Align', fn: () => {}, color: 'text-slate-300' },
+                    { icon: Type, label: 'Style', fn: () => setActiveTool('text'), color: 'text-slate-300' },
+                    { icon: AlignCenter, label: 'Align', fn: () => setTextOverlays((prev: TextOverlay[]) => prev.map((t: TextOverlay) => ({...t, align: t.align === 'left' ? 'center' : t.align === 'center' ? 'right' : 'left'}))), color: 'text-slate-300' },
                     { icon: Trash2, label: 'Delete', fn: () => setTextOverlays([]), color: 'text-red-400' },
                   ].map((t, i) => (
                     <button key={i} onClick={t.fn} className={`flex flex-col items-center justify-center min-w-[52px] py-2 ${t.color} hover:text-white shrink-0 transition-colors`}>
@@ -3118,10 +3011,10 @@ Include:
                 <div className="flex items-center space-x-1 overflow-x-auto scrollbar-none">
                   {[
                     { id: 'none', name: 'None' },
-                    { id: 'glitch', name: 'Glitch' },
+                    { id: 'glitch', name: 'Hue' },
                     { id: 'neon', name: 'Neon' },
                     { id: 'vhs', name: 'VHS' },
-                    { id: 'grain', name: 'Grain' },
+                    { id: 'grain', name: 'Contrast' },
                     { id: 'blur', name: 'Blur' },
                     { id: 'golden', name: 'Gold' },
                   ].map(eff => (
@@ -3161,9 +3054,9 @@ Include:
                 <div className="w-px h-6 bg-white/15 shrink-0" />
                 {[
                   { icon: Scissors, label: 'Split', fn: handleSplitClip, color: 'text-slate-300' },
-                  { icon: Layers, label: 'Fade', fn: () => {}, color: 'text-slate-300' },
+                  { icon: Copy, label: 'Duplicate', fn: () => { const clip = videoClips.find(c => c.id === selectedClipId); if (clip) setVideoClips(prev => [...prev, {...clip, id: crypto.randomUUID()}]); }, color: 'text-slate-300' },
                   { icon: Volume2, label: 'Volume', fn: () => setActiveTool('audio'), color: 'text-slate-300' },
-                  { icon: Wand2, label: 'Animations', fn: () => setActiveTool('effects'), color: 'text-slate-300' },
+                  { icon: Wand2, label: 'Color FX', fn: () => setActiveTool('effects'), color: 'text-slate-300' },
                   { icon: Sparkles, label: 'Effects', fn: () => setActiveTool('effects'), color: 'text-slate-300' },
                   { icon: Trash2, label: 'Delete', fn: () => { handleRemoveClip(selectedClipId); setSelectedClipId(null); }, color: 'text-red-400' },
                 ].map((t, i) => (
@@ -3181,11 +3074,14 @@ Include:
                   { icon: Music, label: 'Audio', id: 'audio', color: 'text-slate-300' },
                   { icon: Type, label: 'Text', id: 'text', color: 'text-slate-300' },
                   { icon: Sparkles, label: 'Effects', id: 'effects', color: 'text-slate-300' },
-                  { icon: ImageIcon, label: 'Overlay', id: 'stickers', color: 'text-slate-300' },
+                  { icon: ImageIcon, label: 'Overlay', id: 'overlay', color: 'text-slate-300' },
                   { icon: AlignCenter, label: 'Captions', id: 'captions', color: 'text-slate-300' },
                   { icon: Crop, label: 'Crop', id: 'crop', color: 'text-slate-300' },
                   { icon: SlidersHorizontal, label: 'Adjust', id: 'adjust', color: 'text-slate-300' },
                   { icon: Filter, label: 'Filters', id: 'filters', color: 'text-slate-300' },
+                  { icon: Sticker, label: 'Stickers', id: 'stickers', color: 'text-slate-300' },
+                  { icon: Smartphone, label: 'Ratio', id: 'aspect', color: 'text-slate-300' },
+                  { icon: Palette, label: 'Backdrop', id: 'background', color: 'text-slate-300' },
                   { icon: Wand2, label: 'AI Tools', id: 'ai_veo', color: 'text-violet-400' },
                 ].map((t) => (
                   <button
@@ -3210,7 +3106,7 @@ Include:
             <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
               <h3 className="text-white font-bold flex items-center space-x-2 text-sm">
                 <Download className="w-4 h-4 text-indigo-400" />
-                <span>Export FlowLab Project</span>
+                <span>Export FahiVids Project</span>
               </h3>
               <button onClick={() => setShowExportModal(false)} className="text-slate-500 hover:text-white transition-colors">
                 <X className="w-5 h-5" />
@@ -3249,6 +3145,7 @@ Include:
               </div>
             </div>
             
+            <p className="px-5 pb-3 text-xs text-slate-400">Recording runs in real time. If MP4 is unavailable, your browser exports WebM with the correct file extension.</p>
             <div className="px-5 py-4 border-t border-white/5 bg-white/5 flex justify-end space-x-3">
               <button 
                 onClick={() => setShowExportModal(false)}
