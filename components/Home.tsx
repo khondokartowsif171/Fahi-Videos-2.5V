@@ -233,7 +233,7 @@ export default function Home({ setActiveTab }: HomeProps) {
               className="px-8 py-4 bg-violet-600/20 border border-violet-500/30 hover:bg-violet-600/30 text-violet-300 font-semibold rounded-xl backdrop-blur-sm transition-colors flex items-center justify-center gap-2"
             >
               <Sparkles className="w-5 h-5 text-violet-400" />
-              Google Flow AI Lab
+              Google Aura Studio
             </button>
           </motion.div>
         </div>
