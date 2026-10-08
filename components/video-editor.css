@@ -1,0 +1,16 @@
+.fahi-tool-panel { display:flex; position:static; width:16rem; max-height:none; flex-shrink:0; }
+.fahi-editor-preview { min-height:0; }
+.fahi-tool-panel input[type="range"] { min-height:28px; touch-action:pan-x; }
+.fahi-tool-panel input[type="text"], .fahi-tool-panel select { font-size:16px; }
+@media (max-width:767px) {
+  .fahi-tool-panel { display:none; position:fixed; left:0; right:0; bottom:calc(64px + env(safe-area-inset-bottom, 0px)); width:100%; max-height:48dvh; height:auto; border-radius:16px 16px 0 0; overscroll-behavior:contain; box-shadow:0 -12px 36px #0008; }
+  .fahi-tool-panel[data-open="true"] { display:flex; }
+  .fahi-editor-preview { height:min(42dvh,360px); }
+  .fahi-editor-footer { min-height:64px; padding-bottom:env(safe-area-inset-bottom,0px); }
+  .fahi-editor-footer button { min-height:44px; }
+  .fahi-export-dialog { max-height:90dvh; overflow:auto; }
+}
+@media (max-width:767px) and (max-height:500px) {
+  .fahi-tool-panel { max-height:70dvh; width:48%; left:auto; }
+  .fahi-editor-preview { height:30dvh; }
+}
