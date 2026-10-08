@@ -1,0 +1,9 @@
+.aura-studio { color-scheme: dark; letter-spacing: -.01em; font-family: Inter, system-ui, sans-serif; }
+.aura-studio .no-scrollbar::-webkit-scrollbar { display:none; }
+.aura-studio .no-scrollbar { scrollbar-width:none; }
+.aura-studio .pb-safe { padding-bottom:max(env(safe-area-inset-bottom,12px),12px); }
+.aura-studio .pt-safe { padding-top:env(safe-area-inset-top,0px); }
+.aura-studio input[type=range].frame-scrubber { appearance:none; background:transparent; cursor:ew-resize; width:100%; }
+.aura-studio input[type=range].frame-scrubber::-webkit-slider-runnable-track { height:8px; border-radius:4px; background:#18181b; border:1px solid #2e2e33; }
+.aura-studio input[type=range].frame-scrubber::-webkit-slider-thumb { appearance:none; height:20px; width:12px; background:white; margin-top:-6px; border-radius:3px; }
+@media(max-width:768px) { .aura-studio input:not([type=range]),.aura-studio textarea,.aura-studio select {font-size:16px;} }

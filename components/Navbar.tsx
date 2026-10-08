@@ -17,7 +17,7 @@ const tabs = [
   { id: 'downloader', label: 'Downloader', icon: Download },
   { id: 'editor', label: 'Video Studio', icon: Video },
   { id: 'thumbnail', label: 'Thumbnail', icon: ImageIcon },
-  { id: 'ai', label: 'Flow AI Lab', icon: Sparkles },
+  { id: 'ai', label: 'Aura Studio', icon: Sparkles },
 ];
 
 export default function Navbar({ activeTab, setActiveTab }: NavbarProps) {
@@ -133,7 +133,7 @@ export default function Navbar({ activeTab, setActiveTab }: NavbarProps) {
       <AdminLoginModal isOpen={adminModalOpen} onClose={() => setAdminModalOpen(false)} />
 
       {/* Mobile Bottom Navigation (Hidden in Editor mode to allow full timeline interactions) */}
-      {activeTab !== 'editor' && (
+      {activeTab !== 'editor' && activeTab !== 'ai' && (
         <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-[#050810]/95 backdrop-blur-xl border-t border-white/5 pb-[env(safe-area-inset-bottom)]">
           <div className="flex items-center justify-around h-16 px-2">
             {tabs.map((tab) => {

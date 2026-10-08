@@ -8,7 +8,7 @@ import Home from "@/components/Home";
 import YoutubeDownloader from "@/components/YoutubeDownloader";
 import VideoEditor from "@/components/VideoEditor";
 import ThumbnailEditor from "@/components/ThumbnailEditor";
-import CreatorAi from "@/components/CreatorAi";
+import AuraStudio from "@/components/AuraStudio";
 
 // Tab ID mapping: new nav uses 'downloader'/'editor', legacy used 'youtube'/'video'
 const TAB_ALIASES: Record<string, string> = {
@@ -88,12 +88,14 @@ export default function Page() {
         <VideoEditor />
       </main>
 
+      {/* Aura remains mounted while navigating, preserving active renders. */}
+      <main className={`flex-1 w-full ${activeTab === "ai" ? "block" : "hidden"}`}><AuraStudio active={activeTab === "ai"} /></main>
+
       {/* Other Workspaces */}
-      <main className={`flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 overflow-x-hidden pb-24 md:pb-8 ${activeTab !== "editor" ? "block" : "hidden"}`}>
+      <main className={`flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 overflow-x-hidden pb-24 md:pb-8 ${activeTab !== "editor" && activeTab !== "ai" ? "block" : "hidden"}`}>
         {activeTab === "home" && <Home setActiveTab={setActiveTab} />}
         {activeTab === "downloader" && <YoutubeDownloader />}
         {activeTab === "thumbnail" && <ThumbnailEditor />}
-        {activeTab === "ai" && <CreatorAi />}
       </main>
 
     </div>
