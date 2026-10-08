@@ -11,7 +11,7 @@ class Media extends EventTarget {
 }
 const track=()=>({stop(){stopped.push(1)}});
 class Stream {constructor(tracks){this.tracks=tracks}getTracks(){return this.tracks}getVideoTracks(){return this.tracks}getAudioTracks(){return this.tracks}}
-class Context {createMediaStreamDestination(){return {stream:new Stream([track()])}}createGain(){return {gain:{value:0},connect(){}}}createMediaElementSource(){return {connect(target){return target}}}async resume(){}async close(){contextsClosed++}}
+class Context {createMediaStreamDestination(){return {stream:new Stream([track()])}}createGain(){return Context.lastGain={gain:{value:0},connect(){}}}createMediaElementSource(){return {connect(target){return target}}}async resume(){}async close(){contextsClosed++}}
 class Recorder {static isTypeSupported(type){return type.startsWith('video/webm')}constructor(stream,options){this.state='inactive';this.mimeType=options.mimeType;this.actions=[];Recorder.last=this;}start(){this.state='recording';this.actions.push('start')}pause(){this.state='paused';this.actions.push('pause')}resume(){this.state='recording';this.actions.push('resume')}stop(){this.state='inactive';this.actions.push('stop');this.ondataavailable?.({data:new Blob(['test'])});queueMicrotask(()=>this.onstop?.())}}
 Object.assign(global,{MediaRecorder:Recorder,MediaStream:Stream,AudioContext:Context,Audio:Media,window:{MediaRecorder:Recorder},document:{hidden:false,createElement(){return currentVideo=new Media()}},requestAnimationFrame(fn){return setImmediate(()=>{if(!currentVideo.paused) currentVideo._time+=0.1;fn()})},cancelAnimationFrame:clearImmediate});
 const canvas={captureStream(){return new Stream([track()])}};
@@ -28,6 +28,8 @@ async function run(){
  document.hidden=false;
  await assert.rejects(()=>mod.exports.recordTimeline({...options,start:5,end:6}),/No video/);
  assert.equal(contextsClosed,3);
+ frames=[]; await mod.exports.recordTimeline({...options,rateAt:time=>1+time,gainAt:time=>Math.min(1,time),draw(video,time){frames.push({rate:video.playbackRate,gain:Context.lastGain.gain.value,time})}});
+ assert(frames.every(f=>Math.abs(f.rate-(1+f.time))<0.001)); assert(frames.every(f=>Math.abs(f.gain-0.5*Math.min(1,f.time))<0.001)); assert.equal(contextsClosed,4);
  console.log('PASS: trimmed multi-clip sequence, source offsets, timeline captions clock, pause/resume gaps, actual MIME fallback, hidden-tab failure and resource cleanup');
 }
 run().catch(error=>{console.error(error);process.exitCode=1});

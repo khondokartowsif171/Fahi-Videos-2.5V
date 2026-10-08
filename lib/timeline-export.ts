@@ -6,6 +6,8 @@ export async function recordTimeline(options: {
   quality: string;
   speed: number;
   volume: number;
+  rateAt?: (time:number) => number;
+  gainAt?: (time:number) => number;
   audioUrl?: string;
   start: number;
   end: number;
@@ -53,13 +55,14 @@ export async function recordTimeline(options: {
       await waitFor(video, 'loadeddata', () => { video.src = clip.objectUrl; video.load(); });
       const sourceStart = (clip.startOffset || 0) + localStart;
       if (Math.abs(video.currentTime - sourceStart) > 0.001) await waitFor(video, 'seeked', () => { video.currentTime = sourceStart; });
-      video.playbackRate = options.speed;
+      video.playbackRate = options.rateAt?.(offset + localStart) || options.speed;
+      gain.gain.value = options.volume * (options.gainAt?.(offset + localStart) ?? 1);
       options.draw(video, offset + localStart);
       await video.play();
-      if (music) { music.currentTime = Math.max(0, (offset + localStart - options.start) / options.speed); await music.play(); }
+      if (music) { await music.play(); }
       if (recorder.state === 'inactive') recorder.start(250); else recorder.resume();
       await new Promise<void>((resolve, reject) => {
-        const watchdog = setTimeout(() => done(new Error('Playback stalled during export')), ((localEnd - localStart) / options.speed + 30) * 1000);
+        const watchdog = setTimeout(() => done(new Error('Playback stalled during export')), ((localEnd - localStart) / (options.rateAt ? 0.25 : options.speed) + 30) * 1000);
         let frame = 0;
         const done = (error?: Error) => { clearTimeout(watchdog); cancelAnimationFrame(frame); video.removeEventListener('error', decodeError); video.pause(); music?.pause(); error ? reject(error) : resolve(); };
         const decodeError = () => done(new Error('Video decoding failed during export'));
@@ -68,6 +71,8 @@ export async function recordTimeline(options: {
           if (failed) { done(failed instanceof Error ? failed : new Error('Recording failed')); return; }
           if (document.hidden) { done(new Error('Keep this tab open and the screen awake during export.')); return; }
           const localTime = video.currentTime - (clip.startOffset || 0);
+          video.playbackRate = options.rateAt?.(offset + localTime) || options.speed;
+          gain.gain.value = options.volume * (options.gainAt?.(offset + localTime) ?? 1);
           options.draw(video, offset + localTime);
           options.progress(Math.min(99, 100 * (offset + localTime - options.start) / Math.max(0.01, end - options.start)));
           if (localTime >= localEnd || video.ended) { done(); return; }

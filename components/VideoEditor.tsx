@@ -2,6 +2,8 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import "./video-editor.css";
+import ChromaPreview from './ChromaPreview';
+import {TransformFrame, SpeedPoint, transformAt, speedAt, fadeAt, keyedFrame} from '@/lib/editor-motion';
 import { recordTimeline } from "@/lib/timeline-export";
 import { useHistory } from "@/hooks/useHistory";
 import {
@@ -115,6 +117,8 @@ const getMediaDuration = (file: File): Promise<number> => new Promise((resolve, 
 export default function VideoEditor() {
   const [editorState, setEditorState, { undo, redo, canUndo, canRedo }] = useHistory({
     videoClips: [] as VideoClipItem[],
+    keyframes: [] as TransformFrame[], speedCurve: [] as SpeedPoint[], transitionSeconds: 0,
+    chroma: {enabled: false, color: '#00ff00', tolerance: 90, softness: 40},
     cropBox: {left: 0, top: 0, width: 100, height: 100},
     opacity: 100, exposure: 100, lumetriContrast: 200, lumetriSat: 1, temp: 0, tint: 0,
     brightness: 100,
@@ -796,6 +800,16 @@ export default function VideoEditor() {
       }
   };
 
+  useEffect(() => {
+    if (!isPlaying || isExporting) return;
+    let frame=0, last=0;
+    const tick=(timestamp:number)=>{
+      if(timestamp-last>=33 && (videoRef.current?.readyState || 0)>=2){last=timestamp;handleTimeUpdate();}
+      frame=requestAnimationFrame(tick);
+    };
+    frame=requestAnimationFrame(tick);return()=>cancelAnimationFrame(frame);
+  },[isPlaying,isExporting,activeClipId,activeClipInfo,clipOffsets]);
+
   const handleLoadedMetadata = () => {
       if (videoRef.current && activeClipInfo) {
           const realDur = videoRef.current.duration;
@@ -1142,12 +1156,23 @@ Include:
     c = (c * (lumetriContrast / 200));
     s = (s * lumetriSat);
 
-    return `brightness(${b}%) contrast(${c}%) saturate(${s}%) sepia(${sep}%) blur(${bl}px) hue-rotate(${hue}deg) invert(${invert}%) opacity(${opacity}%)`;
+    return `brightness(${b}%) contrast(${c}%) saturate(${s}%) sepia(${sep}%) blur(${bl}px) hue-rotate(${hue}deg) invert(${invert}%) opacity(${100}%)`;
   }, [brightness, contrast, saturation, sepia, blur, selectedFilter, filterIntensity, selectedEffect, effectIntensity, exposure, lumetriContrast, lumetriSat, opacity, temp, tint]);
 
+  const motionAt = (time:number) => transformAt(editorState.keyframes,time,{x:panX,y:panY,zoom,rotation:rotate,opacity});
+  const previewMotion = motionAt(currentTime);
+  const speedForTime = (time:number) => {
+    const info=clipOffsets.find(c=>time>=c.start && time<c.end) || clipOffsets[clipOffsets.length-1];
+    return Math.max(0.25,Math.min(4,playbackSpeed*speedAt(editorState.speedCurve,info ? (time-info.start)/info.duration : 0)));
+  };
+  const fadeForTime = (time:number) => {
+    const info=clipOffsets.find(c=>time>=c.start && time<c.end) || clipOffsets[clipOffsets.length-1];
+    return info ? fadeAt(time-info.start,info.duration,editorState.transitionSeconds) : 1;
+  };
+  useEffect(()=>{if(videoRef.current){videoRef.current.playbackRate=speedForTime(currentTime);videoRef.current.volume=(isMuted ? 0 : volume)*fadeForTime(currentTime);}},[currentTime,playbackSpeed,editorState.speedCurve,editorState.transitionSeconds,volume,isMuted]);
   const scaleX = flipH ? -1 : 1;
   const scaleY = flipV ? -1 : 1;
-  const transformStyle = `translate(${panX}px, ${panY}px) rotate(${rotate}deg) scaleX(${scaleX * zoom}) scaleY(${scaleY * zoom})`;
+  const transformStyle = `translate(${previewMotion.x}px, ${previewMotion.y}px) rotate(${previewMotion.rotation}deg) scaleX(${scaleX * previewMotion.zoom}) scaleY(${scaleY * previewMotion.zoom})`;
 
   // Full Video Crop transform style calculation (expands crop region to fill preview frame)
   const cropTransformStyle = useMemo(() => {
@@ -1295,6 +1320,7 @@ Include:
     if (!ctx) { setIsExporting(false); return; }
     const previewWidth = videoRef.current?.parentElement?.clientWidth || 340;
     const previewScale = width / previewWidth;
+    const chromaCanvas = document.createElement("canvas");
     let overlayImage: HTMLImageElement | undefined;
     try {
       if (overlayMedia) {
@@ -1306,8 +1332,9 @@ Include:
         clips: videoClips, canvas, format: exportFormat, quality: exportQuality,
         speed: playbackSpeed, volume: isMuted ? 0 : volume, audioUrl: selectedAudio?.url,
         start: trimStart, end: trimEnd > trimStart ? trimEnd : duration,
-        progress: setExportProgress,
+        progress: setExportProgress, rateAt: speedForTime, gainAt: fadeForTime,
         draw: (videoElement, timelineTime) => {
+          const animated = motionAt(timelineTime);
           ctx.fillStyle = '#000'; ctx.fillRect(0, 0, width, height);
           if (bgStyle === 'purple_glow' || bgStyle === 'cyber_gradient') {
             const gradient = ctx.createLinearGradient(0, 0, width, height);
@@ -1318,16 +1345,17 @@ Include:
             ctx.drawImage(videoElement, 0, 0, width, height); ctx.restore();
           }
           ctx.save(); ctx.filter = filterStyle;
-          ctx.translate(width / 2 + panX * previewScale, height / 2 + panY * previewScale);
-          ctx.rotate(rotate * Math.PI / 180);
-          ctx.scale(scaleX * zoom, scaleY * zoom);
+          ctx.globalAlpha = animated.opacity / 100;
+          ctx.translate(width / 2 + animated.x * previewScale, height / 2 + animated.y * previewScale);
+          ctx.rotate(animated.rotation * Math.PI / 180);
+          ctx.scale(scaleX * animated.zoom, scaleY * animated.zoom);
           const cropScale = Math.min(100 / cropBox.width, 100 / cropBox.height);
           ctx.scale(cropScale, cropScale);
           ctx.translate((50 - cropBox.left - cropBox.width / 2) * 3 * previewScale,
             (50 - cropBox.top - cropBox.height / 2) * 3 * previewScale);
           const fit = Math.min(width / videoElement.videoWidth, height / videoElement.videoHeight);
           const dw = videoElement.videoWidth * fit, dh = videoElement.videoHeight * fit;
-          ctx.drawImage(videoElement, -dw / 2, -dh / 2, dw, dh); ctx.restore();
+          ctx.drawImage(editorState.chroma.enabled ? keyedFrame(videoElement,chromaCanvas,editorState.chroma.color,editorState.chroma.tolerance,editorState.chroma.softness) : videoElement, -dw / 2, -dh / 2, dw, dh); ctx.restore();
           if (overlayImage && overlayMedia) {
             const ow = width * 0.3 * overlayMedia.scale;
             const oh = ow * overlayImage.naturalHeight / overlayImage.naturalWidth;
@@ -1389,6 +1417,7 @@ Include:
         }
 
 
+          ctx.save(); ctx.globalAlpha=1-fadeForTime(timelineTime);ctx.fillStyle='#000';ctx.fillRect(0,0,width,height);ctx.restore();
         }
       });
       const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
@@ -1527,6 +1556,7 @@ Include:
                               className="relative w-full h-full object-contain max-h-full"
                               style={{
                                   filter: filterStyle,
+                                  opacity: editorState.chroma.enabled ? 0 : previewMotion.opacity / 100,
                                   transform: cropTransformStyle
                               }}
                               onTimeUpdate={handleTimeUpdate}
@@ -1539,6 +1569,7 @@ Include:
                               }}
                           />
 
+                          {editorState.chroma.enabled && <ChromaPreview key={activeClipId} videoRef={videoRef} color={editorState.chroma.color} tolerance={editorState.chroma.tolerance} softness={editorState.chroma.softness} style={{filter:filterStyle,transform:cropTransformStyle,opacity:previewMotion.opacity/100}}/>}
                           {overlayMedia && <img src={overlayMedia.url} alt={overlayMedia.title} className="absolute pointer-events-none" style={{
                             width: (30 * overlayMedia.scale) + '%', opacity: overlayMedia.opacity / 100,
                             left: overlayMedia.position.includes('left') ? '3%' : overlayMedia.position.includes('right') ? undefined : '50%',
@@ -1601,6 +1632,7 @@ Include:
                             </div>
                           )}
 
+                          {editorState.transitionSeconds > 0 && <div aria-hidden="true" className="absolute inset-0 bg-black pointer-events-none z-20" style={{opacity:1-fadeForTime(currentTime)}}/>}
                           {/* Render AI Avatar Presenter Overlay */}
                           {aiAvatar && (
                             <div className="absolute bottom-14 md:bottom-20 right-4 w-14 h-14 md:w-20 md:h-20 rounded-full border-2 border-indigo-400 bg-purple-950/80 overflow-hidden shadow-xl flex items-center justify-center animate-pulse">
@@ -1819,8 +1851,40 @@ Include:
                     </div>
                   )}
 
+                  {activeTool === 'motion' && <div className="space-y-4">
+                    <p className="text-xs text-slate-400">Adjusting a slider creates or updates a keyframe at the playhead. Values animate between keyframes.</p><p className="text-xs text-cyan-300">At playhead: {previewMotion.zoom.toFixed(2)}× zoom · {previewMotion.rotation.toFixed(1)}° rotation</p>
+                    {([{key:'panX',label:'Position X',min:-200,max:200},{key:'panY',label:'Position Y',min:-200,max:200},{key:'zoom',label:'Zoom',min:0.25,max:4,step:0.05},{key:'rotate',label:'Rotation',min:-360,max:360},{key:'opacity',label:'Opacity',min:0,max:100}] as const).map(control=><label key={control.key} className="block text-xs">{control.label}: {Number(editorState[control.key]).toFixed(2)}<input aria-label={'Keyframe '+control.label} type="range" className="w-full" min={control.min} max={control.max} step={'step' in control ? control.step : 1} value={editorState[control.key]} onChange={e=>{
+                      const value=Number(e.target.value);setEditorState(prev=>{
+                        const next={...prev,[control.key]:value};
+                        const frame={time:currentTime,x:next.panX,y:next.panY,zoom:next.zoom,rotation:next.rotate,opacity:next.opacity};
+                        return {...next,keyframes:[...prev.keyframes.filter(f=>Math.abs(f.time-currentTime)>0.04),frame].sort((a,b)=>a.time-b.time)};
+                      });
+                    }}/></label>)}
+                    <button className="w-full p-3 bg-indigo-500 rounded-lg" disabled={!duration} onClick={()=>updateState('keyframes',(frames:TransformFrame[])=>[...frames.filter(f=>Math.abs(f.time-currentTime)>0.04),{time:currentTime,x:panX,y:panY,zoom,rotation:rotate,opacity}].sort((a,b)=>a.time-b.time))}>Add / replace keyframe at {currentTime.toFixed(2)}s</button>
+                    {editorState.keyframes.map(frame=><div key={frame.time} className="flex justify-between items-center text-xs"><button className="p-2" onClick={()=>{handleScrub({target:{value:String(frame.time)}} as React.ChangeEvent<HTMLInputElement>);setEditorState(prev=>({...prev,panX:frame.x,panY:frame.y,zoom:frame.zoom,rotate:frame.rotation,opacity:frame.opacity}));}}>◆ {frame.time.toFixed(2)}s · zoom {frame.zoom.toFixed(2)}</button><button className="p-2 text-red-300" aria-label={'Remove keyframe '+frame.time} onClick={()=>updateState('keyframes',(frames:TransformFrame[])=>frames.filter(f=>f.time!==frame.time))}>Remove</button></div>)}
+                    <button className="w-full p-2 text-slate-400" onClick={()=>updateState('keyframes',[])}>Clear keyframes</button>
+                  </div>}
+                  {activeTool === 'speed' && <div className="space-y-4">
+                    <p className="text-xs text-slate-400">The curve controls speed through each clip. Timeline positions refer to source seconds.</p>
+                    {[{name:'Normal',points:[]},{name:'Montage',points:[{position:0,speed:1},{position:0.25,speed:2},{position:0.5,speed:0.5},{position:0.75,speed:2},{position:1,speed:1}]},{name:'Slow middle',points:[{position:0,speed:1},{position:0.5,speed:0.25},{position:1,speed:1}]}].map(preset=><button key={preset.name} className="p-3 rounded bg-white/10 mr-2" onClick={()=>updateState('speedCurve',preset.points)}>{preset.name}</button>)}
+                    <button className="w-full p-3 bg-indigo-500 rounded-lg" onClick={()=>updateState('speedCurve',[{position:0,speed:1},{position:0.25,speed:1},{position:0.5,speed:1},{position:0.75,speed:1},{position:1,speed:1}])}>Custom five-point curve</button>
+                    {editorState.speedCurve.map((point,index)=><label key={index} className="block text-xs">{Math.round(point.position*100)}% · {point.speed.toFixed(2)}x<input aria-label={'Speed at '+Math.round(point.position*100)+' percent'} className="w-full" type="range" min="0.25" max="4" step="0.05" value={point.speed} onChange={e=>updateState('speedCurve',(points:SpeedPoint[])=>points.map((p,i)=>i===index?{...p,speed:Number(e.target.value)}:p))}/></label>)}
+                  </div>}
+                  {activeTool === 'transition' && <div className="space-y-4">
+                    <p className="text-xs text-slate-400">Fade through black at clip boundaries. Video and source audio fade together.</p>
+                    {[0,0.2,0.5,1,2].map(seconds=><button key={seconds} aria-pressed={editorState.transitionSeconds===seconds} className="p-3 mr-2 rounded bg-white/10" onClick={()=>updateState('transitionSeconds',seconds)}>{seconds===0?'None':seconds+'s'}</button>)}
+                    <label className="block text-xs">Duration: {editorState.transitionSeconds.toFixed(2)}s<input aria-label="Transition duration" className="w-full" type="range" min="0" max="2" step="0.05" value={editorState.transitionSeconds} onChange={e=>updateState('transitionSeconds',Number(e.target.value))}/></label>
+                  </div>}
+                  {activeTool === 'chroma' && <div className="space-y-4">
+                    <label className="flex gap-3 text-sm"><input type="checkbox" checked={editorState.chroma.enabled} onChange={e=>updateState('chroma',{...editorState.chroma,enabled:e.target.checked})}/>Enable chroma key</label>
+                    <label className="block text-xs">Remove color<input aria-label="Chroma key color" type="color" value={editorState.chroma.color} onChange={e=>updateState('chroma',{...editorState.chroma,color:e.target.value})}/></label>
+                    <label className="block text-xs">Tolerance: {editorState.chroma.tolerance}<input aria-label="Chroma key tolerance" className="w-full" type="range" min="0" max="300" value={editorState.chroma.tolerance} onChange={e=>updateState('chroma',{...editorState.chroma,tolerance:Number(e.target.value)})}/></label>
+                    <label className="block text-xs">Soft edge: {editorState.chroma.softness}<input aria-label="Chroma key softness" className="w-full" type="range" min="1" max="150" value={editorState.chroma.softness} onChange={e=>updateState('chroma',{...editorState.chroma,softness:Number(e.target.value)})}/></label>
+                    <p className="text-xs text-slate-400">Use Backdrop to choose what appears behind the removed color. Processing resolution is capped at 1280px for mobile performance.</p>
+                  </div>}
                   {activeTool === "edit" && (
                     <div className="space-y-5">
+                       <div className="grid grid-cols-2 gap-2">{[{id:'motion',name:'Keyframes'},{id:'speed',name:'Speed curve'},{id:'transition',name:'Transitions'},{id:'chroma',name:'Chroma key'}].map(tool=><button key={tool.id} className="p-3 bg-indigo-500/20 rounded-lg text-xs" onClick={()=>setActiveTool(tool.id)}>{tool.name}</button>)}</div>
                        <div className="space-y-2">
                          <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider block">Transform</span>
                          <div className="grid grid-cols-2 gap-2">
@@ -2960,8 +3024,10 @@ Include:
                     { icon: Scissors, label: 'Split', fn: handleSplitClip, color: 'text-indigo-400' },
                     { icon: Copy, label: 'Duplicate', fn: () => { const clip = videoClips.find(c => c.id === selectedClipId); if (clip) setVideoClips(prev => [...prev, {...clip, id: crypto.randomUUID()}]); }, color: 'text-slate-300' },
                     { icon: Volume2, label: 'Volume', fn: () => setActiveTool('audio'), color: 'text-slate-300' },
-                    { icon: Wand2, label: 'Color FX', fn: () => setActiveTool('effects'), color: 'text-cyan-400' },
+                    { icon: Wand2, label: 'Keyframes', fn: () => setActiveTool('motion'), color: 'text-cyan-400' },
                     { icon: Sparkles, label: 'Effects', fn: () => setActiveTool('effects'), color: 'text-violet-400' },
+                    { icon: FastForward, label: 'Curve', fn: () => setActiveTool('speed'), color: 'text-cyan-300' },
+                    { icon: Layers, label: 'Transition', fn: () => setActiveTool('transition'), color: 'text-slate-300' },
                     { icon: Trash2, label: 'Delete', fn: () => selectedClipId && handleRemoveClip(selectedClipId), color: 'text-red-400' },
                   ].map((t, i) => (
                     <button key={i} onClick={t.fn} className={`flex flex-col items-center justify-center min-w-[52px] py-2 ${t.color} hover:text-white shrink-0 transition-colors`}>
@@ -3056,7 +3122,10 @@ Include:
                   { icon: Scissors, label: 'Split', fn: handleSplitClip, color: 'text-slate-300' },
                   { icon: Copy, label: 'Duplicate', fn: () => { const clip = videoClips.find(c => c.id === selectedClipId); if (clip) setVideoClips(prev => [...prev, {...clip, id: crypto.randomUUID()}]); }, color: 'text-slate-300' },
                   { icon: Volume2, label: 'Volume', fn: () => setActiveTool('audio'), color: 'text-slate-300' },
-                  { icon: Wand2, label: 'Color FX', fn: () => setActiveTool('effects'), color: 'text-slate-300' },
+                  { icon: Wand2, label: 'Keyframes', fn: () => setActiveTool('motion'), color: 'text-cyan-300' },
+                  { icon: FastForward, label: 'Curve', fn: () => setActiveTool('speed'), color: 'text-slate-300' },
+                  { icon: Layers, label: 'Transition', fn: () => setActiveTool('transition'), color: 'text-slate-300' },
+                  { icon: Palette, label: 'Chroma key', fn: () => setActiveTool('chroma'), color: 'text-green-300' },
                   { icon: Sparkles, label: 'Effects', fn: () => setActiveTool('effects'), color: 'text-slate-300' },
                   { icon: Trash2, label: 'Delete', fn: () => { handleRemoveClip(selectedClipId); setSelectedClipId(null); }, color: 'text-red-400' },
                 ].map((t, i) => (
@@ -3082,6 +3151,10 @@ Include:
                   { icon: Sticker, label: 'Stickers', id: 'stickers', color: 'text-slate-300' },
                   { icon: Smartphone, label: 'Ratio', id: 'aspect', color: 'text-slate-300' },
                   { icon: Palette, label: 'Backdrop', id: 'background', color: 'text-slate-300' },
+                  { icon: Zap, label: 'Keyframes', id: 'motion', color: 'text-cyan-300' },
+                  { icon: FastForward, label: 'Speed curve', id: 'speed', color: 'text-slate-300' },
+                  { icon: Layers, label: 'Transition', id: 'transition', color: 'text-slate-300' },
+                  { icon: Palette, label: 'Chroma key', id: 'chroma', color: 'text-green-300' },
                   { icon: Wand2, label: 'AI Tools', id: 'ai_veo', color: 'text-violet-400' },
                 ].map((t) => (
                   <button
