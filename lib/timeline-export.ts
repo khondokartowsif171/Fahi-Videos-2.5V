@@ -1,3 +1,4 @@
+import {AudioLayer, createAudioMixer} from './editor-audio';
 /** Record each trimmed source in timeline order. Loading gaps are excluded. */
 export async function recordTimeline(options: {
   clips: {objectUrl: string; duration: number; startOffset?: number}[];
@@ -9,6 +10,9 @@ export async function recordTimeline(options: {
   rateAt?: (time:number) => number;
   gainAt?: (time:number) => number;
   audioUrl?: string;
+  audioLayers?: AudioLayer[];
+  audioTimeAt?: (time:number) => number;
+  audioRateAt?: (time:number) => number;
   start: number;
   end: number;
   draw: (video: HTMLVideoElement, time: number) => void;
@@ -23,6 +27,8 @@ export async function recordTimeline(options: {
   audioContext.createMediaElementSource(video).connect(gain).connect(output);
   const music = options.audioUrl ? new Audio() : undefined;
   if (music) { music.crossOrigin = 'anonymous'; music.src = options.audioUrl!; audioContext.createMediaElementSource(music).connect(output); }
+  let audioFailure: string | undefined;
+  const mixer = createAudioMixer(audioContext, output, options.audioLayers || [], message => { audioFailure = message; });
   const canvasStream = options.canvas.captureStream(30);
   const stream = new MediaStream([...canvasStream.getVideoTracks(), ...output.stream.getAudioTracks()]);
   const types = options.format === 'mp4'
@@ -46,6 +52,7 @@ export async function recordTimeline(options: {
   const end = Math.min(options.end, options.clips.reduce((sum, clip) => sum + clip.duration, 0));
   try {
     await audioContext.resume();
+    await mixer.ready();
     if (music) { await waitFor(music, 'loadeddata', () => music.load()); }
     let offset = 0;
     for (const clip of options.clips) {
@@ -58,21 +65,24 @@ export async function recordTimeline(options: {
       video.playbackRate = options.rateAt?.(offset + localStart) || options.speed;
       gain.gain.value = options.volume * (options.gainAt?.(offset + localStart) ?? 1);
       options.draw(video, offset + localStart);
+      mixer.sync(options.audioTimeAt?.(offset + localStart) ?? offset + localStart, true, options.audioRateAt?.(offset + localStart) ?? video.playbackRate);
       await video.play();
       if (music) { await music.play(); }
       if (recorder.state === 'inactive') recorder.start(250); else recorder.resume();
       await new Promise<void>((resolve, reject) => {
         const watchdog = setTimeout(() => done(new Error('Playback stalled during export')), ((localEnd - localStart) / (options.rateAt ? 0.25 : options.speed) + 30) * 1000);
         let frame = 0;
-        const done = (error?: Error) => { clearTimeout(watchdog); cancelAnimationFrame(frame); video.removeEventListener('error', decodeError); video.pause(); music?.pause(); error ? reject(error) : resolve(); };
+        const done = (error?: Error) => { clearTimeout(watchdog); cancelAnimationFrame(frame); video.removeEventListener('error', decodeError); video.pause(); music?.pause(); mixer.pause(); error ? reject(error) : resolve(); };
         const decodeError = () => done(new Error('Video decoding failed during export'));
         video.addEventListener('error', decodeError, {once: true});
         const render = () => {
+          if (audioFailure) { done(new Error(audioFailure)); return; }
           if (failed) { done(failed instanceof Error ? failed : new Error('Recording failed')); return; }
           if (document.hidden) { done(new Error('Keep this tab open and the screen awake during export.')); return; }
           const localTime = video.currentTime - (clip.startOffset || 0);
           video.playbackRate = options.rateAt?.(offset + localTime) || options.speed;
           gain.gain.value = options.volume * (options.gainAt?.(offset + localTime) ?? 1);
+          mixer.sync(options.audioTimeAt?.(offset + localTime) ?? offset + localTime, true, options.audioRateAt?.(offset + localTime) ?? video.playbackRate);
           options.draw(video, offset + localTime);
           options.progress(Math.min(99, 100 * (offset + localTime - options.start) / Math.max(0.01, end - options.start)));
           if (localTime >= localEnd || video.ended) { done(); return; }
@@ -92,6 +102,7 @@ export async function recordTimeline(options: {
     return blob;
   } finally {
     if (recorder.state !== 'inactive') recorder.stop();
+    mixer.dispose();
     video.pause(); music?.pause(); video.removeAttribute('src'); video.load();
     stream.getTracks().forEach(track => track.stop());
     await audioContext.close();

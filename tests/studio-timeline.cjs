@@ -1,0 +1,16 @@
+const fs=require('fs'),ts=require('typescript'),assert=require('node:assert/strict');
+require.extensions['.ts']=(module,file)=>module._compile(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,file);
+const {trimVideo,trimSound,timelineClips,frameTime,formatClock}=require('../lib/cut-timeline.ts');
+const clip={id:'clip',assetId:'media',in:1,out:5,speed:2,volume:1,rotation:0,brightness:0,saturation:1};
+assert.equal(trimVideo(clip,'in',.5,6).in,2);
+assert.equal(trimVideo(clip,'out',99,6).out,6);
+assert.equal(trimVideo(clip,'in',-99,6).in,0);
+assert.ok(trimVideo(clip,'in',99,6).in<clip.out);
+assert.equal(timelineClips({clips:[clip,trimVideo(clip,'in',.5,6)]})[1].start,2);
+assert.equal(frameTime(.051),2/30);
+assert.equal(formatClock(61.033),'01:01.033');
+const sound={id:'sound',assetId:'media',start:2,in:1,out:5,volume:1,fadeIn:3,fadeOut:3,muted:false};
+const shortened=trimSound(sound,'in',2,6);
+assert.equal(shortened.start,4);assert.equal(shortened.in,3);assert.equal(shortened.fadeIn,2);assert.equal(trimSound(sound,'out',99,6).out,6);
+assert.equal(clip.in,1);assert.equal(sound.in,1);
+console.log('PASS: visual timeline source bounds, speed-aware trim, frame grid, clip offsets, sound position and fade bounds, immutable undo snapshots');
