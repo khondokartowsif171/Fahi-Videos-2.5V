@@ -2,6 +2,10 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import "./video-editor.css";
+import StudioTimeline from "./StudioTimeline";
+import AudioTools, {Waveform} from './AudioTools';
+import AudioPreview from './AudioPreview';
+import {AudioLayer, decodeAudio, audioLength} from '@/lib/editor-audio';
 import ChromaPreview from './ChromaPreview';
 import {TransformFrame, SpeedPoint, transformAt, speedAt, fadeAt, keyedFrame} from '@/lib/editor-motion';
 import { recordTimeline } from "@/lib/timeline-export";
@@ -142,7 +146,7 @@ export default function VideoEditor() {
     splitPoints: [] as number[],
     textOverlays: [] as TextOverlay[],
     stickerOverlays: [] as StickerOverlay[],
-    selectedAudio: null as AudioTrack | null,
+    audioLayers: [] as AudioLayer[],
     autoCaptionsEnabled: false,
     captionStyle: "tiktok_yellow" as "tiktok_yellow" | "black_bar" | "neon" | "white_bold",
     captionItems: [] as CaptionItem[],
@@ -222,7 +226,7 @@ export default function VideoEditor() {
     rotate, flipH, flipV, zoom, panX, panY,
     trimStart, trimEnd,
     playbackSpeed, volume, isMuted, aspectRatio, bgStyle,
-    splitPoints, textOverlays, stickerOverlays, selectedAudio,
+    splitPoints, textOverlays, stickerOverlays, audioLayers,
     autoCaptionsEnabled, captionStyle, captionItems,
     selectedFilter, filterIntensity, selectedEffect, effectIntensity,
     overlayMedia, aiAvatar, aiAvatarScript
@@ -249,7 +253,18 @@ export default function VideoEditor() {
   const setSplitPoints = (v: any) => updateState('splitPoints', v);
   const setTextOverlays = (v: any) => updateState('textOverlays', v);
   const setStickerOverlays = (v: any) => updateState('stickerOverlays', v);
-  const setSelectedAudio = (v: any) => updateState('selectedAudio', v);
+  const [selectedAudioId, setSelectedAudioId] = useState<string | null>(null);
+  const [audioError, setAudioError] = useState('');
+  const setAudioLayers = (layers: AudioLayer[]) => updateState('audioLayers', layers);
+  async function addAudioFiles(files: File[]) {
+    setAudioError('');
+    const added: AudioLayer[] = [];
+    for (const file of files) {
+      try { const layer = await decodeAudio(file, file.name, currentTime); importedUrls.current.add(layer.url); added.push(layer); }
+      catch { setAudioError('Could not decode this sound. Try an MP3, WAV or AAC file.'); }
+    }
+    if (added.length) { setEditorState(prev => ({...prev, audioLayers: [...prev.audioLayers, ...added]})); setSelectedAudioId(added[0].id); }
+  }
   const setAutoCaptionsEnabled = (v: any) => updateState('autoCaptionsEnabled', v);
   const setCaptionStyle = (v: any) => updateState('captionStyle', v);
   const setCaptionItems = (v: any) => updateState('captionItems', v);
@@ -348,9 +363,11 @@ export default function VideoEditor() {
       });
       if (!res.ok) throw new Error("Voice generation failed");
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+
       const voiceName = banglaVoices.find(v => v.voiceId === selectedVoiceId)?.name || "Voiceover";
-      setSelectedAudio({ id: "vo_" + Date.now(), name: `AI Voiceover — ${voiceName}`, category: "AI Voiceover", duration: "Generated", bpm: 0, url });
+      const layer = await decodeAudio(blob, 'AI Voiceover — ' + voiceName, currentTime);
+      importedUrls.current.add(layer.url);
+      setEditorState(prev => ({...prev, audioLayers: [...prev.audioLayers, layer]})); setSelectedAudioId(layer.id);
     } catch (e) {
       setVoiceoverError("Voice generation failed. Try again.");
     } finally {
@@ -729,7 +746,7 @@ export default function VideoEditor() {
       videoRef.current.src = targetUrl;
       videoRef.current.load();
     } else {
-      if (Math.abs(videoRef.current.currentTime - expectedMediaTime) > 0.25) {
+      if (Math.abs(videoRef.current.currentTime - expectedMediaTime) > (isPlaying ? 0.25 : 0.0001)) {
         videoRef.current.currentTime = expectedMediaTime;
       }
       if (isPlaying && videoRef.current.paused && !isSwitchingSourceRef.current) {
@@ -1330,7 +1347,7 @@ Include:
       await document.fonts.ready;
       const blob = await recordTimeline({
         clips: videoClips, canvas, format: exportFormat, quality: exportQuality,
-        speed: playbackSpeed, volume: isMuted ? 0 : volume, audioUrl: selectedAudio?.url,
+        speed: playbackSpeed, volume: isMuted ? 0 : volume, audioLayers,
         start: trimStart, end: trimEnd > trimStart ? trimEnd : duration,
         progress: setExportProgress, rateAt: speedForTime, gainAt: fadeForTime,
         draw: (videoElement, timelineTime) => {
@@ -1477,6 +1494,7 @@ Include:
   return (
     <div className="flex flex-col h-[100dvh] md:h-[calc(100vh-64px)] font-sans antialiased overflow-hidden bg-[#050810] text-[#F1F5F9] selection:bg-indigo-500/30">
       
+      <AudioPreview layers={audioLayers} time={currentTime} playing={isPlaying && !isExporting} rate={speedForTime(currentTime)} onError={setAudioError}/>
       {/* Top Header — Exact CapCut Mobile Style */}
       <div className="flex items-center justify-between px-3 h-12 shrink-0 z-30 bg-[#0B0F19]/95 backdrop-blur-xl border-b border-white/5">
           {/* Left: X close + Search */}
@@ -2123,27 +2141,8 @@ Include:
                           {voiceoverError && <div className="text-[10px] text-red-400">{voiceoverError}</div>}
                        </div>
 
-                       <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-3">
-                          <div className="flex items-center justify-between">
-                             <div className="flex items-center space-x-2 text-violet-400 font-medium text-xs">
-                               <Music className="w-4 h-4" /> <span>Background Music</span>
-                             </div>
-                             {selectedAudio && (
-                               <button onClick={() => setSelectedAudio(null)} className="text-slate-500 hover:text-red-400 text-[10px]"><X className="w-3.5 h-3.5"/></button>
-                             )}
-                          </div>
-                          <div className="space-y-2">
-                             <label className="flex items-center justify-center space-x-2 py-2 rounded-lg bg-violet-500/10 border border-violet-500/30 text-violet-300 text-xs font-bold cursor-pointer hover:bg-violet-500/20 transition-colors">
-                               <Plus className="w-3.5 h-3.5" /> <span>Upload Sound</span>
-                               <input id="audio-upload" type="file" accept="audio/*" className="hidden" onChange={e => {
-                                 if (e.target.files && e.target.files[0]) {
-                                   setSelectedAudio({ id: "c_"+Date.now(), name: e.target.files[0].name, category: "Upload", duration: "User", bpm: 120, url: URL.createObjectURL(e.target.files[0]) });
-                                 }
-                               }} />
-                             </label>
-                             {selectedAudio && <div className="text-center text-[10px] text-slate-400 truncate">{selectedAudio.name}</div>}
-                          </div>
-                       </div>
+                       <AudioTools layers={audioLayers} change={setAudioLayers} selected={selectedAudioId} select={setSelectedAudioId} time={currentTime} importFiles={addAudioFiles}/>
+                       {audioError && <p role="alert" className="text-xs text-red-300">{audioError}</p>}
 
                     </div>
                   )}
@@ -2663,7 +2662,7 @@ Include:
       </div>
 
       {/* BOTTOM: CapCut-Style Timeline */}
-      <div className="shrink-0 flex flex-col z-20" style={{ height: '192px', backgroundColor: 'rgba(5,8,16,1)', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="shrink-0 flex flex-col z-20" style={{ height: 'auto', backgroundColor: 'rgba(5,8,16,1)', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
           
           {/* Timeline Toolbar */}
           <div className="h-11 flex items-center justify-between px-2 md:px-4 border-b border-white/5">
@@ -2685,176 +2684,11 @@ Include:
                  <div className="w-px h-4 bg-white/10 mx-1" />
                  <div className="hidden sm:flex items-center space-x-2 pl-1">
                     <ZoomIn className="w-3.5 h-3.5 text-slate-500" />
-                    <input aria-label="Timeline zoom" type="range" min="20" max="120" value={timelineScale} onChange={e => setTimelineScale(Number(e.target.value))} className="w-20 accent-indigo-500 h-1 bg-white/10 rounded-full" />
                  </div>
               </div>
           </div>
 
-          {/* Timecode Ruler & Tracks area */}
-          <div className="flex-1 flex flex-col overflow-hidden relative">
-             <div className="h-5 flex items-center px-24 border-b border-white/5">
-                <input type="range" min="0" max={duration || 100} aria-label="Timeline playhead" step="0.05" value={currentTime} onChange={handleScrub} className="w-full accent-indigo-400 h-0.5 bg-transparent cursor-pointer relative z-20" />
-             </div>
-
-             <div className="flex-1 flex overflow-y-auto overflow-x-hidden relative">
-                 {/* Left labels column — CapCut Style: Track Name Labels */}
-                 <div className="w-20 shrink-0 bg-[#050810] z-20 border-r border-white/5 flex flex-col pt-1 pb-1 space-y-1">
-                    {/* Video Track Label */}
-                    <div className="h-9 flex items-center justify-between px-1.5 rounded-lg" style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.18)' }}>
-                      <div className="flex flex-col">
-                        <span className="text-[8px] font-bold text-indigo-300 leading-tight">Video 1</span>
-                        <span className="text-[7px] text-slate-500">{videoClips.length} clips</span>
-                      </div>
-                      <label className="cursor-pointer p-0.5 rounded hover:bg-indigo-500/20 transition-colors" title="Add Video">
-                        <Plus className="w-2.5 h-2.5 text-indigo-400" />
-                        <input type="file" accept="video/*" multiple className="hidden" onChange={handleFileUpload} />
-                      </label>
-                    </div>
-
-                    {/* Audio Track Label */}
-                    <button
-                      onClick={() => setActiveTool('audio')}
-                      className="h-7 flex items-center justify-between px-1.5 rounded-md cursor-pointer transition-colors"
-                      style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.18)' }}
-                    >
-                      <div className="flex flex-col items-start">
-                        <span className="text-[8px] font-bold text-violet-300 leading-tight">Audio 1</span>
-                        <span className="text-[7px] text-slate-500">{selectedAudio ? '1 track' : 'empty'}</span>
-                      </div>
-                      <Music className="w-2.5 h-2.5 text-violet-400" />
-                    </button>
-
-                    {/* Text Track Label */}
-                    <button
-                      onClick={() => setActiveTool('text')}
-                      className="h-6 flex items-center justify-between px-1.5 rounded-md cursor-pointer transition-colors"
-                      style={{ background: 'rgba(234,179,8,0.06)', border: '1px solid rgba(234,179,8,0.18)' }}
-                    >
-                      <div className="flex flex-col items-start">
-                        <span className="text-[8px] font-bold text-yellow-300 leading-tight">Text</span>
-                      </div>
-                      <Type className="w-2.5 h-2.5 text-yellow-400" />
-                    </button>
-                 </div>
-
-                 {/* Right tracks scroll area */}
-                 <div className="flex-1 overflow-x-auto overflow-y-hidden relative pt-1 pb-1">
-                    {/* Playhead line overlay */}
-                    {duration > 0 && (
-                       <div className="absolute top-0 bottom-0 w-px bg-indigo-400 z-30 pointer-events-none" style={{ left: 10 + currentTime * timelineScale + Math.max(0, clipOffsets.findIndex(c => c.clip.id === activeClipId)) * 4 }}>
-                          <div className="w-2 h-2 bg-indigo-400 rotate-45 -translate-x-1/2 -translate-y-1 shadow-[0_0_8px_rgba(99,102,241,0.8)]" />
-                       </div>
-                    )}
-                    
-                    <div className="flex flex-col space-y-1 min-w-full px-2" style={{ width: Math.max(300, duration * timelineScale + videoClips.length * 4 + 100) }}>
-                       {/* Video Track */}
-                       <div className="h-9 rounded-lg flex items-center p-0.5 space-x-1" style={{ backgroundColor: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.2)' }}>
-                          {videoClips.map((clip, idx) => {
-                             const isSelected = selectedClipId ? selectedClipId === clip.id : activeClipInfo?.clip.id === clip.id;
-                             const widthPercent = duration > 0 ? (clip.duration / duration) * 100 : 0;
-                             return (
-                                <div 
-                                  key={clip.id} 
-                                  onClick={(e) => { e.stopPropagation(); setSelectedClipId(clip.id); }}
-                                  className={`h-full relative rounded-md flex items-center px-2 cursor-pointer transition-all group ${
-                                    isSelected 
-                                      ? "bg-indigo-500/40 border-2 border-white text-white shadow-[0_0_12px_rgba(255,255,255,0.4)] z-10 overflow-visible" 
-                                      : "bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 overflow-hidden"
-                                  }`} 
-                                  style={{ flexShrink: 0, width: `${clip.duration * timelineScale}px`, minWidth: '8px' }}
-                                >
-                                   {/* CapCut Drag Trimming Handles on selected clip */}
-                                   {isSelected && (
-                                     <>
-                                       <div 
-                                         onMouseDown={(e) => handleClipTrimStart(clip, "left", e)}
-                                         onTouchStart={(e) => {
-                                           if (e.cancelable) e.preventDefault();
-                                           e.stopPropagation();
-                                           handleClipTrimStart(clip, "left", e);
-                                         }}
-                                         className="absolute -left-2 top-0 bottom-0 w-4 bg-white rounded-l flex items-center justify-center cursor-ew-resize hover:bg-indigo-300 z-50 shadow-xl touch-none"
-                                         title="Drag to trim start"
-                                       >
-                                         <div className="w-0.5 h-4 bg-slate-900 rounded-full" />
-                                       </div>
-                                       <div 
-                                         onMouseDown={(e) => handleClipTrimStart(clip, "right", e)}
-                                         onTouchStart={(e) => {
-                                           if (e.cancelable) e.preventDefault();
-                                           e.stopPropagation();
-                                           handleClipTrimStart(clip, "right", e);
-                                         }}
-                                         className="absolute -right-2 top-0 bottom-0 w-4 bg-white rounded-r flex items-center justify-center cursor-ew-resize hover:bg-indigo-300 z-50 shadow-xl touch-none"
-                                         title="Drag to trim end"
-                                       >
-                                         <div className="w-0.5 h-4 bg-slate-900 rounded-full" />
-                                       </div>
-                                     </>
-                                   )}
-                                   
-                                   <div className="flex items-center justify-between w-full overflow-hidden pl-1 pr-1">
-                                      <span className="text-[9px] font-bold truncate">{clip.name}</span>
-                                      <span className="text-[8px] font-mono text-indigo-200 bg-black/50 px-1 py-0.5 rounded shrink-0">{clip.duration.toFixed(1)}s</span>
-                                   </div>
-
-                                   {/* Clip action controls */}
-                                   <div className="absolute right-1 opacity-0 group-hover:opacity-100 flex items-center bg-black/70 rounded backdrop-blur-sm z-20">
-                                      {idx > 0 && <button onClick={(e) => { e.stopPropagation(); handleMoveClip(idx, 'left'); }} className="p-1 hover:text-indigo-300" title="Move Left"><ChevronLeft className="w-3 h-3"/></button>}
-                                      {idx < videoClips.length - 1 && <button onClick={(e) => { e.stopPropagation(); handleMoveClip(idx, 'right'); }} className="p-1 hover:text-indigo-300" title="Move Right"><ChevronRight className="w-3 h-3"/></button>}
-                                      <button onClick={(e) => { e.stopPropagation(); handleRemoveClip(clip.id); }} className="p-1 hover:text-red-400" title="Delete Clip"><Trash2 className="w-3 h-3"/></button>
-                                   </div>
-                                </div>
-                             )
-                          })}
-                          <label className="h-full px-2.5 flex items-center justify-center rounded-md bg-white/5 hover:bg-white/10 border border-dashed border-white/20 text-slate-400 text-[9px] font-bold cursor-pointer transition-colors shrink-0 space-x-1">
-                             <Plus className="w-3.5 h-3.5" />
-                             <span>Add end</span>
-                             <input type="file" accept="video/*" multiple className="hidden" onChange={handleFileUpload} />
-                          </label>
-                       </div>
-
-                       {/* Audio Track (CapCut Inline Add Audio) */}
-                       <div className="h-7 rounded flex items-center px-1" style={{ backgroundColor: 'rgba(124,58,237,0.05)', border: '1px solid rgba(124,58,237,0.2)' }}>
-                          {selectedAudio ? (
-                            <div className="h-5 w-full rounded bg-violet-500/20 border border-violet-500/40 flex items-center justify-between px-2 overflow-hidden">
-                              <div className="flex items-center space-x-1 overflow-hidden">
-                                 <Music className="w-3 h-3 text-violet-400 shrink-0" />
-                                 <span className="text-[9px] font-bold text-violet-200 truncate">{selectedAudio.name}</span>
-                              </div>
-                              <div className="flex items-center space-x-0.5 shrink-0">
-                                {Array.from({length: 15}).map((_, i) => (
-                                  <div key={i} className="w-0.5 bg-violet-400/70 rounded-full" style={{ height: `${Math.max(25, (i % 5 + 1) * 20)}%` }} />
-                                ))}
-                              </div>
-                            </div>
-                          ) : (
-                            <button onClick={() => setActiveTool('audio')} className="h-5 px-2.5 rounded-md bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 text-[9px] font-bold flex items-center space-x-1 transition-colors border border-violet-500/30">
-                               <Plus className="w-3 h-3" />
-                               <span>Add audio</span>
-                            </button>
-                          )}
-                       </div>
-
-                       {/* Text Track (CapCut Inline Add Text) */}
-                       <div className="h-6 rounded flex items-center px-1 space-x-1" style={{ backgroundColor: 'rgba(234,179,8,0.05)', border: '1px solid rgba(234,179,8,0.2)' }}>
-                          {textOverlays.length > 0 ? (
-                            textOverlays.map((t) => (
-                              <div key={t.id} className="h-4 px-2 rounded text-[8px] font-bold bg-yellow-500/20 text-yellow-300 border border-yellow-500/40 flex items-center shrink-0">
-                                {t.text}
-                              </div>
-                            ))
-                          ) : (
-                            <button onClick={() => setActiveTool('text')} className="h-4 px-2 rounded bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-300 text-[8px] font-bold flex items-center space-x-1 transition-colors border border-yellow-500/20">
-                               <Plus className="w-2.5 h-2.5" />
-                               <span>Add text</span>
-                            </button>
-                          )}
-                       </div>
-                    </div>
-                 </div>
-             </div>
-          </div>
+          <StudioTimeline clips={videoClips} audio={audioLayers} titles={textOverlays} time={currentTime} playing={isPlaying} selected={selectedAudioId || editingTextId || selectedClipId} volume={volume} muted={isMuted} seek={t=>handleScrub({target:{value:String(t)}} as React.ChangeEvent<HTMLInputElement>)} pause={()=>setIsPlaying(false)} select={(id,kind)=>{setSelectedClipId(kind==='video'?id:null);setSelectedAudioId(kind==='audio'?id:null);setEditingTextId(kind==='text'?id:null);}} change={(clips,audio,titles,muted)=>setEditorState(prev=>({...prev,videoClips:clips,audioLayers:audio,textOverlays:titles as TextOverlay[],isMuted:muted,...(clips.reduce((sum,c)=>sum+c.duration,0)!==prev.videoClips.reduce((sum,c)=>sum+c.duration,0)?{trimStart:0,trimEnd:clips.reduce((sum,c)=>sum+c.duration,0)}:{})}))} preview={(clip,source)=>{const media=videoRef.current;if(!media)return;if(clip&&source!==undefined){if(media.getAttribute('src')!==clip.objectUrl){pendingSeekTimeRef.current=source;media.src=clip.objectUrl;media.load();}else media.currentTime=source;}else handleScrub({target:{value:String(currentTime)}} as React.ChangeEvent<HTMLInputElement>);}} />
       </div>
 
       {/* CapCut-Style Context-Sensitive Bottom Footer Toolbar */}
@@ -3045,7 +2879,7 @@ Include:
                     { icon: Plus, label: 'Add', fn: () => document.getElementById('audio-upload')?.click(), color: 'text-violet-400' },
                     { icon: Volume2, label: 'Volume', fn: () => setActiveTool('audio'), color: 'text-slate-300' },
 
-                    { icon: Trash2, label: 'Delete', fn: () => setSelectedAudio(null), color: 'text-red-400' },
+                    { icon: Trash2, label: 'Delete', fn: () => setAudioLayers(audioLayers.filter(l => l.id !== (selectedAudioId || audioLayers[0]?.id))), color: 'text-red-400' },
                   ].map((t, i) => (
                     <button key={i} onClick={t.fn} className={`flex flex-col items-center justify-center min-w-[52px] py-2 ${t.color} hover:text-white shrink-0 transition-colors`}>
                       <t.icon className="w-5 h-5" />

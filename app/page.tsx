@@ -26,6 +26,7 @@ export default function Page() {
 
   useEffect(() => {
     setHasMounted(true);
+    if (new URLSearchParams(window.location.search).get("studio") === "1") setActiveTab("editor");
   }, []);
 
   useEffect(() => {

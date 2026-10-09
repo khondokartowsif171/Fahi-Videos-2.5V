@@ -1,6 +1,7 @@
 const assert=require('node:assert/strict');const fs=require('node:fs');const path=require('node:path');const Module=require('node:module');
 const root=path.resolve(__dirname, '..');const ts=require(path.join(root,'node_modules/typescript'));
-const filename=path.join(root,'lib/timeline-export.ts');const mod=new Module(filename,module);mod._compile(ts.transpileModule(fs.readFileSync(filename,'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.CommonJS}}).outputText,filename);
+require.extensions['.ts']=(loaded,file)=>loaded._compile(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.CommonJS}}).outputText,file);
+const filename=path.join(root,'lib/timeline-export.ts');const mod=new Module(filename,module);mod.filename=filename;mod.paths=Module._nodeModulePaths(path.dirname(filename));mod._compile(ts.transpileModule(fs.readFileSync(filename,'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.CommonJS}}).outputText,filename);
 let currentVideo;const stopped=[];let contextsClosed=0;let frames=[];
 class Media extends EventTarget {
  constructor(){super();this._time=0;this.videoWidth=320;this.videoHeight=240;this.paused=true;this.playbackRate=1;this.ended=false;}

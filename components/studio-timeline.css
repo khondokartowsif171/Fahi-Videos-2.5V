@@ -1,0 +1,279 @@
+.studio-precision button {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+  font: inherit;
+}
+.cut-precision-timeline {
+  position: relative;
+  min-height: 200px;
+  padding: 0 !important;
+  background: #1b1b20;
+  overflow: hidden;
+}
+.cut-timeline-controls {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+}
+.cut-timeline-controls > span {
+  margin-right: auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+.cut-timeline-controls small {
+  color: #888;
+  font-size: 9px;
+}
+.cut-timeline-controls button {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 32px;
+  height: 36px;
+  border: 0;
+  background: transparent;
+  color: #ddd;
+}
+.cut-precision-scroll {
+  height: 170px;
+  overflow: auto;
+  touch-action: pan-x;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  cursor: grab;
+}
+.cut-precision-scroll:active {
+  cursor: grabbing;
+}
+.cut-precision-content {
+  position: relative;
+  min-height: 160px;
+  box-sizing: border-box;
+}
+.cut-precision-ruler {
+  position: relative;
+  height: 26px;
+  color: #aaa;
+  font-size: 10px;
+}
+.cut-precision-ruler > span {
+  position: absolute;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+.cut-precision-video {
+  position: relative;
+  height: 64px;
+}
+.cut-precision-clip {
+  position: absolute;
+  height: 60px;
+  border: 2px solid transparent;
+  border-bottom-color: #21c9ce;
+  border-radius: 5px;
+}
+.cut-precision-clip > button:not(.cut-trim-handle) {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: #303039;
+  color: white;
+  text-align: left;
+}
+.cut-precision-clip > button:not(.cut-trim-handle) > span,
+.cut-precision-clip small {
+  position: absolute;
+  left: 5px;
+  top: 3px;
+  font-size: 9px;
+  text-shadow: 0 1px 3px black;
+  pointer-events: none;
+}
+.cut-precision-clip small {
+  top: auto;
+  bottom: 3px;
+}
+.cut-filmstrip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.cut-filmstrip img {
+  position: absolute;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+.cut-precision-row {
+  position: relative;
+  height: 39px;
+  margin: 5px 0;
+  background: #25252b;
+}
+.cut-precision-sound,
+.cut-precision-title {
+  position: absolute;
+  height: 36px;
+  background: #075765;
+  border: 2px solid transparent;
+  border-radius: 4px;
+}
+.cut-precision-title {
+  background: #ad7200;
+}
+.cut-precision-sound > button:not(.cut-trim-handle),
+.cut-precision-title > button:not(.cut-trim-handle) {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: white;
+  text-align: left;
+}
+.cut-precision-sound > button:not(.cut-trim-handle) > span {
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  font-size: 9px;
+  z-index: 1;
+  white-space: nowrap;
+}
+.cut-precision-sound svg {
+  height: 100%;
+  width: 100%;
+}
+.cut-precision-sound > button:not(.cut-trim-handle) > span svg {
+  width: 10px;
+  height: 10px;
+}
+.cut-precision-title > button:not(.cut-trim-handle) {
+  white-space: nowrap;
+  font-size: 11px;
+}
+.cut-precision-title svg {
+  display: inline;
+}
+.cut-precision-clip.selected,
+.cut-precision-sound.selected,
+.cut-precision-title.selected {
+  border-color: white;
+}
+.cut-trim-handle {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 20px;
+  border: 0;
+  background: white;
+  color: #222;
+  touch-action: none;
+  z-index: 5;
+  cursor: ew-resize;
+  padding: 0;
+}
+.cut-trim-handle.left {
+  left: -10px;
+  border-radius: 5px 0 0 5px;
+}
+.cut-trim-handle.right {
+  right: -10px;
+  border-radius: 0 5px 5px 0;
+}
+.cut-trim-handle span {
+  display: block;
+  width: 3px;
+  height: 18px;
+  margin: auto;
+  background: #9a9a9a;
+  border-radius: 3px;
+}
+.cut-center-playhead {
+  position: absolute;
+  left: 50%;
+  top: 61px;
+  bottom: 24px;
+  width: 2px;
+  background: white;
+  pointer-events: none;
+  z-index: 6;
+  box-shadow: 0 0 3px #000;
+}
+.cut-source-mute {
+  position: absolute;
+  left: 5px;
+  top: 71px;
+  z-index: 7;
+  width: 36px;
+  height: 44px;
+  background: #25252bea;
+  color: white;
+  border: 1px solid #555;
+  border-radius: 5px;
+}
+.cut-timeline-hint {
+  height: 24px;
+  padding: 4px 8px;
+  font-size: 9px;
+  color: #aaa;
+}
+.cut-precision-sound > button:not(.cut-trim-handle)[data-trim],
+.cut-precision-title > button:not(.cut-trim-handle)[data-trim] {
+  touch-action: none;
+  cursor: move;
+}
+@media (max-width: 700px) {
+  .cut-precision-scroll {
+    height: 175px;
+  }
+  .cut-timeline-controls button {
+    min-width: 34px;
+  }
+  .cut-timeline-controls > span {
+    font-size: 10px;
+  }
+  .cut-timeline-controls small {
+    display: none;
+  }
+  .cut-trim-handle {
+    width: 24px;
+  }
+  .cut-trim-handle.left {
+    left: -12px;
+  }
+  .cut-trim-handle.right {
+    right: -12px;
+  }
+}
+.cut-precision-timeline {
+  max-height: none !important;
+  flex-shrink: 0;
+}
+.cut-trim-handle {
+  transition: none !important;
+}
+.cut-precision-title,
+.cut-precision-sound {
+  transition: none;
+}
+.cut-precision-scroll {
+  scroll-behavior: auto;
+}
+
+@media (max-width: 767px) {
+  .cut-precision-timeline {
+    height: 249px;
+  }
+  .cut-precision-scroll {
+    height: 185px;
+  }
+}
