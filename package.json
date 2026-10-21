@@ -9,6 +9,7 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit --incremental false",
     "test:aura": "node tests/aura-server.cjs",
+    "test:kotha": "node tests/kotha-studio.cjs",
     "test:editor": "node tests/timeline-export.cjs && node tests/editor-motion.cjs"
   },
   "dependencies": {

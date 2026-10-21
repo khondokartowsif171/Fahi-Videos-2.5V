@@ -1,0 +1,27 @@
+@import url('https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
+.kotha-studio {
+  --font-sans: 'Plus Jakarta Sans', 'Hind Siliguri', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Hind Siliguri', sans-serif;
+  font-family: var(--font-sans);
+  background-color: #0B0F17;
+  color: #F1F5F9;
+  letter-spacing: 0.01em;
+}
+
+.kotha-studio h1,
+.kotha-studio h2,
+.kotha-studio h3,
+.kotha-studio h4 {
+  text-wrap: balance;
+}
+
+.font-bangla {
+  font-family: 'Hind Siliguri', 'Plus Jakarta Sans', sans-serif;
+  line-height: 1.65;
+}
+
+.font-mono-tabular {
+  font-family: 'JetBrains Mono', 'Hind Siliguri', sans-serif;
+  font-variant-numeric: tabular-nums;
+}

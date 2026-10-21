@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { House, Download, Video, ImageIcon, Sparkles, Zap, Settings, Key, ShieldCheck } from 'lucide-react';
+import { House, Download, Video, ImageIcon, Sparkles, Mic, Zap, Settings, Key, ShieldCheck } from 'lucide-react';
 import GeminiApiBox from './GeminiApiBox';
 import UserSettingsModal from './UserSettingsModal';
 import AdminLoginModal from './AdminLoginModal';
@@ -18,6 +18,7 @@ const tabs = [
   { id: 'editor', label: 'Video Studio', icon: Video },
   { id: 'thumbnail', label: 'Thumbnail', icon: ImageIcon },
   { id: 'ai', label: 'Aura Studio', icon: Sparkles },
+  { id: 'kotha', label: 'Kotha Studio', icon: Mic },
 ];
 
 export default function Navbar({ activeTab, setActiveTab }: NavbarProps) {
