@@ -36,3 +36,5 @@ next-env.d.ts
 .vscode/
 .aura-data/
 .next-mobile-preview/
+.fahicut-data/
+.next-before-dynamic-build/

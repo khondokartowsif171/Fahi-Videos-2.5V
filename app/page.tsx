@@ -9,6 +9,7 @@ import YoutubeDownloader from "@/components/YoutubeDownloader";
 import VideoEditor from "@/components/VideoEditor";
 import ThumbnailEditor from "@/components/ThumbnailEditor";
 import AuraStudio from "@/components/AuraStudio";
+import KothaStudio from "@/components/KothaStudio";
 
 // Tab ID mapping: new nav uses 'downloader'/'editor', legacy used 'youtube'/'video'
 const TAB_ALIASES: Record<string, string> = {
@@ -18,6 +19,8 @@ const TAB_ALIASES: Record<string, string> = {
   editor: 'editor',
   ai: 'ai',
   flowlab: 'ai',
+  kotha: 'kotha',
+  kothastudio: 'kotha',
 };
 
 export default function Page() {
@@ -27,6 +30,7 @@ export default function Page() {
   useEffect(() => {
     setHasMounted(true);
     if (new URLSearchParams(window.location.search).get("studio") === "1") setActiveTab("editor");
+    if (new URLSearchParams(window.location.search).get("kotha") === "1") setActiveTab("kotha");
   }, []);
 
   useEffect(() => {
@@ -92,8 +96,11 @@ export default function Page() {
       {/* Aura remains mounted while navigating, preserving active renders. */}
       <main className={`flex-1 w-full ${activeTab === "ai" ? "block" : "hidden"}`}><AuraStudio active={activeTab === "ai"} /></main>
 
+      {/* Kotha Studio remains mounted while navigating, preserving active scenes, uploaded video, and generated voiceovers. */}
+      <main className={`flex-1 w-full ${activeTab === "kotha" ? "block" : "hidden"}`}><KothaStudio active={activeTab === "kotha"} /></main>
+
       {/* Other Workspaces */}
-      <main className={`flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 overflow-x-hidden pb-24 md:pb-8 ${activeTab !== "editor" && activeTab !== "ai" ? "block" : "hidden"}`}>
+      <main className={`flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 overflow-x-hidden pb-24 md:pb-8 ${activeTab !== "editor" && activeTab !== "ai" && activeTab !== "kotha" ? "block" : "hidden"}`}>
         {activeTab === "home" && <Home setActiveTab={setActiveTab} />}
         {activeTab === "downloader" && <YoutubeDownloader />}
         {activeTab === "thumbnail" && <ThumbnailEditor />}

@@ -15,7 +15,8 @@ import {
   FileVideo,
   MonitorPlay,
   Share2,
-  ArrowRight
+  ArrowRight,
+  Mic
 } from 'lucide-react';
 import { getActivities, clearActivities, Activity } from '../lib/activity';
 
@@ -52,6 +53,7 @@ export default function Home({ setActiveTab }: HomeProps) {
       case 'edit': return <Video className="w-4 h-4 text-violet-400" />;
       case 'thumbnail': return <ImageIcon className="w-4 h-4 text-pink-400" />;
       case 'ai': return <Sparkles className="w-4 h-4 text-indigo-400" />;
+      case 'kotha': return <Mic className="w-4 h-4 text-teal-400" />;
       default: return <FileVideo className="w-4 h-4 text-slate-400" />;
     }
   };
@@ -62,6 +64,7 @@ export default function Home({ setActiveTab }: HomeProps) {
       case 'edit': return 'editor';
       case 'thumbnail': return 'thumbnail';
       case 'ai': return 'ai';
+      case 'kotha': return 'kotha';
       default: return 'home';
     }
   };
@@ -98,6 +101,14 @@ export default function Home({ setActiveTab }: HomeProps) {
       icon: Sparkles,
       color: 'from-indigo-500 to-blue-500',
       badge: 'Gemini AI'
+    },
+    {
+      id: 'kotha',
+      title: 'Kotha Studio · কণ্ঠধ্বনি',
+      description: 'Scene-by-scene video capture, summarization, and 100% free Bangladeshi Bengali voiceover dubbing studio.',
+      icon: Mic,
+      color: 'from-teal-500 to-emerald-400',
+      badge: '100% Free Bangla TTS'
     },
     {
       id: 'convert',
@@ -212,7 +223,7 @@ export default function Home({ setActiveTab }: HomeProps) {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.5 }}
-            className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto"
+            className="flex flex-col sm:flex-row flex-wrap justify-center gap-4 w-full sm:w-auto"
           >
             <button
               onClick={() => setActiveTab('editor')}
@@ -234,6 +245,13 @@ export default function Home({ setActiveTab }: HomeProps) {
             >
               <Sparkles className="w-5 h-5 text-violet-400" />
               Google Aura Studio
+            </button>
+            <button
+              onClick={() => setActiveTab('kotha')}
+              className="px-8 py-4 bg-teal-500/20 border border-teal-500/30 hover:bg-teal-500/30 text-teal-300 font-semibold rounded-xl backdrop-blur-sm transition-colors flex items-center justify-center gap-2"
+            >
+              <Mic className="w-5 h-5 text-teal-400" />
+              Kotha Studio
             </button>
           </motion.div>
         </div>
