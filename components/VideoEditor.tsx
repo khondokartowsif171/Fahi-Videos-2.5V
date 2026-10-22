@@ -2461,7 +2461,7 @@ export default function VideoEditor() {
         <div className="flex items-center space-x-2">
           <button
             type="button"
-            hidden={isEmbedded} onClick={() => setShowAdminModal(true)}
+            style={isEmbedded ? {display:'none'} : undefined} onClick={() => setShowAdminModal(true)}
             className="hidden lg:flex items-center space-x-1 px-2 py-1 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] text-slate-300"
             title="Admin Console"
           >

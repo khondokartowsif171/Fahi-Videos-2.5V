@@ -71,7 +71,7 @@ export default function Navbar({ activeTab, setActiveTab }: NavbarProps) {
           <div className="flex items-center gap-2">
             {!isEmbedded && <PwaInstallButton />}
             <button
-              hidden={isEmbedded} onClick={() => setAdminModalOpen(true)}
+              style={isEmbedded ? {display:'none'} : undefined} onClick={() => setAdminModalOpen(true)}
               className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30 transition-all shadow-sm"
               title="Admin Login Console"
             >
@@ -79,14 +79,14 @@ export default function Navbar({ activeTab, setActiveTab }: NavbarProps) {
               <span>Admin</span>
             </button>
             <button
-              hidden={isEmbedded} onClick={() => setApiBoxOpen(true)}
+              style={isEmbedded ? {display:'none'} : undefined} onClick={() => setApiBoxOpen(true)}
               className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-full transition-colors"
               title="API Settings"
             >
               <Key className="w-5 h-5" />
             </button>
             <button
-              hidden={isEmbedded} onClick={() => setSettingsOpen(true)}
+              style={isEmbedded ? {display:'none'} : undefined} onClick={() => setSettingsOpen(true)}
               className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-full transition-colors"
               title="User Settings"
             >
@@ -103,7 +103,7 @@ export default function Navbar({ activeTab, setActiveTab }: NavbarProps) {
             <FahiVidsLogo size={26} />
           </div>
           <div className="flex items-center gap-1.5">
-            <PwaInstallButton compact />
+            {!isEmbedded && <PwaInstallButton compact />}
             <button
               onClick={() => setAdminModalOpen(true)}
               className="p-1.5 bg-violet-600/20 border border-violet-500/30 text-violet-300 rounded-lg text-xs font-bold flex items-center space-x-1"

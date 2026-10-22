@@ -1,0 +1,6 @@
+[Unit]
+Description=Aura FahiVids project metadata and media backup
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /opt/fahi-studio-preview/source/ops/backup-studio.sh
+UMask=0077

@@ -1,0 +1,7 @@
+[Unit]
+Description=Daily FahiVids backup at 03:30 Asia/Dhaka
+[Timer]
+OnCalendar=*-*-* 03:30:00 Asia/Dhaka
+Persistent=true
+[Install]
+WantedBy=timers.target

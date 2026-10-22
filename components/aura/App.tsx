@@ -992,7 +992,7 @@ CRITICAL RULES:
 
             <div className="flex items-center space-x-1.5">
               <button
-                hidden={isEmbedded} onClick={() => setIsBanglaCareOpen(true)}
+                style={isEmbedded ? {display:'none'} : undefined} onClick={() => setIsBanglaCareOpen(true)}
                 className="text-indigo-400 hover:text-white p-2 rounded-lg bg-[#14141c] border border-[#22222a] min-w-[38px] min-h-[38px] flex items-center justify-center"
                 title="Open Bangla Customer Care Service"
               >
@@ -1000,7 +1000,7 @@ CRITICAL RULES:
               </button>
 
               <button
-                hidden={isEmbedded} onClick={() => setIsSettingsOpen(true)}
+                style={isEmbedded ? {display:'none'} : undefined} onClick={() => setIsSettingsOpen(true)}
                 className="text-neutral-400 hover:text-white p-2 rounded-lg min-w-[38px] min-h-[38px] flex items-center justify-center"
                 title="Open Agent Settings"
               >
@@ -1301,7 +1301,7 @@ CRITICAL RULES:
           <div className="flex items-center space-x-1 sm:space-x-2">
             {/* Mobile Quick Action Buttons */}
             <button
-              hidden={isEmbedded} onClick={() => setIsBanglaCareOpen(true)}
+              style={isEmbedded ? {display:'none'} : undefined} onClick={() => setIsBanglaCareOpen(true)}
               className="lg:hidden text-indigo-400 hover:text-white p-2 rounded-lg bg-[#14141c] border border-[#22222a] min-w-[38px] min-h-[38px] flex items-center justify-center active:scale-95"
               title="Bangla Care AI Agent"
             >
