@@ -1,6 +1,7 @@
 "use client";
 
 import { isEmbedded, useStudioProject } from '@/lib/studio-client';
+import CloudExport from './CloudExport';
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import "./video-editor.css";
 import StudioTimeline from "./StudioTimeline";
@@ -2464,6 +2465,7 @@ export default function VideoEditor() {
         {/* Export stays available for browsers that block automatic downloads. */}
         {exportError && <p role="alert" className="text-xs text-red-300">{exportError}</p>}
         {exportDownload && <a href={exportDownload.url} download={exportDownload.name} className="text-xs text-cyan-300 underline">Download exported video</a>}
+        {exportDownload && <CloudExport key={exportDownload.url} source={exportDownload.url} name={exportDownload.name}/>}
         {/* Right: Admin + Share + Cyan Export Button */}
         <div className="flex items-center space-x-2">
           <button
