@@ -1,5 +1,5 @@
 import { embedded, studioContext } from './studio-context';
-import { studioProviderRequest, saveStudioJob, getStudioJob, idempotentGeneration } from './studio-server';
+import { studioProviderRequest, saveStudioJob, getStudioJob, updateStudioJob, idempotentGeneration } from './studio-server';
 import { GoogleGenAI, GenerateVideosOperation } from '@google/genai';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
@@ -99,7 +99,7 @@ async function encode(video: string, audio?: string, upscale?: string) {
       proc.on('close',code=> {clearTimeout(timer); code === 0 ? resolve() : reject(new ApiError(422,'Unable to process this video or audio.')); });
     });
     return new Response(fs.readFileSync(output), { headers: { 'Content-Type':'video/mp4','Content-Disposition':'attachment; filename="aura-studio.mp4"' } });
-  } finally { encoding = false; fs.rmSync(folder,{recursive:true,force:true}); }
+  } finally { fs.rmSync(folder,{recursive:true,force:true}); }
 }
 type Lead = { id:string; customerName:string; phone:string; product:string; notes:string; status:string; timestamp:string };
 const limits = new Map<string, { count:number; since:number }>();
@@ -141,13 +141,14 @@ async function handleAuraCore(req: Request, parts: string[]) {
       const job = await getJob(parts[1],own,req);
       if (parts[2] === 'result') return await download(ai,job,key);
       const op = await operation(ai,job);
+      if(embedded()&&(op.done||op.error))await updateStudioJob(req,parts[1],op.error?'failed':'completed');
       return Response.json({status:op.error ? 'error' : op.done ? 'done' : 'pending',error:op.error?.message});
     }
     if (req.method !== 'POST') throw new ApiError(405,'Method not allowed.');
     if (route === 'veo/status' || route === 'veo/download') {
       const job = await getJob(required(body.operationName,'Render ID'),own,req);
       if (route === 'veo/download') return await download(ai,job,key);
-      const op = await operation(ai,job); return Response.json({done:op.done,error:op.error});
+      const op = await operation(ai,job); if(embedded()&&(op.done||op.error))await updateStudioJob(req,body.operationName,op.error?'failed':'completed');return Response.json({done:op.done,error:op.error});
     }
     if (route === 'veo/generate' || route === 'omni') {
       const ratio = body.aspectRatio === '9:16' ? '9:16' : '16:9';

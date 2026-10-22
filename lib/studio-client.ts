@@ -75,3 +75,28 @@ async function unpack(value:any):Promise<any>{
 }
 export async function captureProject(kind:StudioKind){const adapter=adapters.get(kind);if(!adapter)throw Error('Open this creative tool before saving its project.');return {version:1,kind,state:await pack(adapter.capture())};}
 export async function restoreProject(kind:StudioKind,document:any){const adapter=adapters.get(kind);if(!adapter)throw Error('Open this creative tool, then select the project again.');if(document.version!==1||document.kind!==kind)throw Error('Unsupported project version.');adapter.restore(await unpack(document.state));}
+
+async function draftDb(){return new Promise<IDBDatabase>((resolve,reject)=>{const req=indexedDB.open('aura-fahi-drafts',1);req.onupgradeneeded=()=>req.result.createObjectStore('drafts');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
+async function localPack(value:any):Promise<any>{
+  if(value instanceof Blob||value instanceof Date||value instanceof Uint8Array)return value;
+  if(typeof value==='string'&&value.startsWith('blob:'))return {__localBlob:await(await fetch(value)).blob()};
+  if(Array.isArray(value))return Promise.all(value.map(localPack));
+  if(value&&typeof value==='object'){const out:Record<string,unknown>={};for(const [key,item]of Object.entries(value))out[key]=await localPack(item);return out;}
+  return value;
+}
+function localUnpack(value:any):any{
+  if(value?.__localBlob instanceof Blob)return URL.createObjectURL(value.__localBlob);
+  if(value instanceof Blob||value instanceof Date||value instanceof Uint8Array)return value;
+  if(Array.isArray(value))return value.map(localUnpack);
+  if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([key,item])=>[key,localUnpack(item)]));
+  return value;
+}
+export async function saveLocalDraft(kind:StudioKind){
+  if(!tenant)throw Error('Workspace not loaded.');const adapter=adapters.get(kind);if(!adapter)return;
+  const value=await localPack(adapter.capture()),db=await draftDb();
+  try{await new Promise<void>((resolve,reject)=>{const tx=db.transaction('drafts','readwrite');tx.objectStore('drafts').put(value,tenant+':'+kind);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});}finally{db.close();}
+}
+export async function restoreLocalDraft(kind:StudioKind){
+  if(!tenant)throw Error('Workspace not loaded.');const db=await draftDb();
+  try{const value=await new Promise<any>((resolve,reject)=>{const req=db.transaction('drafts').objectStore('drafts').get(tenant+':'+kind);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});if(!value)throw Error('No local draft for this workspace and tool.');const adapter=adapters.get(kind);if(!adapter)throw Error('Open this creative tool first.');adapter.restore(localUnpack(value));}finally{db.close();}
+}

@@ -53,6 +53,7 @@ export async function getStudioJob(req:Request,id:string) {
   if(!rows[0]) throw new StudioError(404,'Unknown render job.');
   return {operationName:rows[0].operation,createdAt:new Date(rows[0].created_at).getTime(),owner:ctx.tenant};
 }
+export async function updateStudioJob(req:Request,id:string,state:string){const ctx=studioContext(req);await studioDb()`UPDATE studio_jobs SET state=${state} WHERE id=${id} AND tenant=${ctx.tenant}`;}
 export async function idempotentGeneration(req:Request,run:(req:Request)=>Promise<Response>) {
   if(!embedded()) return run(req);
   const ctx=studioContext(req);requireWriter(ctx.role);
@@ -87,6 +88,7 @@ export async function studioBridge(req:Request,parts:string[]) {
       const keys=await sql`SELECT 1 FROM studio_keys WHERE tenant=${ctx.tenant}`;
       return Response.json({tenant:ctx.tenant,actor:ctx.actor,name:ctx.name,role:ctx.role,keyConfigured:!!keys.length,storage:{used:Number(usage.bytes),limit:TENANT_LIMIT,fileLimit:FILE_LIMIT}});
     }
+    if(route==='jobs'&&req.method==='GET')return Response.json({jobs:await sql`SELECT id,state,created_at FROM studio_jobs WHERE tenant=${ctx.tenant} AND operation IS NOT NULL ORDER BY created_at DESC LIMIT 30`});
     if(route==='provider') {
       if(!['owner','admin'].includes(ctx.role)) throw new StudioError(403,'Only the workspace owner can manage provider keys.');
       if(req.method==='DELETE') {await sql`DELETE FROM studio_keys WHERE tenant=${ctx.tenant}`;return Response.json({configured:false});}
