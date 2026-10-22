@@ -16,9 +16,6 @@ export default function YoutubeDownloader() {
     setLoading(true);
     setError("");
     setVideoData(null);
-
-    // TODO: implement API fetching logic
-    // we'll add the API routes in the next step
     try {
         const response = await fetch(`/api/video/info?url=${encodeURIComponent(url)}`);
         const data = await response.json();
@@ -137,14 +134,13 @@ export default function YoutubeDownloader() {
                         <div className="text-[10px] text-slate-500 uppercase tracking-wider font-mono">{format.type}</div>
                       </div>
                     </div>
-                    <a
-                      href={`${studioBase}/api/video/download?url=${encodeURIComponent(format.url)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      disabled={loading}
+                      onClick={async()=>{setLoading(true);setError('');try{const r=await fetch(`${studioBase}/api/video/download?url=${encodeURIComponent(format.url)}`);if(!r.ok){const d=await r.json();throw Error(d.error||'Download failed.');}const blob=await r.blob();const ext=blob.type.includes('webm')?'webm':blob.type.includes('mpeg')?'mp3':blob.type.startsWith('audio/')?'m4a':'mp4';const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`fahi-media.${ext}`;a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}catch(e){setError(e instanceof Error?e.message:'Download failed.');}finally{setLoading(false);}}}
                       className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-bold text-white transition-all active:scale-95 shadow-md shadow-indigo-600/10 cursor-pointer"
                     >
-                      Download
-                    </a>
+                      {loading?'Preparing file…':'Download'}
+                    </button>
                   </div>
                 ))}
               </div>

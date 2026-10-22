@@ -13,6 +13,18 @@ services:
     mem_limit: 1g
     cpus: 1.0
     security_opt: [no-new-privileges:true]
+  worker:
+    image: aura-fahi-studio:${FAHI_REVISION:?release revision required}
+    command: [node, ops/managed-worker.cjs]
+    container_name: aura-fahi-worker
+    restart: unless-stopped
+    env_file: /opt/fahi-studio-preview/studio.env
+    volumes:
+      - /opt/fahi-studio-preview/media:/media
+    networks: [coolify]
+    mem_limit: 768m
+    cpus: 0.75
+    security_opt: [no-new-privileges:true]
   gateway:
     image: aura-fahi-gateway:${FAHI_REVISION:?release revision required}
     build:

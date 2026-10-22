@@ -44,9 +44,6 @@ export async function GET(req: NextRequest) {
         const allowed=(host:string,base:string)=>host===base||host.endsWith('.'+base);
         if(source.protocol!=='https:'||source.username||source.password) return NextResponse.json({error:'Use a public HTTPS media URL.'},{status:400});
         const sourceHost=source.hostname.toLowerCase();
-        if(embedded()&&sourceHost==='storage.googleapis.com'&&source.pathname.startsWith('/gtv-videos-bucket/sample/')&&source.pathname.endsWith('.mp4')) {
-            return NextResponse.json({title:source.pathname.split('/').pop(),author:'Public sample media',thumbnail:'',formats:[{quality:'Original MP4',url:source.href,type:'video'}]});
-        }
         if(!allowed(sourceHost,'youtube.com')&&!allowed(sourceHost,'youtu.be')&&!allowed(sourceHost,'facebook.com')&&!allowed(sourceHost,'fb.watch')) return NextResponse.json({error:'This downloader supports YouTube and Facebook links.'},{status:400});
         let isFacebook = url.includes("facebook.com") || url.includes("fb.watch");
         let isYoutube = url.includes("youtube.com") || url.includes("youtu.be");
