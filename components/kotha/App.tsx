@@ -848,8 +848,8 @@ export default function App() {
     // The download link remains available until it is replaced or the studio closes.
     setBannerMessage(
       isEn
-        ? `Downloaded merged Master WAV audio (${scenes.length} scenes combined).`
-        : `সম্পূর্ণ ভিডিওর মাস্টার অডিও ফাইল (${scenes.length}টি দৃশ্য একত্রে) ডাউনলোড হয়েছে।`
+        ? `Export ready: merged Master WAV audio (${scenes.length} scenes combined).`
+        : `সম্পূর্ণ ভিডিওর মাস্টার অডিও ফাইল (${scenes.length}টি দৃশ্য একত্রে) এক্সপোর্ট প্রস্তুত।`
     );
   };
 
@@ -870,8 +870,8 @@ export default function App() {
     // Keep the completed export available for an explicit download gesture.
     setBannerMessage(
       isEn
-        ? `Downloaded ${bilingual ? 'Bilingual (Bangla + English)' : 'Bangla'} .SRT subtitle file.`
-        : `${bilingual ? 'দ্বিভাষিক (বাংলা + ইংরেজি)' : 'বাংলা'} .SRT সাবটাইটেল ডাউনলোড হয়েছে।`
+        ? `Export ready: ${bilingual ? 'Bilingual (Bangla + English)' : 'Bangla'} .SRT subtitle file.`
+        : `${bilingual ? 'দ্বিভাষিক (বাংলা + ইংরেজি)' : 'বাংলা'} .SRT সাবটাইটেল এক্সপোর্ট প্রস্তুত।`
     );
   };
 
@@ -879,11 +879,13 @@ export default function App() {
     if (scenes.length === 0) return;
     const payload = {
       projectTitle,
-      voicePersona: activePersona.nameEn,
+      voicePersona: isEmbedded && scenes.some(s=>s.sourceEngine==='neural-bangla-stream') ? 'Google Translate Bengali default voice' : activePersona.nameEn,
       tone: selectedTone,
       totalScenes: scenes.length,
       scenes: scenes.map((s) => ({
         sceneNumber: s.sceneNumber,
+        speechEngine: s.sourceEngine || 'not-generated',
+        actualVoice: s.sourceEngine==='neural-bangla-stream'?'Google Translate Bengali default voice':activePersona.nameEn,
         timeRange: s.timeRangeLabel,
         titleEn: s.titleEn,
         titleBn: s.titleBn,
@@ -903,14 +905,14 @@ export default function App() {
     const a = document.createElement('a');
     a.href = url;
     a.download = 'KothaStudio_Scene_Summaries_Bangla_Dub.json';
+    setExportDownload({url,name:a.download});
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
     setBannerMessage(
       isEn
-        ? 'Downloaded complete project JSON script manifest.'
-        : 'সম্পূর্ণ প্রজেক্টের JSON স্ক্রিপ্ট ফাইল ডাউনলোড হয়েছে।'
+        ? 'Export ready: complete project JSON script manifest.'
+        : 'সম্পূর্ণ প্রজেক্টের JSON স্ক্রিপ্ট ফাইল এক্সপোর্ট প্রস্তুত।'
     );
   };
 

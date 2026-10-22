@@ -1,0 +1,20 @@
+require('./register-typescript.cjs');
+const Module=require('module'),assert=require('node:assert/strict');
+const load=Module._load;
+Module._load=function(id,...args){if(id==='react')return{useEffect:fn=>fn(),useRef:()=>({current:''})};return load.call(this,id,...args);};
+process.env.NEXT_PUBLIC_FAHI_EMBEDDED='1';
+const {useStudioProject,captureProject,restoreProject}=require('../lib/studio-client.ts');
+let creative,omni;
+useStudioProject('aura',()=>({prompt:'Existing creative project',segments:[]}),value=>creative=value);
+useStudioProject('aura',()=>({prompt:'Managed Omni draft',references:[]}),value=>omni=value,'omni');
+(async()=>{
+  const project=await captureProject('aura');
+  assert.equal(project.state.prompt,'Existing creative project');
+  assert.equal(project.state.__studioParts.omni.prompt,'Managed Omni draft');
+  await restoreProject('aura',project);
+  assert.equal(creative.prompt,'Existing creative project');assert.equal(omni.prompt,'Managed Omni draft');
+  await restoreProject('aura',{version:1,kind:'aura',state:{prompt:'Older project'}});
+  assert.equal(creative.prompt,'Older project');assert.deepEqual(omni,{});
+  await assert.rejects(()=>restoreProject('aura',{version:2,kind:'aura'}),/Unsupported/);
+  console.log('PASS: independent creative and Omni drafts share one cloud document; older project compatibility; unsupported version rejected.');
+})().catch(e=>{console.error(e);process.exitCode=1;});

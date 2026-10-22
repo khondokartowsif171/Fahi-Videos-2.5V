@@ -1,49 +1,352 @@
-'use strict';
-const {GoogleGenAI}=require('@google/genai');
-const {spawn}=require('node:child_process');const fs=require('node:fs/promises'),path=require('node:path'),crypto=require('node:crypto');
-const {db,open,assetFile,mediaRoot,MODEL}=require('../lib/managed-video.cjs');
-const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-function command(binary,args){return new Promise((resolve,reject)=>{const p=spawn(binary,args,{windowsHide:true});let output='';p.stdout.on('data',c=>output+=c);p.stderr.on('data',()=>{});const timer=setTimeout(()=>p.kill(),180000);p.on('error',()=>{clearTimeout(timer);reject(Error('Media processing is unavailable.'));});p.on('close',code=>{clearTimeout(timer);code===0?resolve(output):reject(Error('Media processing failed.'));});});}
-async function probe(file){return JSON.parse(await command('ffprobe',['-v','error','-show_format','-show_streams','-of','json',file]));}
-async function fetchVideo(uri,key,file){const u=new URL(uri);if(u.protocol!=='https:'||!['generativelanguage.googleapis.com','storage.googleapis.com'].includes(u.hostname))throw Error('Provider returned an unsupported output host.');const r=await fetch(u,{headers:u.hostname==='generativelanguage.googleapis.com'?{'x-goog-api-key':key}:{},redirect:'error',signal:AbortSignal.timeout(120000)});if(!r.ok)throw Error('Provider output download failed ('+r.status+').');let n=0;const out=await fs.open(file,'w');try{for await(const chunk of r.body){n+=chunk.length;if(n>64*1024**2)throw Error('Provider output exceeds its storage reservation.');await out.write(chunk);}}finally{await out.close();}}
-async function work(j){const sql=db(),[credential]=await sql`SELECT encrypted_key FROM managed_credentials WHERE id=${j.credential_id}`;if(!credential)throw Error('Job credential is unavailable.');const key=open(credential.encrypted_key),ai=new GoogleGenAI({apiKey:key,httpOptions:{timeout:180000,retryOptions:{attempts:1}}});
- const folder=path.join(mediaRoot(),'.managed-work',j.id);await fs.mkdir(folder,{recursive:true});
- try{for(let i=0;i<j.input.shots.length;i++){
-  await sql`UPDATE managed_jobs SET lease_until=now()+interval '10 minutes',updated_at=now() WHERE id=${j.id}`;
-  const [current]=await sql`SELECT cancel_requested FROM managed_jobs WHERE id=${j.id}`;if(current.cancel_requested)throw Error('Generation cancelled. Previously accepted provider work may still be billable.');
-  let [a]=await sql`SELECT * FROM managed_attempts WHERE job_id=${j.id} AND shot=${i}`;
-  const file=path.join(folder,`${i}.mp4`);
-  if(a?.state==='ready'){try{await fs.access(file);continue;}catch{if(!a.response)throw Error('Stored shot is missing.');}}
-  if(a?.state==='sending'&&!a.interaction_id){await sql`UPDATE managed_jobs SET state='confirmation_pending',error='Provider confirmation pending. No paid retry was submitted.',lease_until=null WHERE id=${j.id}`;return;}
-  let interaction=a?.response;
-  if(!interaction&&!a?.interaction_id){
-   const input=[{type:'text',text:`${j.input.prompt}\nStoryboard shot ${i+1}/${j.input.shots.length}. Duration ${j.input.shots[i]} seconds. ${i===0?'Opening establishing shot.':i===j.input.shots.length-1?'Closing composition.':'Develop the action with a new camera angle.'} Consistent subjects and art direction. Output 720p. No logos or added text unless requested.`}];
-   for(const id of j.input.assetIds){const [asset]=await sql`SELECT mime FROM studio_assets WHERE id=${id} AND tenant=${j.tenant} AND status='ready'`;if(!asset)throw Error('Reference image is unavailable.');input.unshift({type:'image',data:(await fs.readFile(assetFile(j.tenant,id))).toString('base64'),mime_type:asset.mime});}
-   await sql`INSERT INTO managed_attempts(job_id,shot,state) VALUES(${j.id},${i},'sending') ON CONFLICT(job_id,shot) DO UPDATE SET state='sending',updated_at=now()`;
-   try{interaction=await ai.interactions.create({model:MODEL,input,background:true,store:true,stream:false,response_format:{type:'video',delivery:'uri',duration:`${j.input.shots[i]}s`,aspect_ratio:j.input.aspectRatio}});}
-   catch(e){if(e.status&&e.status>=400&&e.status<500&&e.status!==408&&e.status!==429)throw Error('Google rejected video generation ('+e.status+'). Check billing, model access and input.');await sql`UPDATE managed_jobs SET state='confirmation_pending',error='Provider confirmation pending. No paid retry was submitted.',lease_until=null WHERE id=${j.id}`;return;}
-   if(!interaction.id){await sql`UPDATE managed_jobs SET state='confirmation_pending',error='Provider confirmation pending: response has no interaction ID. No paid retry was submitted.',lease_until=null WHERE id=${j.id}`;return;}await sql.begin(async tx=>{await tx`UPDATE managed_attempts SET interaction_id=${interaction.id},response=${tx.json(interaction)},state='accepted',updated_at=now() WHERE job_id=${j.id} AND shot=${i}`;await tx`UPDATE managed_jobs SET cost_usd=cost_usd+${j.input.shots[i]*j.policy.rateSnapshot.outputRate} WHERE id=${j.id}`;});
+"use strict";
+const { GoogleGenAI } = require("@google/genai");
+const { spawn } = require("node:child_process");
+const fs = require("node:fs/promises"),
+  path = require("node:path"),
+  crypto = require("node:crypto");
+const {
+  db,
+  open,
+  assetFile,
+  mediaRoot,
+  MODEL,
+  takeProcessingLock,
+} = require("../lib/managed-video.cjs");
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function command(binary, args) {
+  const release = binary === "ffmpeg" ? await takeProcessingLock(true) : null;
+  try {
+    return await new Promise((resolve, reject) => {
+      const p = spawn(binary, args, { windowsHide: true });
+      let output = "";
+      p.stdout.on("data", (c) => (output += c));
+      p.stderr.on("data", () => {});
+      const timer = setTimeout(() => p.kill(), 180000);
+      p.on("error", () => {
+        clearTimeout(timer);
+        reject(Error("Media processing is unavailable."));
+      });
+      p.on("close", (code) => {
+        clearTimeout(timer);
+        code === 0
+          ? resolve(output)
+          : reject(Error("Media processing failed."));
+      });
+    });
+  } finally {
+    await release?.();
   }
-  if(!interaction)interaction=await ai.interactions.get(a.interaction_id);
-  const deadline=Date.now()+20*60*1000;
-  while(!interaction.output_video&&!['completed','failed','cancelled'].includes(interaction.status)){
-   if(Date.now()>deadline){await sql`UPDATE managed_jobs SET state='confirmation_pending',error='Provider is still processing. The saved interaction will be checked again.',lease_until=now()+interval '1 minute' WHERE id=${j.id}`;return;}
-   await sleep(5000);interaction=await ai.interactions.get(interaction.id);await sql`UPDATE managed_jobs SET lease_until=now()+interval '10 minutes',updated_at=now() WHERE id=${j.id}`;
-  }
-  const video=interaction.output_video||(interaction.outputs||[]).find(o=>o.type==='video');if(!video)throw Error('Google did not return a video. Content safety or provider processing failed.');
-  await sql`UPDATE managed_attempts SET response=${sql.json(interaction)},state='generated',updated_at=now() WHERE job_id=${j.id} AND shot=${i}`;
-  if(video.data)await fs.writeFile(file,Buffer.from(video.data,'base64'));else if(video.uri){const match=video.uri.match(/files\/([a-zA-Z0-9_-]+)/);if(match){let info;for(let n=0;n<120;n++){info=await ai.files.get({name:'files/'+match[1]});if(info.state==='ACTIVE')break;if(info.state==='FAILED')throw Error('Google output processing failed.');await sleep(3000);}if(info?.state!=='ACTIVE')throw Error('Google output did not become ready.');}await fetchVideo(video.uri,key,file);}else throw Error('Provider returned no video data.');
-  const info=await probe(file),v=info.streams.find(s=>s.codec_type==='video');if(!v)throw Error('Provider output has no video stream.');
-  const usage={shot:i,reported:interaction.usage||interaction.usage_metadata||null,estimatedUsd:j.input.shots[i]*j.policy.rateSnapshot.outputRate,costBasis:'estimated-output-rate'};
-  await sql.begin(async tx=>{await tx`UPDATE managed_attempts SET state='ready' WHERE job_id=${j.id} AND shot=${i}`;await tx`UPDATE managed_jobs SET usage=usage || ${tx.json([usage])},updated_at=now() WHERE id=${j.id}`;});
- }
- await sql`UPDATE managed_jobs SET state='composing',lease_until=now()+interval '10 minutes' WHERE id=${j.id}`;
- const normalized=[];for(let i=0;i<j.input.shots.length;i++){const input=path.join(folder,`${i}.mp4`),out=path.join(folder,`part-${i}.mp4`),info=await probe(input),hasAudio=info.streams.some(s=>s.codec_type==='audio'),size=j.input.aspectRatio==='9:16'?'720:1280':'1280:720';const args=['-y','-i',input];if(!hasAudio)args.push('-f','lavfi','-i','anullsrc=r=48000:cl=stereo');args.push('-map','0:v:0','-map',hasAudio?'0:a:0':'1:a:0','-vf',`scale=${size}:force_original_aspect_ratio=decrease,pad=${size}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,tpad=stop_mode=clone:stop_duration=2`,'-af','apad,aresample=48000','-t',String(j.input.shots[i]),'-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p','-c:a','aac',out);await command('ffmpeg',args);normalized.push(out);}
- const list=path.join(folder,'concat.txt');await fs.writeFile(list,normalized.map(f=>`file '${f.replaceAll('\\','/')}'`).join('\n'));const output=path.join(folder,'final.mp4');await command('ffmpeg',['-y','-f','concat','-safe','0','-i',list,'-t',String(j.input.duration),'-c','copy','-movflags','+faststart',output]);const info=await probe(output);if(Math.abs(Number(info.format.duration)-j.input.duration)>1/24+.02||!info.streams.some(s=>s.codec_type==='audio'))throw Error('Final output validation failed.');
- const stat=await fs.stat(output);if(stat.size>Number(j.reserved_bytes))throw Error('Final output exceeds its storage reservation.');const id=crypto.randomUUID(),dest=assetFile(j.tenant,id);await fs.mkdir(path.dirname(dest),{recursive:true});await fs.rename(output,dest);
- await sql.begin(async tx=>{await tx`SELECT pg_advisory_xact_lock(66390122)`;await tx`INSERT INTO studio_assets(id,tenant,name,mime,bytes,status) VALUES(${id},${j.tenant},'aura-omni-video.mp4','video/mp4',${stat.size},'ready')`;await tx`UPDATE managed_jobs SET state='completed',asset_id=${id},reserved_bytes=0,reserve_usd=cost_usd,lease_until=null,error=null,updated_at=now() WHERE id=${j.id}`;});
- }finally{const [row]=await sql`SELECT state FROM managed_jobs WHERE id=${j.id}`;if(['completed','failed','cancelled'].includes(row?.state))await fs.rm(folder,{recursive:true,force:true});}
 }
-async function main(){const sql=db(),lock=await sql.reserve();const [got]=await lock`SELECT pg_try_advisory_lock(66390125) AS ok`;if(!got.ok)throw Error('Another managed worker owns the processing lock.');for(;;){try{const [j]=await sql`SELECT * FROM managed_jobs WHERE state='queued' OR (state IN ('running','composing','confirmation_pending') AND lease_until<now()) ORDER BY created_at LIMIT 1`;if(!j){await sleep(2000);continue;}await sql`UPDATE managed_jobs SET state='running',lease_until=now()+interval '10 minutes',updated_at=now() WHERE id=${j.id}`;try{await work(j);}catch(e){await sql`UPDATE managed_jobs SET state='failed',error=${String(e.message).slice(0,500)},reserved_bytes=0,lease_until=null,updated_at=now() WHERE id=${j.id}`;await fs.rm(path.join(mediaRoot(),'.managed-work',j.id),{recursive:true,force:true});console.error('Managed job failed:',j.id);}}catch{console.error('Managed worker database unavailable.');await sleep(5000);}}}
-if(require.main===module)main().catch(()=>{console.error('Managed worker could not start.');process.exitCode=1;});
-module.exports={work,probe};
+async function probe(file) {
+  return JSON.parse(
+    await command("ffprobe", [
+      "-v",
+      "error",
+      "-show_format",
+      "-show_streams",
+      "-of",
+      "json",
+      file,
+    ]),
+  );
+}
+async function fetchVideo(uri, key, file) {
+  const u = new URL(uri);
+  if (
+    u.protocol !== "https:" ||
+    !["generativelanguage.googleapis.com", "storage.googleapis.com"].includes(
+      u.hostname,
+    )
+  )
+    throw Error("Provider returned an unsupported output host.");
+  const r = await fetch(u, {
+    headers:
+      u.hostname === "generativelanguage.googleapis.com"
+        ? { "x-goog-api-key": key }
+        : {},
+    redirect: "error",
+    signal: AbortSignal.timeout(120000),
+  });
+  if (!r.ok) throw Error("Provider output download failed (" + r.status + ").");
+  let n = 0;
+  const out = await fs.open(file, "w");
+  try {
+    for await (const chunk of r.body) {
+      n += chunk.length;
+      if (n > 64 * 1024 ** 2)
+        throw Error("Provider output exceeds its storage reservation.");
+      await out.write(chunk);
+    }
+  } finally {
+    await out.close();
+  }
+}
+async function work(j) {
+  const sql = db(),
+    [credential] =
+      await sql`SELECT encrypted_key FROM managed_credentials WHERE id=${j.credential_id}`;
+  if (!credential) throw Error("Job credential is unavailable.");
+  const key = open(credential.encrypted_key),
+    ai = new GoogleGenAI({
+      apiKey: key,
+      httpOptions: { timeout: 180000, retryOptions: { attempts: 1 } },
+    });
+  const folder = path.join(mediaRoot(), ".managed-work", j.id);
+  await fs.mkdir(folder, { recursive: true });
+  try {
+    for (let i = 0; i < j.input.shots.length; i++) {
+      await sql`UPDATE managed_jobs SET lease_until=now()+interval '10 minutes',updated_at=now() WHERE id=${j.id}`;
+      const [current] =
+        await sql`SELECT cancel_requested FROM managed_jobs WHERE id=${j.id}`;
+      if (current.cancel_requested)
+        throw Error(
+          "Generation cancelled. Previously accepted provider work may still be billable.",
+        );
+      let [a] =
+        await sql`SELECT * FROM managed_attempts WHERE job_id=${j.id} AND shot=${i}`;
+      const file = path.join(folder, `${i}.mp4`);
+      if (a?.state === "ready") {
+        try {
+          await fs.access(file);
+          continue;
+        } catch {
+          if (!a.response) throw Error("Stored shot is missing.");
+        }
+      }
+      if (a?.state === "sending" && !a.interaction_id) {
+        await sql`UPDATE managed_jobs SET state='confirmation_pending',error='Provider confirmation pending. No paid retry was submitted.',lease_until=null WHERE id=${j.id}`;
+        return;
+      }
+      let interaction = a?.response;
+      if (!interaction && !a?.interaction_id) {
+        const input = [
+          {
+            type: "text",
+            text: `${j.input.prompt}\nStoryboard shot ${i + 1}/${j.input.shots.length}. Duration ${j.input.shots[i]} seconds. ${i === 0 ? "Opening establishing shot." : i === j.input.shots.length - 1 ? "Closing composition." : "Develop the action with a new camera angle."} Consistent subjects and art direction. Output 720p. No logos or added text unless requested.`,
+          },
+        ];
+        for (const id of j.input.assetIds) {
+          const [asset] =
+            await sql`SELECT mime FROM studio_assets WHERE id=${id} AND tenant=${j.tenant} AND status='ready'`;
+          if (!asset) throw Error("Reference image is unavailable.");
+          input.unshift({
+            type: "image",
+            data: (await fs.readFile(assetFile(j.tenant, id))).toString(
+              "base64",
+            ),
+            mime_type: asset.mime,
+          });
+        }
+        await sql`INSERT INTO managed_attempts(job_id,shot,state) VALUES(${j.id},${i},'sending') ON CONFLICT(job_id,shot) DO UPDATE SET state='sending',updated_at=now()`;
+        try {
+          interaction = await ai.interactions.create({
+            model: MODEL,
+            input,
+            background: true,
+            store: true,
+            stream: false,
+            response_format: {
+              type: "video",
+              delivery: "uri",
+              duration: `${j.input.shots[i]}s`,
+              aspect_ratio: j.input.aspectRatio,
+            },
+          });
+        } catch (e) {
+          if (
+            e.status &&
+            e.status >= 400 &&
+            e.status < 500 &&
+            e.status !== 408 &&
+            e.status !== 429
+          )
+            throw Error(
+              "Google rejected video generation (" +
+                e.status +
+                "). Check billing, model access and input.",
+            );
+          await sql`UPDATE managed_jobs SET state='confirmation_pending',error='Provider confirmation pending. No paid retry was submitted.',lease_until=null WHERE id=${j.id}`;
+          return;
+        }
+        if (!interaction.id) {
+          await sql`UPDATE managed_jobs SET state='confirmation_pending',error='Provider confirmation pending: response has no interaction ID. No paid retry was submitted.',lease_until=null WHERE id=${j.id}`;
+          return;
+        }
+        await sql.begin(async (tx) => {
+          await tx`UPDATE managed_attempts SET interaction_id=${interaction.id},response=${tx.json(interaction)},state='accepted',updated_at=now() WHERE job_id=${j.id} AND shot=${i}`;
+          await tx`UPDATE managed_jobs SET cost_usd=cost_usd+${j.input.shots[i] * j.policy.rateSnapshot.outputRate} WHERE id=${j.id}`;
+        });
+      }
+      if (!interaction)
+        interaction = await ai.interactions.get(a.interaction_id);
+      const deadline = Date.now() + 20 * 60 * 1000;
+      while (
+        !interaction.output_video &&
+        !["completed", "failed", "cancelled"].includes(interaction.status)
+      ) {
+        if (Date.now() > deadline) {
+          await sql`UPDATE managed_jobs SET state='confirmation_pending',error='Provider is still processing. The saved interaction will be checked again.',lease_until=now()+interval '1 minute' WHERE id=${j.id}`;
+          return;
+        }
+        await sleep(5000);
+        interaction = await ai.interactions.get(interaction.id);
+        await sql`UPDATE managed_jobs SET lease_until=now()+interval '10 minutes',updated_at=now() WHERE id=${j.id}`;
+      }
+      const video =
+        interaction.output_video ||
+        (interaction.outputs || []).find((o) => o.type === "video");
+      if (!video)
+        throw Error(
+          "Google did not return a video. Content safety or provider processing failed.",
+        );
+      await sql`UPDATE managed_attempts SET response=${sql.json(interaction)},state='generated',updated_at=now() WHERE job_id=${j.id} AND shot=${i}`;
+      if (video.data)
+        await fs.writeFile(file, Buffer.from(video.data, "base64"));
+      else if (video.uri) {
+        const match = video.uri.match(/files\/([a-zA-Z0-9_-]+)/);
+        if (match) {
+          let info;
+          for (let n = 0; n < 120; n++) {
+            info = await ai.files.get({ name: "files/" + match[1] });
+            if (info.state === "ACTIVE") break;
+            if (info.state === "FAILED")
+              throw Error("Google output processing failed.");
+            await sleep(3000);
+          }
+          if (info?.state !== "ACTIVE")
+            throw Error("Google output did not become ready.");
+        }
+        await fetchVideo(video.uri, key, file);
+      } else throw Error("Provider returned no video data.");
+      const info = await probe(file),
+        v = info.streams.find((s) => s.codec_type === "video");
+      if (!v) throw Error("Provider output has no video stream.");
+      const usage = {
+        shot: i,
+        reported: interaction.usage || interaction.usage_metadata || null,
+        estimatedUsd: j.input.shots[i] * j.policy.rateSnapshot.outputRate,
+        costBasis: "estimated-output-rate",
+      };
+      await sql.begin(async (tx) => {
+        await tx`UPDATE managed_attempts SET state='ready' WHERE job_id=${j.id} AND shot=${i}`;
+        await tx`UPDATE managed_jobs SET usage=usage || ${tx.json([usage])},updated_at=now() WHERE id=${j.id}`;
+      });
+    }
+    await sql`UPDATE managed_jobs SET state='composing',lease_until=now()+interval '10 minutes' WHERE id=${j.id}`;
+    const normalized = [];
+    for (let i = 0; i < j.input.shots.length; i++) {
+      const input = path.join(folder, `${i}.mp4`),
+        out = path.join(folder, `part-${i}.mp4`),
+        info = await probe(input),
+        hasAudio = info.streams.some((s) => s.codec_type === "audio"),
+        size = j.input.aspectRatio === "9:16" ? "720:1280" : "1280:720";
+      const args = ["-y", "-i", input];
+      if (!hasAudio)
+        args.push("-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo");
+      args.push(
+        "-map",
+        "0:v:0",
+        "-map",
+        hasAudio ? "0:a:0" : "1:a:0",
+        "-vf",
+        `scale=${size}:force_original_aspect_ratio=decrease,pad=${size}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,tpad=stop_mode=clone:stop_duration=2`,
+        "-af",
+        "apad,aresample=48000",
+        "-t",
+        String(j.input.shots[i]),
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        out,
+      );
+      await command("ffmpeg", args);
+      normalized.push(out);
+    }
+    const list = path.join(folder, "concat.txt");
+    await fs.writeFile(
+      list,
+      normalized.map((f) => `file '${f.replaceAll("\\", "/")}'`).join("\n"),
+    );
+    const output = path.join(folder, "final.mp4");
+    await command("ffmpeg", [
+      "-y",
+      "-f",
+      "concat",
+      "-safe",
+      "0",
+      "-i",
+      list,
+      "-t",
+      String(j.input.duration),
+      "-c",
+      "copy",
+      "-movflags",
+      "+faststart",
+      output,
+    ]);
+    const info = await probe(output);
+    if (
+      Math.abs(Number(info.format.duration) - j.input.duration) >
+        1 / 24 + 0.02 ||
+      !info.streams.some((s) => s.codec_type === "audio")
+    )
+      throw Error("Final output validation failed.");
+    const stat = await fs.stat(output);
+    if (stat.size > 250 * 1024 ** 2 || stat.size > Number(j.reserved_bytes))
+      throw Error("Final output exceeds its storage reservation.");
+    const id = j.id,
+      dest = assetFile(j.tenant, id);
+    await fs.mkdir(path.dirname(dest), { recursive: true });
+    await fs.rename(output, dest);
+    await sql.begin(async (tx) => {
+      await tx`SELECT pg_advisory_xact_lock(66390122)`;
+      await tx`INSERT INTO studio_assets(id,tenant,name,mime,bytes,status) VALUES(${id},${j.tenant},'aura-omni-video.mp4','video/mp4',${stat.size},'ready')`;
+      await tx`UPDATE managed_jobs SET state='completed',asset_id=${id},reserved_bytes=0,reserve_usd=cost_usd,lease_until=null,error=null,updated_at=now() WHERE id=${j.id}`;
+    });
+  } finally {
+    const [row] = await sql`SELECT state FROM managed_jobs WHERE id=${j.id}`;
+    if (["completed", "failed", "cancelled"].includes(row?.state))
+      await fs.rm(folder, { recursive: true, force: true });
+  }
+}
+async function main() {
+  const sql = db(),
+    lock = await sql.reserve();
+  const [got] = await lock`SELECT pg_try_advisory_lock(66390125) AS ok`;
+  if (!got.ok) throw Error("Another managed worker owns the processing lock.");
+  for (;;) {
+    try {
+      const [j] =
+        await sql`SELECT * FROM managed_jobs WHERE state='queued' OR (state IN ('running','composing','confirmation_pending') AND lease_until<now()) ORDER BY created_at LIMIT 1`;
+      if (!j) {
+        await sleep(2000);
+        continue;
+      }
+      await sql`UPDATE managed_jobs SET state='running',lease_until=now()+interval '10 minutes',updated_at=now() WHERE id=${j.id}`;
+      try {
+        await work(j);
+      } catch (e) {
+        await sql`UPDATE managed_jobs SET state='failed',error=${String(e.message).slice(0, 500)},reserved_bytes=0,lease_until=null,updated_at=now() WHERE id=${j.id}`;
+        await fs.rm(path.join(mediaRoot(), ".managed-work", j.id), {
+          recursive: true,
+          force: true,
+        });
+        console.error("Managed job failed:", j.id);
+      }
+    } catch {
+      console.error("Managed worker database unavailable.");
+      await sleep(5000);
+    }
+  }
+}
+if (require.main === module)
+  main().catch(() => {
+    console.error("Managed worker could not start.");
+    process.exitCode = 1;
+  });
+module.exports = { work, probe };

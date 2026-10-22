@@ -5,7 +5,7 @@ export const isEmbedded=process.env.NEXT_PUBLIC_FAHI_EMBEDDED==='1';
 export const studioBase=process.env.NEXT_PUBLIC_FAHI_BASE_PATH||'';
 export type StudioKind='editor'|'aura'|'kotha'|'thumbnail';
 export type StudioAdapter={capture:()=>unknown;restore:(state:any)=>void};
-const adapters=new Map<StudioKind,StudioAdapter>();
+const adapters=new Map<string,StudioAdapter>();
 let tenant='';
 const uploads=new Map<string,string>();
 const blobUploads=new WeakMap<Blob,string>();
@@ -33,10 +33,12 @@ export function setupStudioFetch() {
   }) as typeof fetch;
   return ()=>{window.fetch=original;};
 }
-export function useStudioProject(kind:StudioKind,capture:()=>unknown,restore:(state:any)=>void) {
+export function useStudioProject(kind:StudioKind,capture:()=>unknown,restore:(state:any)=>void,namespace='') {
   const previous=useRef('');
-  useEffect(()=>{if(!isEmbedded)return;const current=JSON.stringify(capture());if(previous.current&&previous.current!==current)window.dispatchEvent(new CustomEvent('fahi-project-dirty',{detail:kind}));previous.current=current;const adapter={capture,restore:(value:any)=>{previous.current=JSON.stringify(value);restore(value);}};adapters.set(kind,adapter);return()=>{if(adapters.get(kind)===adapter)adapters.delete(kind);};},[kind,capture,restore]);
+  useEffect(()=>{if(!isEmbedded)return;const current=JSON.stringify(capture());if(previous.current&&previous.current!==current)window.dispatchEvent(new CustomEvent('fahi-project-dirty',{detail:kind}));previous.current=current;const adapter={capture,restore:(value:any)=>{previous.current=JSON.stringify(value);restore(value);}};const key=namespace?kind+':'+namespace:kind;adapters.set(key,adapter);return()=>{if(adapters.get(key)===adapter)adapters.delete(key);};},[kind,capture,restore,namespace]);
 }
+function captureState(kind:StudioKind){const adapter=adapters.get(kind),parts=Object.fromEntries([...adapters].filter(([key])=>key.startsWith(kind+':')).map(([key,part])=>[key.slice(kind.length+1),part.capture()]));if(!adapter&&!Object.keys(parts).length)throw Error('Open this creative tool before saving its project.');const state=adapter?.capture()||{};return Object.keys(parts).length?{...(state as object),__studioParts:parts}:state;}
+function restoreState(kind:StudioKind,state:any){const adapter=adapters.get(kind),parts=[...adapters].filter(([key])=>key.startsWith(kind+':'));if(!adapter&&!parts.length)throw Error('Open this creative tool before restoring its project.');if(adapter&&Object.keys(state).some(k=>k!=='__studioParts'))adapter.restore(state);for(const [key,part]of parts)part.restore(state.__studioParts?.[key.slice(kind.length+1)]||{});}
 export function setStudioTenant(value:string){if(tenant&&tenant!==value){uploads.clear();window.location.reload();}tenant=value;}
 async function upload(blob:Blob,name:string,cacheKey?:string) {
   if(blobUploads.has(blob))return blobUploads.get(blob)!;
@@ -74,8 +76,8 @@ async function unpack(value:any):Promise<any>{
   if(value&&typeof value==='object'){const out:Record<string,unknown>={};for(const [key,item]of Object.entries(value))out[key]=await unpack(item);return out;}
   return value;
 }
-export async function captureProject(kind:StudioKind){const adapter=adapters.get(kind);if(!adapter)throw Error('Open this creative tool before saving its project.');return {version:1,kind,state:await pack(adapter.capture())};}
-export async function restoreProject(kind:StudioKind,document:any){const adapter=adapters.get(kind);if(!adapter)throw Error('Open this creative tool, then select the project again.');if(document.version!==1||document.kind!==kind)throw Error('Unsupported project version.');adapter.restore(await unpack(document.state));}
+export async function captureProject(kind:StudioKind){return {version:1,kind,state:await pack(captureState(kind))};}
+export async function restoreProject(kind:StudioKind,document:any){if(document.version!==1||document.kind!==kind)throw Error('Unsupported project version.');restoreState(kind,await unpack(document.state));}
 
 async function draftDb(){return new Promise<IDBDatabase>((resolve,reject)=>{const req=indexedDB.open('aura-fahi-drafts',1);req.onupgradeneeded=()=>req.result.createObjectStore('drafts');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
 async function localPack(value:any):Promise<any>{
@@ -93,11 +95,11 @@ function localUnpack(value:any):any{
   return value;
 }
 export async function saveLocalDraft(kind:StudioKind){
-  if(!tenant)throw Error('Workspace not loaded.');const adapter=adapters.get(kind);if(!adapter)return;
-  const value=await localPack(adapter.capture()),db=await draftDb();
+  if(!tenant)throw Error('Workspace not loaded.');
+  const value=await localPack(captureState(kind)),db=await draftDb();
   try{await new Promise<void>((resolve,reject)=>{const tx=db.transaction('drafts','readwrite');tx.objectStore('drafts').put(value,tenant+':'+kind);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});}finally{db.close();}
 }
 export async function restoreLocalDraft(kind:StudioKind){
   if(!tenant)throw Error('Workspace not loaded.');const db=await draftDb();
-  try{const value=await new Promise<any>((resolve,reject)=>{const req=db.transaction('drafts').objectStore('drafts').get(tenant+':'+kind);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});if(!value)throw Error('No local draft for this workspace and tool.');const adapter=adapters.get(kind);if(!adapter)throw Error('Open this creative tool first.');adapter.restore(localUnpack(value));}finally{db.close();}
+  try{const value=await new Promise<any>((resolve,reject)=>{const req=db.transaction('drafts').objectStore('drafts').get(tenant+':'+kind);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});if(!value)throw Error('No local draft for this workspace and tool.');restoreState(kind,localUnpack(value));}finally{db.close();}
 }

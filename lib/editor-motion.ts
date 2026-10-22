@@ -33,7 +33,7 @@ export function keyPixels(data:Uint8ClampedArray,color:string,tolerance:number,s
     data[i+3]=Math.round(data[i+3]*Math.max(0,Math.min(1,(distance-tolerance)/edge)));
   }
 }
-export function keyedFrame(video:HTMLVideoElement,canvas:HTMLCanvasElement,color:string,tolerance:number,softness:number) {
+export function keyedFrame(video:HTMLVideoElement | (HTMLCanvasElement & {videoWidth:number;videoHeight:number}),canvas:HTMLCanvasElement,color:string,tolerance:number,softness:number) {
   const scale=Math.min(1,1280/Math.max(video.videoWidth,video.videoHeight));
   const width=Math.max(1,Math.round(video.videoWidth*scale)),height=Math.max(1,Math.round(video.videoHeight*scale));
   if(canvas.width!==width || canvas.height!==height){canvas.width=width;canvas.height=height;}

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import {validatePublicMediaUrl} from '@/lib/public-media';
 import { embedded } from '@/lib/studio-context';
 export const dynamic = "force-dynamic";
 const btch = require("btch-downloader");
@@ -44,7 +45,20 @@ export async function GET(req: NextRequest) {
         const allowed=(host:string,base:string)=>host===base||host.endsWith('.'+base);
         if(source.protocol!=='https:'||source.username||source.password) return NextResponse.json({error:'Use a public HTTPS media URL.'},{status:400});
         const sourceHost=source.hostname.toLowerCase();
-        if(!allowed(sourceHost,'youtube.com')&&!allowed(sourceHost,'youtu.be')&&!allowed(sourceHost,'facebook.com')&&!allowed(sourceHost,'fb.watch')) return NextResponse.json({error:'This downloader supports YouTube and Facebook links.'},{status:400});
+        if(!allowed(sourceHost,'youtube.com')&&!allowed(sourceHost,'youtu.be')&&!allowed(sourceHost,'facebook.com')&&!allowed(sourceHost,'fb.watch')) {
+            let direct=source;
+            for(let n=0;n<5;n++){
+                await validatePublicMediaUrl(direct.href);
+                const r=await fetch(direct,{method:'HEAD',redirect:'manual',signal:AbortSignal.timeout(15000)});
+                if([301,302,303,307,308].includes(r.status)){const location=r.headers.get('location');if(!location)throw Error('The media redirect is invalid.');direct=new URL(location,direct);continue;}
+                if(!r.ok)return NextResponse.json({error:`The public media source rejected metadata access (${r.status}).`},{status:422});
+                const mime=r.headers.get('content-type')||'';
+                if(!/^(video|audio)\//.test(mime))return NextResponse.json({error:'This URL does not return public video or audio.'},{status:422});
+                if(Number(r.headers.get('content-length'))>250*1024**2)return NextResponse.json({error:'This media exceeds the 250 MB file limit.'},{status:413});
+                return NextResponse.json({title:decodeURIComponent(direct.pathname.split('/').pop()||'Public media'),author:'Direct media — verified source headers',thumbnail:'',formats:[{quality:'Original media',url:direct.href,type:mime.startsWith('audio/')?'audio':'video'}]});
+            }
+            return NextResponse.json({error:'Too many media redirects.'},{status:422});
+        }
         let isFacebook = url.includes("facebook.com") || url.includes("fb.watch");
         let isYoutube = url.includes("youtube.com") || url.includes("youtu.be");
 
