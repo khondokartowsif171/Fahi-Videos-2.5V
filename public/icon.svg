@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <defs>
+    <linearGradient id="fv-bg" x1="0" y1="0" x2="120" y2="120" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#02153d" />
+      <stop offset="55%" stop-color="#030d26" />
+      <stop offset="100%" stop-color="#010714" />
+    </linearGradient>
+    <linearGradient id="fv-border" x1="0" y1="0" x2="120" y2="120" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00f2fe" />
+      <stop offset="50%" stop-color="#0072ff" />
+      <stop offset="100%" stop-color="#00e5ff" />
+    </linearGradient>
+    <linearGradient id="fv-top-ribbon" x1="20" y1="22" x2="88" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00f2fe" />
+      <stop offset="55%" stop-color="#00c6ff" />
+      <stop offset="100%" stop-color="#0072ff" />
+    </linearGradient>
+    <linearGradient id="fv-mid-ribbon" x1="20" y1="45" x2="65" y2="85" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0066ff" />
+      <stop offset="100%" stop-color="#002b80" />
+    </linearGradient>
+    <linearGradient id="fv-bot-v" x1="36" y1="54" x2="84" y2="96" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00e5ff" />
+      <stop offset="50%" stop-color="#0099ff" />
+      <stop offset="100%" stop-color="#0044cc" />
+    </linearGradient>
+    <linearGradient id="fv-lens" x1="80" y1="42" x2="104" y2="78" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00e5ff" />
+      <stop offset="100%" stop-color="#0055dd" />
+    </linearGradient>
+  </defs>
+
+  <!-- Glowing Rounded Square App Icon Base -->
+  <rect x="4" y="4" width="112" height="112" rx="26" fill="url(#fv-bg)" stroke="url(#fv-border)" stroke-width="3.5" />
+
+  <!-- Top Cyan 3D Ribbon of "F" -->
+  <path
+    d="M24 44C24 30.745 34.745 20 48 20H84C86.209 20 87.527 22.462 86.302 24.3L78.5 36C76.291 39.314 72.571 41.3 68.588 41.3H44C39.582 41.3 36 44.882 36 49.3V84C36 88.418 32.418 92 28 92C25.791 92 24 90.209 24 88V44Z"
+    fill="url(#fv-top-ribbon)"
+  />
+
+  <!-- Inner Fold Shadow Ribbon -->
+  <path
+    d="M24 66C24 54 33 46 44 41.3H39C30.716 41.3 24 48.016 24 56.3V84C24 88.418 26.5 91.5 30 91.8C33.5 90 36 86.5 36 82V58C31 61 26.5 64 24 66Z"
+    fill="url(#fv-mid-ribbon)"
+  />
+
+  <!-- Center Play Triangle -->
+  <path
+    d="M46 47.5C46 45.54 48.152 44.342 49.818 45.376L63.5 53.86C65.076 54.838 65.076 57.162 63.5 58.14L49.818 66.624C48.152 67.658 46 66.46 46 64.5V47.5Z"
+    fill="url(#fv-top-ribbon)"
+  />
+
+  <!-- Dynamic V Check / Lower Ribbon -->
+  <path
+    d="M40 70H54L61.5 80.5L75 50.5C76.1 48.05 78.54 46.5 81.22 46.5H86.5C88.45 46.5 89.72 48.55 88.85 50.3L66.8 94.2C65.1 97.6 60.35 97.8 58.35 94.6L40 70Z"
+    fill="url(#fv-bot-v)"
+  />
+
+  <!-- Right Video Camera Lens Cone -->
+  <path
+    d="M84 55.2C84 53.65 84.89 52.24 86.29 51.57L98.29 45.82C100.94 44.55 104 46.48 104 49.43V70.57C104 73.52 100.94 75.45 98.29 74.18L86.29 68.43C84.89 67.76 84 66.35 84 64.8V55.2Z"
+    fill="url(#fv-lens)"
+  />
+</svg>

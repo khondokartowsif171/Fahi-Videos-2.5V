@@ -1,58 +1,137 @@
 "use client";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
-  Scissors,
-  ChevronLeft,
-  ChevronRight,
-  ZoomIn,
-  ZoomOut,
-  Music,
-  Type,
-  Volume2,
-  VolumeX,
-  Lock,
-  Unlock,
   Eye,
   EyeOff,
-  Bookmark,
   Image as ImageIcon,
+  Lock,
+  Music,
+  Scissors,
+  Sparkles,
+  Type,
+  Unlock,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import {
-  CutProject,
   CutAsset,
   CutClip,
+  CutProject,
   CutSound,
+  CutTitle,
+  clipDuration,
   projectDuration,
-  locateClip,
   splitClip,
 } from "@/lib/cut-model";
 import {
   OUTPUT_FPS,
   frameTime,
   timelineClips,
-  trimVideo,
   trimSound,
-  formatClock,
+  trimVideo,
 } from "@/lib/cut-timeline";
+import { formatCapCutTimecode } from "@/lib/capcut-studio-tools";
 import CutFilmstrip from "./CutFilmstrip";
-import { Waveform } from "./AudioTools";
 
-export interface TimelineMarkerItem {
+export type TimelineMarkerItem = {
   id: string;
   time: number;
   label: string;
+  color: string;
+};
+
+const TRACK_LEFT_PAD = 12;
+const MIN_SCALE = 2;
+const MAX_SCALE = 220;
+
+const Wave = ({ peaks, id }: { peaks: number[]; id: string }) => {
+  const n = Math.min(80, peaks.length || 1);
+  let top = "M 0 28";
+  let bot = "";
+  for (let i = 0; i < n; i++) {
+    const x = (i / Math.max(1, n - 1)) * 200;
+    const p = peaks[Math.floor((i / n) * peaks.length)] || 0.08;
+    const h = Math.max(2, p * 23);
+    top += ` L ${x.toFixed(1)} ${(28 - h).toFixed(1)}`;
+    bot = ` L ${x.toFixed(1)} ${(28 + h * 0.45).toFixed(1)}` + bot;
+  }
+  return (
+    <svg viewBox="0 0 200 36" preserveAspectRatio="none" aria-hidden="true">
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#69f5ff" stopOpacity="0.95" />
+          <stop offset="100%" stopColor="#1293a8" stopOpacity="0.35" />
+        </linearGradient>
+      </defs>
+      <path
+        d={`${top}${bot} Z`}
+        fill={`url(#${id})`}
+        stroke="#7ffbff"
+        strokeWidth="0.9"
+      />
+    </svg>
+  );
+};
+
+/** Formats ruler tick seconds into CapCut MM:SS (e.g. 00:00, 00:15, 01:30) */
+function formatRulerTick(sec: number): string {
+  const safe = Math.max(0, Math.round(sec));
+  const mins = Math.floor(safe / 60);
+  const secs = safe % 60;
+  return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
 }
 
-type Props = {
+/** Adaptive major & minor ruler intervals (in seconds) based on zoom scale */
+function getRulerIntervals(scale: number): { major: number; minor: number } {
+  if (scale < 3.5) return { major: 60, minor: 15 };
+  if (scale < 7) return { major: 30, minor: 5 };
+  if (scale < 16) return { major: 15, minor: 3 };
+  if (scale < 35) return { major: 5, minor: 1 };
+  if (scale < 75) return { major: 2, minor: 0.5 };
+  return { major: 1, minor: 0.2 };
+}
+
+export default function CutTimeline({
+  project,
+  assets,
+  time,
+  playing,
+  selected,
+  seek,
+  pause,
+  select,
+  change,
+  preview,
+  markers = [],
+  onSelectMarker,
+  onRemoveMarker,
+  previewAxisEnabled = false,
+  cursorMode = "select",
+  trackLocked = false,
+  trackHidden = false,
+  onToggleTrackLock,
+  onToggleTrackHide,
+  onCaptureCover,
+  coverImage,
+  externalScale,
+  onScaleChange,
+  onDropAssetId,
+}: {
   project: CutProject;
   assets: CutAsset[];
   time: number;
   playing: boolean;
   selected: string | null;
   seek: (time: number) => void;
+  pause: () => void;
   select: (id: string, kind: "video" | "audio" | "text") => void;
   change: (project: CutProject) => void;
-  pause: () => void;
   preview: (clip: CutClip | null, source?: number) => void;
   markers?: TimelineMarkerItem[];
   onSelectMarker?: (time: number) => void;
@@ -67,750 +146,790 @@ type Props = {
   coverImage?: string;
   externalScale?: number;
   onScaleChange?: (scale: number) => void;
-};
-
-type EditDrag = {
-  id: string;
-  kind: "video" | "audio" | "text";
-  edge: "in" | "out" | "move";
-  x: number;
-  clip?: CutClip;
-  sound?: CutSound;
-};
-
-export default function CutTimeline(props: Props) {
-  const sourceVolumes = useRef<Record<string, number>>({});
-  const { project, assets, time, playing, selected } = props;
-  const [scale, setScale] = useState(props.externalScale || 90),
-    [width, setWidth] = useState(390),
-    [view, setView] = useState(0),
-    [draft, setDraft] = useState<CutProject | null>(null),
-    [hoverTime, setHoverTime] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (props.externalScale && Math.abs(props.externalScale - scale) > 1) {
-      setScale(props.externalScale);
-    }
-  }, [props.externalScale]);
-
-  const updateScale = (updater: (prev: number) => number) => {
-    setScale((prev) => {
-      const next = Math.round(updater(prev));
-      props.onScaleChange?.(next);
-      return next;
-    });
+  onDropAssetId?: (assetId: string) => void;
+}) {
+  const [internalScale, setInternalScale] = useState(40);
+  const scale = externalScale ?? internalScale;
+  const setScale = (nextOrFn: number | ((prev: number) => number)) => {
+    const resolved =
+      typeof nextOrFn === "function" ? nextOrFn(scale) : nextOrFn;
+    const clamped = Math.max(MIN_SCALE, Math.min(MAX_SCALE, resolved));
+    setInternalScale(clamped);
+    onScaleChange?.(clamped);
   };
 
-  const scroll = useRef<HTMLDivElement>(null),
-    drag = useRef<{
-      x: number;
-      left: number;
-      mouse: boolean;
-      moved: boolean;
-    } | null>(null),
-    editDrag = useRef<EditDrag | null>(null),
-    lastMoved = useRef(false),
-    latest = useRef(props),
-    draftRef = useRef<CutProject | null>(null),
-    frame = useRef(0),
-    programmatic = useRef<number | null>(null),
-    lastUserScroll = useRef(0);
-  latest.current = props;
-  draftRef.current = draft;
-  const active = draft || project,
-    clips = useMemo(() => timelineClips(active), [active]),
-    duration = projectDuration(active);
-  const mediaEnd = Math.max(
-    duration,
-    ...active.sounds.map((s) => s.start + s.out - s.in),
-    ...active.titles.map((t) => t.end),
+  const [width, setWidth] = useState(960);
+  const [scrollLeft, setScrollLeft] = useState(0);
+  const [hoverAxisX, setHoverAxisX] = useState<number | null>(null);
+  const [hoverCut, setHoverCut] = useState<{
+    clipId: string;
+    timelineTime: number;
+    sourceTime: number;
+  } | null>(null);
+  const [trimBadge, setTrimBadge] = useState<{
+    x: number;
+    label: string;
+  } | null>(null);
+
+  const scroller = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const pinch = useRef<{ dist: number; scale: number } | null>(null);
+
+  const clips = useMemo(() => timelineClips(project), [project]);
+  const videoDuration = projectDuration(project);
+  const duration = Math.max(
+    videoDuration,
+    ...project.sounds.map((s) => s.start + (s.out - s.in)),
+    ...project.titles.map((t) => t.end),
     1,
   );
-  useEffect(() => {
-    const node = scroll.current;
-    if (!node) return;
-    const observer = new ResizeObserver(([entry]) =>
-      setWidth(entry.contentRect.width),
-    );
-    observer.observe(node);
-    return () => {
-      observer.disconnect();
-      cancelAnimationFrame(frame.current);
-    };
-  }, []);
+  const sourceMuted =
+    project.clips.length > 0 && project.clips.every((c) => c.volume === 0);
+
+  // Observe scroller viewport width
   useLayoutEffect(() => {
-    const node = scroll.current;
+    const node = scroller.current;
     if (!node) return;
-    if (
-      drag.current ||
-      editDrag.current ||
-      (!playing && Date.now() - lastUserScroll.current < 120)
-    )
-      return;
-    programmatic.current = time * scale;
-    node.scrollLeft = time * scale;
-    setView(node.scrollLeft);
-  }, [time, scale, width, playing]);
-  function onScroll() {
-    const node = scroll.current;
-    if (!node) return;
-    setView(node.scrollLeft);
-    if (
-      programmatic.current !== null &&
-      Math.abs(node.scrollLeft - programmatic.current) < 1
-    ) {
-      programmatic.current = null;
-      return;
-    }
-    lastUserScroll.current = Date.now();
-    cancelAnimationFrame(frame.current);
-    frame.current = requestAnimationFrame(() => {
-      latest.current.pause();
-      latest.current.seek(
-        Math.max(
-          0,
-          Math.min(
-            projectDuration(latest.current.project),
-            node.scrollLeft / scale,
-          ),
-        ),
-      );
-    });
-  }
-  function beginEdit(
-    event: React.PointerEvent,
-    kind: "video" | "audio" | "text",
-    id: string,
-    edge: "in" | "out" | "move",
-  ) {
-    if (props.trackLocked) return;
-    event.stopPropagation();
-    event.preventDefault();
-    props.pause();
-    props.select(id, kind);
-    lastMoved.current = true;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    editDrag.current = {
-      id,
-      kind,
-      edge,
-      x: event.clientX,
-      clip: project.clips.find((c) => c.id === id),
-      sound: project.sounds.find((s) => s.id === id),
+    const sync = () => {
+      setWidth(node.clientWidth || 960);
+      setScrollLeft(node.scrollLeft);
     };
-    setDraft(project);
-  }
-  function moveEdit(event: React.PointerEvent) {
-    const edit = editDrag.current;
-    if (!edit || props.trackLocked) return;
-    event.stopPropagation();
-    const delta = (event.clientX - edit.x) / scale;
-    if (edit.kind === "video" && edit.clip) {
-      const asset = assets.find((a) => a.id === edit.clip!.assetId)!;
-      const next = trimVideo(
-        edit.clip,
-        edit.edge as "in" | "out",
-        delta,
-        asset.duration,
-      );
-      const value = {
-        ...project,
-        clips: project.clips.map((c) => (c.id === edit.id ? next : c)),
-      };
-      draftRef.current = value;
-      setDraft(value);
-      props.preview(
-        edit.clip,
-        next[edit.edge as "in" | "out"] -
-          (edit.edge === "out" ? 1 / OUTPUT_FPS : 0),
-      );
-    } else if (edit.kind === "text") {
-      const title = project.titles.find((t) => t.id === edit.id)!;
-      const next =
-        edit.edge === "move"
-          ? {
-              ...title,
-              start: Math.max(0, frameTime(title.start + delta)),
-              end:
-                Math.max(0, frameTime(title.start + delta)) +
-                title.end -
-                title.start,
-            }
-          : edit.edge === "in"
-            ? {
-                ...title,
-                start: Math.max(
-                  0,
-                  Math.min(
-                    title.end - 1 / OUTPUT_FPS,
-                    frameTime(title.start + delta),
-                  ),
-                ),
-              }
-            : {
-                ...title,
-                end: Math.max(
-                  title.start + 1 / OUTPUT_FPS,
-                  frameTime(title.end + delta),
-                ),
-              };
-      const value = {
-        ...project,
-        titles: project.titles.map((t) => (t.id === edit.id ? next : t)),
-      };
-      draftRef.current = value;
-      setDraft(value);
-    } else if (edit.sound) {
-      const asset = assets.find((a) => a.id === edit.sound!.assetId)!;
-      const next =
-        edit.edge === "move"
-          ? {
-              ...edit.sound,
-              start: Math.max(0, frameTime(edit.sound.start + delta)),
-            }
-          : trimSound(edit.sound, edit.edge, delta, asset.duration);
-      const value = {
-        ...project,
-        sounds: project.sounds.map((s) => (s.id === edit.id ? next : s)),
-      };
-      draftRef.current = value;
-      setDraft(value);
+    sync();
+    const ro =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(sync);
+    ro?.observe(node);
+    return () => ro?.disconnect();
+  }, []);
+
+  // Auto-keep moving playhead visible during playback without hijacking user scroll when paused
+  useEffect(() => {
+    const node = scroller.current;
+    if (!node || !playing) return;
+    const playheadX = TRACK_LEFT_PAD + time * scale;
+    const viewLeft = node.scrollLeft;
+    const viewRight = viewLeft + node.clientWidth;
+    if (playheadX > viewRight - 48) {
+      node.scrollLeft = Math.max(0, playheadX - node.clientWidth * 0.25);
+    } else if (playheadX < viewLeft) {
+      node.scrollLeft = Math.max(0, playheadX - 24);
     }
-  }
-  function finishEdit(event: React.PointerEvent) {
-    if (!editDrag.current) return;
-    event.stopPropagation();
-    if (draftRef.current) props.change(draftRef.current);
-    editDrag.current = null;
-    setDraft(null);
-    props.preview(null);
-    if (event.currentTarget.hasPointerCapture(event.pointerId))
-      event.currentTarget.releasePointerCapture(event.pointerId);
-  }
-  function moveScroll(event: React.PointerEvent) {
-    if (props.previewAxisEnabled && scroll.current) {
-      const rect = scroll.current.getBoundingClientRect();
-      const offsetX = event.clientX - rect.left + scroll.current.scrollLeft - width / 2;
-      const t = Math.max(0, Math.min(mediaEnd, offsetX / scale));
-      setHoverTime(t);
-    }
-    const action = drag.current;
-    if (!action || !action.mouse || editDrag.current) return;
-    const delta = event.clientX - action.x;
-    if (Math.abs(delta) > 3) {
-      action.moved = true;
-      lastMoved.current = true;
-      if (!event.currentTarget.hasPointerCapture(event.pointerId))
-        event.currentTarget.setPointerCapture(event.pointerId);
-    }
-    if (scroll.current) scroll.current.scrollLeft = action.left - delta;
-  }
-  function trimKey(
-    kind: "video" | "audio" | "text",
+  }, [time, scale, playing]);
+
+  const onScroll = () => {
+    const node = scroller.current;
+    if (!node) return;
+    setScrollLeft(node.scrollLeft);
+  };
+
+  const clientXToTimelineTime = (clientX: number): number => {
+    const content = contentRef.current;
+    if (!content) return 0;
+    const rect = content.getBoundingClientRect();
+    const relX = clientX - rect.left - TRACK_LEFT_PAD;
+    return Math.max(0, Math.min(duration, frameTime(relX / scale)));
+  };
+
+  const startScrub = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    pause();
+    const target = e.currentTarget as HTMLElement;
+    try {
+      target.setPointerCapture(e.pointerId);
+    } catch {}
+    seek(clientXToTimelineTime(e.clientX));
+
+    const move = (ev: PointerEvent) => {
+      seek(clientXToTimelineTime(ev.clientX));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  };
+
+  function startTrim(
+    e: React.PointerEvent<HTMLButtonElement>,
+    kind: "video" | "audio" | "text" | "move-audio" | "move-text",
     id: string,
     edge: "in" | "out",
-    direction: number,
   ) {
-    if (props.trackLocked) return;
-    props.pause();
-    if (kind === "video") {
-      const c = project.clips.find((c) => c.id === id)!,
-        a = assets.find((a) => a.id === c.assetId)!;
-      props.change({
-        ...project,
-        clips: project.clips.map((x) =>
-          x.id === id
-            ? trimVideo(c, edge, direction / OUTPUT_FPS / c.speed, a.duration)
-            : x,
-        ),
-      });
-    } else if (kind === "text") {
-      const title = project.titles.find((t) => t.id === id)!;
-      const next =
-        edge === "in"
-          ? {
-              ...title,
-              start: Math.max(
-                0,
-                Math.min(
-                  title.end - 1 / OUTPUT_FPS,
-                  frameTime(title.start + direction / OUTPUT_FPS),
-                ),
-              ),
+    if (trackLocked) return;
+    e.preventDefault();
+    e.stopPropagation();
+    pause();
+    select(id, kind.includes("audio") ? "audio" : kind.includes("text") ? "text" : "video");
+    const button = e.currentTarget;
+    const startX = e.clientX;
+    const snapshot = project;
+    try {
+      button.setPointerCapture(e.pointerId);
+    } catch {}
+
+    const move = (ev: PointerEvent) => {
+      const delta = (ev.clientX - startX) / scale;
+
+      if (kind === "video") {
+        let seekTarget = time;
+        const nextClips = snapshot.clips.map((c) => {
+          if (c.id !== id) return c;
+          const asset = assets.find((a) => a.id === c.assetId);
+          const next = trimVideo(c, edge, delta, asset?.duration || c.out);
+          preview(next, edge === "in" ? next.in : next.out);
+          return next;
+        });
+        let cursor = 0;
+        for (const c of nextClips) {
+          const len = clipDuration(c);
+          if (c.id === id) {
+            seekTarget = edge === "in" ? cursor : cursor + len;
+            setTrimBadge({
+              x: TRACK_LEFT_PAD + seekTarget * scale,
+              label: formatCapCutTimecode(len, OUTPUT_FPS),
+            });
+          }
+          cursor += len;
+        }
+        const nextTotal = Math.max(0.05, cursor);
+        change({
+          ...snapshot,
+          clips: nextClips,
+          sounds: snapshot.sounds
+            .filter((s) => s.start < nextTotal)
+            .map((s) => {
+              const out = Math.min(s.out, s.in + (nextTotal - s.start));
+              const len = Math.max(0.05, out - s.in);
+              return {
+                ...s,
+                out: s.in + len,
+                fadeIn: Math.min(s.fadeIn, len),
+                fadeOut: Math.min(s.fadeOut, len),
+              };
+            }),
+          titles: snapshot.titles
+            .filter((t) => t.start < nextTotal)
+            .map((t) => ({
+              ...t,
+              end: Math.max(t.start + 0.05, Math.min(t.end, nextTotal)),
+            })),
+        });
+        seek(Math.min(seekTarget, nextTotal));
+      } else if (kind === "audio" || kind === "move-audio") {
+        change({
+          ...snapshot,
+          sounds: snapshot.sounds.map((s): CutSound => {
+            if (s.id !== id) return s;
+            const asset = assets.find((a) => a.id === s.assetId);
+            if (kind === "move-audio") {
+              return { ...s, start: Math.max(0, frameTime(s.start + delta)) };
             }
-          : {
-              ...title,
-              end: Math.max(
-                title.start + 1 / OUTPUT_FPS,
-                frameTime(title.end + direction / OUTPUT_FPS),
-              ),
-            };
-      props.change({
-        ...project,
-        titles: project.titles.map((t) => (t.id === id ? next : t)),
-      });
-    } else {
-      const s = project.sounds.find((s) => s.id === id)!,
-        a = assets.find((a) => a.id === s.assetId)!;
-      props.change({
-        ...project,
-        sounds: project.sounds.map((x) =>
-          x.id === id
-            ? trimSound(s, edge, direction / OUTPUT_FPS, a.duration)
-            : x,
-        ),
-      });
-    }
+            return trimSound(s, edge, delta, asset?.duration || s.out);
+          }),
+        });
+      } else {
+        change({
+          ...snapshot,
+          titles: snapshot.titles.map((t): CutTitle => {
+            if (t.id !== id) return t;
+            const len = t.end - t.start;
+            const min = 1 / OUTPUT_FPS;
+            if (kind === "move-text") {
+              const start = Math.max(0, frameTime(t.start + delta));
+              return { ...t, start, end: frameTime(start + len) };
+            }
+            return edge === "in"
+              ? {
+                  ...t,
+                  start: Math.max(0, Math.min(t.end - min, frameTime(t.start + delta))),
+                }
+              : {
+                  ...t,
+                  end: Math.max(t.start + min, frameTime(t.end + delta)),
+                };
+          }),
+        });
+      }
+    };
+
+    const up = () => {
+      preview(null);
+      setTrimBadge(null);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   }
-  const handle = (
-    kind: "video" | "audio" | "text",
-    id: string,
-    edge: "in" | "out",
-    value: number,
-  ) => (
-    <button
-      data-trim="true"
-      className={"cut-trim-handle " + (edge === "in" ? "left" : "right")}
-      aria-label={kind + " " + edge + " trim handle"}
-      role="slider"
-      aria-valuenow={value}
-      aria-valuemin={0}
-      onPointerDown={(e) => beginEdit(e, kind, id, edge)}
-      onPointerMove={moveEdit}
-      onPointerUp={finishEdit}
-      onPointerCancel={finishEdit}
-      onKeyDown={(e) => {
-        if (["ArrowLeft", "ArrowRight"].includes(e.key)) {
-          e.preventDefault();
-          trimKey(
-            kind,
-            id,
-            edge,
-            (e.key === "ArrowRight" ? 1 : -1) * (e.shiftKey ? 10 : 1),
-          );
+
+  const rulerIntervals = useMemo(() => getRulerIntervals(scale), [scale]);
+  const majorTicks = useMemo(() => {
+    const maxSec = Math.ceil(duration + 15);
+    const count = Math.min(400, Math.floor(maxSec / rulerIntervals.major) + 1);
+    return Array.from({ length: count }, (_, idx) => idx * rulerIntervals.major);
+  }, [duration, rulerIntervals.major]);
+
+  const minorTicks = useMemo(() => {
+    const maxSec = Math.ceil(duration + 15);
+    const count = Math.min(1200, Math.floor(maxSec / rulerIntervals.minor) + 1);
+    const out: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const sec = Number((i * rulerIntervals.minor).toFixed(3));
+      if (Math.abs(sec % rulerIntervals.major) > 0.01) {
+        out.push(sec);
+      }
+    }
+    return out;
+  }, [duration, rulerIntervals]);
+
+  const trackWidth = Math.max(
+    width - 12,
+    Math.ceil((duration + 8) * scale) + TRACK_LEFT_PAD + 140,
+  );
+  const playheadLeft = TRACK_LEFT_PAD + time * scale;
+
+  return (
+    <section
+      aria-label="Precision timeline"
+      className="studio-timeline studio-precision cut-precision-timeline"
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        const assetId = e.dataTransfer.getData("application/x-fahi-asset-id");
+        if (assetId && onDropAssetId) {
+          onDropAssetId(assetId);
         }
       }}
     >
-      <span />
-    </button>
-  );
-  const visibleStart = (view - width / 2) / scale,
-    visibleEnd = (view + width / 2) / scale;
-  return (
-    <div className="cut-timeline cut-precision-timeline">
-      <div className="cut-timeline-controls">
-        <span>
-          {formatClock(time)} <small>30 FPS</small>
-        </span>
-        <button
-          aria-label="Previous frame"
-          onClick={() => {
-            lastUserScroll.current = 0;
-            props.pause();
-            props.seek(Math.max(0, frameTime(time - 1 / OUTPUT_FPS)));
-          }}
-        >
-          <ChevronLeft size={17} />
-        </button>
-        <button
-          aria-label="Next frame"
-          onClick={() => {
-            lastUserScroll.current = 0;
-            props.pause();
-            props.seek(Math.min(duration, frameTime(time + 1 / OUTPUT_FPS)));
-          }}
-        >
-          <ChevronRight size={17} />
-        </button>
-        <button
-          aria-label="Split at playhead"
-          onClick={() => {
-            if (props.trackLocked) return;
-            const at = locateClip(project, time);
-            if (at) {
-              const source = frameTime(at.source);
-              props.change({
-                ...project,
-                clips: project.clips.flatMap((c) =>
-                  c.id === at.clip.id ? splitClip(c, source) : [c],
-                ),
-              });
-            }
-          }}
-        >
-          <Scissors size={15} />
-          <span>Split</span>
-        </button>
-        <button
-          aria-label="Zoom timeline out"
-          onClick={() => updateScale((s) => Math.max(30, s / 1.4))}
-        >
-          <ZoomOut size={16} />
-        </button>
-        <button
-          aria-label="Zoom timeline in"
-          onClick={() => updateScale((s) => Math.min(1800, s * 1.4))}
-        >
-          <ZoomIn size={16} />
-        </button>
-      </div>
+      <div className="cut-timeline-body">
+        {/* CapCut Left Track Sidebar (Cover + Track Mute / Lock / Hide) */}
+        <div className="cut-track-sidebar">
+          <div className="cut-track-sidebar-ruler-spacer">TRACKS</div>
 
-      {/* CapCut Left Track Controls Strip: Cover + Mute + Lock + Hide */}
-      <div className="absolute left-1.5 top-[66px] z-[8] flex items-center gap-1 bg-[#18191d]/95 border border-white/10 rounded-md px-1 py-1 shadow-lg">
-        {props.onCaptureCover && (
-          <button
-            type="button"
-            onClick={props.onCaptureCover}
-            title="Set Current Frame as Cover"
-            className="w-8 h-10 rounded bg-[#25262c] hover:bg-[#30323a] border border-white/10 flex flex-col items-center justify-center text-[8px] text-slate-200 overflow-hidden relative"
-          >
-            {props.coverImage ? (
-              <img src={props.coverImage} alt="Cover" className="w-full h-full object-cover" />
-            ) : (
-              <>
-                <ImageIcon size={11} className="text-cyan-400 mb-0.5" />
-                <span>Cover</span>
-              </>
-            )}
-          </button>
-        )}
-        <button
-          className="w-7 h-10 rounded bg-[#25262c] hover:bg-[#30323a] border border-white/10 flex items-center justify-center text-slate-200"
-          aria-label={
-            project.clips.every((c) => c.volume === 0)
-              ? "Unmute original video sound"
-              : "Mute original video sound"
-          }
-          title={project.clips.every((c) => c.volume === 0) ? "Unmute track" : "Mute track"}
-          onClick={() => {
-            const muted = project.clips.every((c) => c.volume === 0);
-            if (!muted)
-              project.clips.forEach((c) => {
-                sourceVolumes.current[c.id] = c.volume;
-              });
-            props.change({
-              ...project,
-              clips: project.clips.map((c) => ({
-                ...c,
-                volume: muted ? (sourceVolumes.current[c.id] ?? 1) : 0,
-              })),
-            });
-          }}
-        >
-          {project.clips.every((c) => c.volume === 0) ? (
-            <VolumeX size={14} className="text-rose-400" />
-          ) : (
-            <Volume2 size={14} />
-          )}
-        </button>
-        {props.onToggleTrackLock && (
-          <button
-            type="button"
-            onClick={props.onToggleTrackLock}
-            title={props.trackLocked ? "Unlock Track" : "Lock Track"}
-            className={`w-6 h-10 rounded border flex items-center justify-center ${
-              props.trackLocked
-                ? "bg-cyan-500/20 border-cyan-500/50 text-cyan-300"
-                : "bg-[#25262c] hover:bg-[#30323a] border-white/10 text-slate-400"
-            }`}
-          >
-            {props.trackLocked ? <Lock size={12} /> : <Unlock size={12} />}
-          </button>
-        )}
-        {props.onToggleTrackHide && (
-          <button
-            type="button"
-            onClick={props.onToggleTrackHide}
-            title={props.trackHidden ? "Show Track" : "Hide Track"}
-            className={`w-6 h-10 rounded border flex items-center justify-center ${
-              props.trackHidden
-                ? "bg-amber-500/20 border-amber-500/50 text-amber-300"
-                : "bg-[#25262c] hover:bg-[#30323a] border-white/10 text-slate-400"
-            }`}
-          >
-            {props.trackHidden ? <EyeOff size={12} /> : <Eye size={12} />}
-          </button>
-        )}
-      </div>
+          {/* Main Video Track Controls */}
+          <div className="cut-track-sidebar-lane video-lane">
+            <button
+              type="button"
+              className="cut-cover-btn overflow-hidden relative"
+              title="Capture current frame as Project Cover"
+              onClick={() => onCaptureCover?.()}
+            >
+              {coverImage ? (
+                <img
+                  src={coverImage}
+                  alt="Cover"
+                  className="absolute inset-0 w-full h-full object-cover opacity-50"
+                />
+              ) : (
+                <ImageIcon size={12} />
+              )}
+              <span className="relative z-10">Cover</span>
+            </button>
 
-      <div
-        ref={scroll}
-        className={`cut-precision-scroll ${props.cursorMode === "split" ? "cursor-crosshair" : ""}`}
-        onScroll={onScroll}
-        onPointerLeave={() => setHoverTime(null)}
-        onPointerDown={(e) => {
-          if ((e.target as HTMLElement).closest("[data-trim]")) return;
-          props.pause();
-          lastMoved.current = false;
-          drag.current = {
-            x: e.clientX,
-            left: e.currentTarget.scrollLeft,
-            mouse: e.pointerType === "mouse",
-            moved: false,
-          };
-        }}
-        onPointerMove={moveScroll}
-        onPointerUp={() => {
-          drag.current = null;
-        }}
-        onPointerCancel={() => {
-          lastMoved.current = true;
-          drag.current = null;
-        }}
-      >
-        <div
-          className="cut-precision-content"
-          style={{
-            width: mediaEnd * scale + width,
-            paddingLeft: width / 2,
-            paddingRight: width / 2,
-          }}
-        >
-          <div
-            className="cut-precision-ruler"
-            style={{ width: mediaEnd * scale }}
-          >
-            {Array.from(
-              {
-                length: Math.max(
-                  0,
-                  Math.ceil(
-                    (Math.min(mediaEnd, visibleEnd + 2) -
-                      Math.max(0, visibleStart - 2)) *
-                      (scale >= 450 ? OUTPUT_FPS : scale >= 180 ? 4 : 1),
-                  ) + 1,
-                ),
-              },
-              (_, i) => {
-                const step =
-                    scale >= 450 ? 1 / OUTPUT_FPS : scale >= 180 ? 0.25 : 1,
-                  start = Math.max(
-                    0,
-                    Math.floor((visibleStart - 2) / step) * step,
-                  ),
-                  t = start + i * step;
-                return (
-                  <span key={t} style={{ left: t * scale }}>
-                    {scale >= 450
-                      ? Math.round(t * OUTPUT_FPS) % OUTPUT_FPS === 0
-                        ? formatClock(t)
-                        : "·"
-                      : formatClock(t)}
-                  </span>
-                );
-              },
-            )}
-
-            {/* CapCut Timeline Markers (M) */}
-            {(props.markers || []).map((m) => (
+            <div className="cut-track-ctrl-icons">
               <button
-                key={m.id}
                 type="button"
-                title={`${m.label} (${formatClock(m.time)}) — Click to jump, Double-click to remove`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  props.onSelectMarker?.(m.time);
-                }}
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  props.onRemoveMarker?.(m.id);
-                }}
-                style={{ left: m.time * scale }}
-                className="absolute top-0 -translate-x-1/2 z-10 flex flex-col items-center text-cyan-400 hover:text-cyan-200"
+                aria-label={sourceMuted ? "Unmute clip audio" : "Mute clip audio"}
+                title={sourceMuted ? "Unmute track audio" : "Mute track audio"}
+                className={`cut-track-icon-btn ${sourceMuted ? "active" : ""}`}
+                onClick={() =>
+                  change({
+                    ...project,
+                    clips: project.clips.map((c) => ({
+                      ...c,
+                      volume: sourceMuted ? 1 : 0,
+                    })),
+                  })
+                }
               >
-                <Bookmark size={12} className="fill-cyan-400" />
+                {sourceMuted ? <VolumeX size={12} /> : <Volume2 size={12} />}
               </button>
-            ))}
+              <button
+                type="button"
+                aria-label={trackLocked ? "Unlock video track" : "Lock video track"}
+                title={trackLocked ? "Unlock video track" : "Lock video track"}
+                className={`cut-track-icon-btn ${trackLocked ? "active" : ""}`}
+                onClick={() => onToggleTrackLock?.()}
+              >
+                {trackLocked ? <Lock size={12} /> : <Unlock size={12} />}
+              </button>
+              <button
+                type="button"
+                aria-label={trackHidden ? "Show video track" : "Hide video track"}
+                title={trackHidden ? "Show video track" : "Hide video track"}
+                className={`cut-track-icon-btn ${trackHidden ? "active" : ""}`}
+                onClick={() => onToggleTrackHide?.()}
+              >
+                {trackHidden ? <EyeOff size={12} /> : <Eye size={12} />}
+              </button>
+            </div>
           </div>
 
-          {/* CapCut Preview Axis Hover Line */}
-          {props.previewAxisEnabled && hoverTime !== null && (
-            <div
-              className="pointer-events-none absolute top-0 bottom-0 z-20 border-l border-dashed border-amber-400/80"
-              style={{ left: width / 2 + hoverTime * scale }}
-            >
-              <span className="bg-amber-400 text-black text-[9px] font-mono font-bold px-1 py-0.2 rounded-sm">
-                {formatClock(hoverTime)}
-              </span>
-            </div>
-          )}
+          {/* Text Overlay Track Header */}
+          <div className="cut-track-sidebar-lane sub-lane">
+            <Type size={12} className="text-amber-400/80 ml-1" />
+            <span className="text-[10px] text-slate-400 font-medium">Text</span>
+          </div>
 
+          {/* Audio Track Header */}
+          <div className="cut-track-sidebar-lane sub-lane">
+            <Music size={12} className="text-cyan-400/80 ml-1" />
+            <span className="text-[10px] text-slate-400 font-medium">Audio</span>
+          </div>
+        </div>
+
+        {/* Right Scrollable Track Area (Starts at 00:00 on the Left Edge) */}
+        <div
+          ref={scroller}
+          aria-label="Timeline tracks"
+          className={`cut-precision-scroll ${cursorMode === "split" ? "cursor-crosshair" : ""}`}
+          onScroll={onScroll}
+          onMouseMove={(e) => {
+            if (!previewAxisEnabled || !scroller.current) {
+              if (hoverAxisX !== null) setHoverAxisX(null);
+              return;
+            }
+            const rect = scroller.current.getBoundingClientRect();
+            setHoverAxisX(e.clientX - rect.left + scroller.current.scrollLeft);
+          }}
+          onMouseLeave={() => {
+            if (hoverAxisX !== null) setHoverAxisX(null);
+          }}
+          onWheel={(e) => {
+            if (e.ctrlKey || e.metaKey) {
+              e.preventDefault();
+              const factor = e.deltaY < 0 ? 1.18 : 0.85;
+              setScale((s) => Number((s * factor).toFixed(1)));
+            }
+          }}
+          onTouchStart={(e) => {
+            if (e.touches.length === 2) {
+              const dx = e.touches[0].clientX - e.touches[1].clientX;
+              const dy = e.touches[0].clientY - e.touches[1].clientY;
+              pinch.current = { dist: Math.hypot(dx, dy) || 1, scale };
+            }
+          }}
+          onTouchMove={(e) => {
+            if (e.touches.length === 2 && pinch.current) {
+              const dx = e.touches[0].clientX - e.touches[1].clientX;
+              const dy = e.touches[0].clientY - e.touches[1].clientY;
+              setScale(
+                (pinch.current.scale * Math.hypot(dx, dy)) / pinch.current.dist,
+              );
+            }
+          }}
+          onTouchEnd={() => {
+            pinch.current = null;
+          }}
+        >
           <div
-            className={`cut-precision-video ${props.trackHidden ? "opacity-30" : ""} ${props.trackLocked ? "pointer-events-none opacity-75" : ""}`}
-            style={{ width: mediaEnd * scale }}
+            ref={contentRef}
+            className="cut-precision-content"
+            style={{
+              width: trackWidth,
+              paddingLeft: TRACK_LEFT_PAD,
+              paddingRight: 140,
+            }}
           >
-            {clips.map(({ clip, start, end }) => {
-              const a = assets.find((a) => a.id === clip.assetId)!;
-              if (!a) return null;
-              return (
+            {/* Yellow Preview Axis Skimmer Line */}
+            {previewAxisEnabled && hoverAxisX !== null && (
+              <div
+                style={{ left: hoverAxisX }}
+                className="pointer-events-none absolute top-0 bottom-0 w-[1.5px] bg-amber-400/80 z-30 shadow-[0_0_6px_rgba(251,191,36,0.8)]"
+              />
+            )}
+
+            {/* Top Time Ruler (00:00 at left edge, click/drag to scrub) */}
+            <div
+              className="cut-precision-ruler"
+              aria-hidden="true"
+              onPointerDown={startScrub}
+            >
+              {majorTicks.map((s) => (
                 <div
-                  key={clip.id}
-                  className={
-                    "cut-precision-clip " +
-                    (selected === clip.id ? "selected" : "")
-                  }
+                  key={`maj-${s}`}
+                  className="cut-ruler-major-tick"
+                  style={{ left: TRACK_LEFT_PAD + s * scale }}
+                >
+                  <span>{formatRulerTick(s)}</span>
+                </div>
+              ))}
+              {minorTicks.map((s) => (
+                <div
+                  key={`min-${s}`}
+                  className="cut-ruler-minor-tick"
+                  style={{ left: TRACK_LEFT_PAD + s * scale }}
+                />
+              ))}
+
+              {/* Timeline Markers (M) */}
+              {markers.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  title={`${m.label} (${formatRulerTick(m.time)}) — Right-click to remove`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectMarker?.(m.time);
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onRemoveMarker?.(m.id);
+                  }}
                   style={{
-                    left: start * scale,
-                    width: Math.max(3, (end - start) * scale),
+                    position: "absolute",
+                    left: TRACK_LEFT_PAD + m.time * scale,
+                    top: 1,
+                    transform: "translateX(-50%)",
+                    background: m.color || "#22d3ee",
+                    color: "#041016",
+                    border: "none",
+                    borderRadius: "3px 3px 6px 6px",
+                    padding: "1px 5px",
+                    fontSize: "9px",
+                    fontWeight: 800,
+                    zIndex: 12,
+                    boxShadow: "0 1px 4px rgba(0,0,0,0.5)",
                   }}
                 >
-                  <button
-                    aria-label={"Select video clip " + a.name}
-                    onClick={() => {
-                      if (lastMoved.current) return;
-                      if (props.cursorMode === "split" && !props.trackLocked) {
-                        const at = locateClip(project, time);
-                        if (at && at.clip.id === clip.id) {
-                          const source = frameTime(at.source);
-                          props.change({
+                  {m.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Moving White Playhead (Starts at 00:00 on left edge and moves right) */}
+            <div
+              className="cut-moving-playhead"
+              style={{ left: playheadLeft }}
+              aria-hidden="true"
+            >
+              <div
+                className="cut-moving-playhead-head"
+                title="Drag playhead"
+                onPointerDown={startScrub}
+              />
+            </div>
+
+            {/* Live Trim Timecode Tooltip */}
+            {trimBadge && (
+              <div
+                className="cut-timecode-tooltip"
+                style={{ left: trimBadge.x, top: 28 }}
+              >
+                {trimBadge.label}
+              </div>
+            )}
+
+            {/* Main Video Track Lane (00:00 flush at left edge) */}
+            <div
+              className="cut-precision-video"
+              style={{
+                opacity: trackHidden ? 0.25 : 1,
+                pointerEvents: trackLocked ? "none" : "auto",
+              }}
+              onClick={(e) => {
+                if (e.target === e.currentTarget) {
+                  seek(clientXToTimelineTime(e.clientX));
+                }
+              }}
+            >
+              {clips.map(({ clip, start, end }) => {
+                const asset = assets.find((a) => a.id === clip.assetId);
+                const len = end - start;
+                const w = Math.max(18, len * scale);
+                const left = start * scale;
+                const viewLeft = scrollLeft - left - TRACK_LEFT_PAD;
+                const first = Math.floor(viewLeft / 60) - 1;
+                const last = Math.ceil((viewLeft + width) / 60) + 1;
+                const active = selected === clip.id;
+                const isHoveringThis =
+                  hoverCut && hoverCut.clipId === clip.id;
+                const cleanName = (asset?.name || "Clip").replace(
+                  /_part[12]/g,
+                  "",
+                );
+                const durationTimecode = formatCapCutTimecode(len, OUTPUT_FPS);
+
+                return (
+                  <div
+                    key={clip.id}
+                    className={`cut-precision-clip group ${active ? "selected" : ""}`}
+                    style={{ left, width: w }}
+                    onMouseMove={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const relX = Math.max(
+                        0,
+                        Math.min(rect.width, e.clientX - rect.left),
+                      );
+                      const offsetTimeline = relX / scale;
+                      const timelineTime = frameTime(start + offsetTimeline);
+                      const sourceTime = frameTime(
+                        clip.in + offsetTimeline * clip.speed,
+                      );
+                      if (
+                        sourceTime > clip.in + 0.08 &&
+                        sourceTime < clip.out - 0.08
+                      ) {
+                        setHoverCut({
+                          clipId: clip.id,
+                          timelineTime,
+                          sourceTime,
+                        });
+                      } else {
+                        setHoverCut(null);
+                      }
+                    }}
+                    onMouseLeave={() => setHoverCut(null)}
+                  >
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        select(clip.id, "video");
+                        const clickTimelineTime = clientXToTimelineTime(
+                          e.clientX,
+                        );
+                        const sourceCut = frameTime(
+                          clip.in + (clickTimelineTime - start) * clip.speed,
+                        );
+                        if (
+                          cursorMode === "split" &&
+                          sourceCut > clip.in + 0.08 &&
+                          sourceCut < clip.out - 0.08
+                        ) {
+                          seek(clickTimelineTime);
+                          change({
                             ...project,
                             clips: project.clips.flatMap((c) =>
-                              c.id === at.clip.id ? splitClip(c, source) : [c],
+                              c.id === clip.id ? splitClip(c, sourceCut) : [c],
                             ),
                           });
                           return;
                         }
-                      }
-                      props.select(clip.id, "video");
-                    }}
-                  >
-                    <CutFilmstrip
-                      clip={clip}
-                      asset={a}
-                      scale={scale}
-                      first={Math.max(
-                        0,
-                        Math.floor(((visibleStart - start) * scale) / 60) - 1,
+                        seek(clickTimelineTime);
+                      }}
+                    >
+                      {/* CapCut Teal Header Bar: Filename + HH:MM:SS:FF */}
+                      <div className="cut-clip-header-strip">
+                        <span className="clip-title">{cleanName}</span>
+                        <span className="clip-dur">{durationTimecode}</span>
+                      </div>
+
+                      {asset && (
+                        <CutFilmstrip
+                          clip={clip}
+                          asset={asset}
+                          scale={scale}
+                          first={first}
+                          last={last}
+                        />
                       )}
-                      last={Math.max(
-                        0,
-                        Math.ceil(((visibleEnd - start) * scale) / 60) + 1,
-                      )}
-                    />
-                    <span>{a.name}</span>
-                    <small>{(end - start).toFixed(3)}s</small>
-                  </button>
-                  {selected === clip.id && !props.trackLocked && (
-                    <>
-                      {handle("video", clip.id, "in", clip.in)}
-                      {handle("video", clip.id, "out", clip.out)}
-                    </>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          {active.sounds.map((sound) => {
-            const a = assets.find((a) => a.id === sound.assetId);
-            if (!a) return null;
-            const layer = {
-              id: sound.id,
-              name: a.name,
-              url: a.url,
-              duration: a.duration,
-              start: sound.start,
-              trimStart: sound.in,
-              trimEnd: sound.out,
-              volume: sound.volume,
-              fadeIn: sound.fadeIn,
-              fadeOut: sound.fadeOut,
-              muted: sound.muted,
-              peaks: a.peaks,
-            };
-            return (
-              <div
-                key={sound.id}
-                className="cut-precision-row"
-                style={{ width: mediaEnd * scale }}
-              >
-                <div
-                  className={
-                    "cut-precision-sound " +
-                    (selected === sound.id ? "selected" : "")
-                  }
-                  style={{
-                    left: sound.start * scale,
-                    width: Math.max(3, (sound.out - sound.in) * scale),
-                  }}
-                >
-                  <button
-                    data-trim={selected === sound.id ? "true" : undefined}
-                    aria-label={"Select audio clip " + a.name}
-                    onClick={() => {
-                      if (!lastMoved.current) props.select(sound.id, "audio");
-                    }}
-                    onPointerDown={(e) => {
-                      if (selected === sound.id)
-                        beginEdit(e, "audio", sound.id, "move");
-                    }}
-                    onPointerMove={moveEdit}
-                    onPointerUp={finishEdit}
-                    onPointerCancel={finishEdit}
-                  >
-                    <span>
-                      <Music size={10} /> {a.name}
-                    </span>
-                    <Waveform layer={layer} />
-                  </button>
-                  {selected === sound.id && !props.trackLocked && (
-                    <>
-                      {handle("audio", sound.id, "in", sound.in)}
-                      {handle("audio", sound.id, "out", sound.out)}
-                    </>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-          {active.titles.map((title) => (
-            <div
-              key={title.id}
-              className="cut-precision-row title"
-              style={{ width: mediaEnd * scale }}
-            >
-              <div
-                className={
-                  "cut-precision-title " +
-                  (selected === title.id ? "selected" : "")
-                }
-                style={{
-                  left: title.start * scale,
-                  width: Math.max(3, (title.end - title.start) * scale),
-                }}
-              >
-                <button
-                  data-trim={selected === title.id ? "true" : undefined}
-                  aria-label={"Select text clip " + title.text}
-                  onClick={() => {
-                    if (!lastMoved.current) props.select(title.id, "text");
-                  }}
-                  onPointerDown={(e) => {
-                    if (selected === title.id)
-                      beginEdit(e, "text", title.id, "move");
-                  }}
-                  onPointerMove={moveEdit}
-                  onPointerUp={finishEdit}
-                  onPointerCancel={finishEdit}
-                >
-                  <Type size={11} />
-                  {title.text}
-                </button>
-                {selected === title.id && !props.trackLocked && (
-                  <>
-                    {handle("text", title.id, "in", title.start)}
-                    {handle("text", title.id, "out", title.end)}
-                  </>
-                )}
-              </div>
+                    </button>
+
+                    {/* Hover / Blade Split Line & Badge */}
+                    {isHoveringThis && !trackLocked && (
+                      <button
+                        type="button"
+                        aria-label={`Cut ${cleanName} at ${formatCapCutTimecode(hoverCut.timelineTime, OUTPUT_FPS)}`}
+                        title={`Split at ${formatCapCutTimecode(hoverCut.timelineTime, OUTPUT_FPS)}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          select(clip.id, "video");
+                          seek(hoverCut.timelineTime);
+                          change({
+                            ...project,
+                            clips: project.clips.flatMap((c) =>
+                              c.id === clip.id
+                                ? splitClip(c, hoverCut.sourceTime)
+                                : [c],
+                            ),
+                          });
+                          setHoverCut(null);
+                        }}
+                        style={{
+                          left: Math.max(
+                            8,
+                            Math.min(
+                              w - 8,
+                              (hoverCut.timelineTime - start) * scale,
+                            ),
+                          ),
+                        }}
+                        className={`
+                          absolute top-0 bottom-0 -translate-x-1/2 z-20
+                          w-4 flex flex-col items-center justify-start
+                          transition-opacity cursor-pointer bg-transparent border-0 p-0
+                          ${cursorMode === "split" ? "opacity-100" : "opacity-0 group-hover:opacity-100"}
+                        `}
+                      >
+                        <span className="mt-0.5 px-1.5 py-0.5 rounded bg-rose-600 text-white text-[9px] font-bold shadow flex items-center gap-0.5 whitespace-nowrap">
+                          <Scissors size={9} />
+                          {formatCapCutTimecode(
+                            hoverCut.timelineTime,
+                            OUTPUT_FPS,
+                          )}
+                        </span>
+                        <span className="flex-1 w-[1.5px] border-l border-dashed border-rose-400 shadow-[0_0_4px_rgba(244,63,94,0.9)]" />
+                      </button>
+                    )}
+
+                    {/* CapCut White [ ] Trim Handles */}
+                    {active && !trackLocked && (
+                      <>
+                        <button
+                          type="button"
+                          aria-label={`Trim start of ${cleanName}`}
+                          className="cut-trim-handle left"
+                          onPointerDown={(e) =>
+                            startTrim(e, "video", clip.id, "in")
+                          }
+                        >
+                          <span />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Trim end of ${cleanName}`}
+                          className="cut-trim-handle right"
+                          onPointerDown={(e) =>
+                            startTrim(e, "video", clip.id, "out")
+                          }
+                        >
+                          <span />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-          ))}
+
+            {/* Text Overlay Track Lane */}
+            <div className="cut-precision-row">
+              {project.titles.map((t) => {
+                const active = selected === t.id;
+                return (
+                  <div
+                    key={t.id}
+                    className={`cut-precision-title ${active ? "selected" : ""}`}
+                    style={{
+                      left: t.start * scale,
+                      width: Math.max(24, (t.end - t.start) * scale),
+                    }}
+                  >
+                    <button
+                      type="button"
+                      data-trim="move"
+                      onClick={() => {
+                        select(t.id, "text");
+                        seek(t.start);
+                      }}
+                      onPointerDown={(e) =>
+                        startTrim(e, "move-text", t.id, "in")
+                      }
+                    >
+                      <Sparkles size={11} /> {t.text}
+                    </button>
+                    {active && (
+                      <>
+                        <button
+                          type="button"
+                          aria-label={`Trim start of text ${t.text}`}
+                          className="cut-trim-handle left"
+                          onPointerDown={(e) =>
+                            startTrim(e, "text", t.id, "in")
+                          }
+                        >
+                          <span />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Trim end of text ${t.text}`}
+                          className="cut-trim-handle right"
+                          onPointerDown={(e) =>
+                            startTrim(e, "text", t.id, "out")
+                          }
+                        >
+                          <span />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Audio Track Lane */}
+            <div className="cut-precision-row">
+              {project.sounds.map((s) => {
+                const asset = assets.find((a) => a.id === s.assetId);
+                const len = s.out - s.in;
+                const active = selected === s.id;
+                return (
+                  <div
+                    key={s.id}
+                    className={`cut-precision-sound ${active ? "selected" : ""}`}
+                    style={{
+                      left: s.start * scale,
+                      width: Math.max(24, len * scale),
+                    }}
+                  >
+                    <button
+                      type="button"
+                      data-trim="move"
+                      onClick={() => {
+                        select(s.id, "audio");
+                        seek(s.start);
+                      }}
+                      onPointerDown={(e) =>
+                        startTrim(e, "move-audio", s.id, "in")
+                      }
+                    >
+                      <span>
+                        <Music size={10} /> {asset?.name || "Audio"}
+                      </span>
+                      <Wave peaks={asset?.peaks || []} id={`w-${s.id}`} />
+                    </button>
+                    {active && (
+                      <>
+                        <button
+                          type="button"
+                          aria-label={`Trim start of audio ${asset?.name || "Audio"}`}
+                          className="cut-trim-handle left"
+                          onPointerDown={(e) =>
+                            startTrim(e, "audio", s.id, "in")
+                          }
+                        >
+                          <span />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Trim end of audio ${asset?.name || "Audio"}`}
+                          className="cut-trim-handle right"
+                          onPointerDown={(e) =>
+                            startTrim(e, "audio", s.id, "out")
+                          }
+                        >
+                          <span />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
-      <div className="cut-center-playhead" />
-      <div className="cut-timeline-hint">
-        Drag scenes to scrub · select a clip and drag its edges · zoom for frame
-        detail
-      </div>
-    </div>
+    </section>
   );
 }

@@ -37,7 +37,8 @@ import {
   Diamond, Snowflake, ArrowLeftToLine, ArrowRightToLine, CircleDot
 } from "lucide-react";
 import { logActivity } from "@/lib/activity";
-import { callAi } from "@/lib/ai-client";
+import { FahiVidsMarkSvg } from "./FahiVidsLogo";
+import PwaInstallButton from "./PwaInstallButton";
 import UserSettingsModal from "./UserSettingsModal";
 import AdminLoginModal from "./AdminLoginModal";
 
@@ -78,13 +79,6 @@ interface StickerOverlay {
   scale: number;
 }
 
-interface BanglaVoice {
-  voiceId: string;
-  name: string;
-  gender: string;
-  tone: string;
-}
-
 interface CaptionItem {
   id: string;
   start: number;
@@ -109,37 +103,58 @@ export interface VideoClipItem {
   duration: number;
   startOffset?: number;
   sourceDuration?: number;
+  intrinsicWidth?: number;
+  intrinsicHeight?: number;
   proxyEnabled?: boolean;
   reversed?: boolean;
+  isFreezeFrame?: boolean;
+  freezeFrameUrl?: string;
+  thumbnails?: string[];
 }
 
-const getMediaDuration = (file: File): Promise<number> => new Promise((resolve, reject) => {
-  const video = document.createElement("video");
-  const url = URL.createObjectURL(file);
-  const cleanup = () => {
-    clearTimeout(timeout);
-    video.removeAttribute("src");
-    video.load();
-    URL.revokeObjectURL(url);
-  };
-  const timeout = setTimeout(() => {
-    cleanup();
-    reject(new Error("Video loading timed out: " + file.name));
-  }, 15000);
-  video.preload = "metadata";
-  video.onloadedmetadata = () => {
-    const duration = video.duration;
-    cleanup();
-    Number.isFinite(duration) && duration > 0
-      ? resolve(duration)
-      : reject(new Error("Unsupported video: " + file.name));
-  };
-  video.onerror = () => {
-    cleanup();
-    reject(new Error("Cannot read " + file.name + ". Try an MP4 with H.264 video."));
-  };
-  video.src = url;
-});
+export type HslColorChannel = "red" | "orange" | "yellow" | "green" | "cyan" | "blue" | "purple" | "magenta";
+
+const DEFAULT_HSL_MAP: Record<HslColorChannel, { hue: number; sat: number; lum: number }> = {
+  red: { hue: 0, sat: 0, lum: 0 },
+  orange: { hue: 0, sat: 0, lum: 0 },
+  yellow: { hue: 0, sat: 0, lum: 0 },
+  green: { hue: 0, sat: 0, lum: 0 },
+  cyan: { hue: 0, sat: 0, lum: 0 },
+  blue: { hue: 0, sat: 0, lum: 0 },
+  purple: { hue: 0, sat: 0, lum: 0 },
+  magenta: { hue: 0, sat: 0, lum: 0 },
+};
+
+const getMediaMetadata = (file: File): Promise<{ duration: number; width: number; height: number }> =>
+  new Promise((resolve, reject) => {
+    const video = document.createElement("video");
+    const url = URL.createObjectURL(file);
+    const cleanup = () => {
+      clearTimeout(timeout);
+      video.removeAttribute("src");
+      video.load();
+      URL.revokeObjectURL(url);
+    };
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error("Video loading timed out: " + file.name));
+    }, 15000);
+    video.preload = "metadata";
+    video.onloadedmetadata = () => {
+      const duration = video.duration;
+      const width = video.videoWidth || 1920;
+      const height = video.videoHeight || 1080;
+      cleanup();
+      Number.isFinite(duration) && duration > 0
+        ? resolve({ duration, width, height })
+        : reject(new Error("Unsupported video: " + file.name));
+    };
+    video.onerror = () => {
+      cleanup();
+      reject(new Error("Cannot read " + file.name + ". Try an MP4 with H.264 video."));
+    };
+    video.src = url;
+  });
 
 export default function VideoEditor() {
   const [editorState, setEditorState, { undo, redo, canUndo, canRedo }] = useHistory({
@@ -179,8 +194,6 @@ export default function VideoEditor() {
     reduceNoiseEnabled: false,
     reduceNoiseMode: "weak" as "weak" | "strong",
     opticalFlowEnabled: false,
-    aiRemoveEnabled: false,
-    aiExpandEnabled: false,
     maskShape: "none" as CapCutMaskShape,
     maskSize: 75,
     maskFeather: 0,
@@ -204,6 +217,19 @@ export default function VideoEditor() {
     fadeAmount: 0,
     vignetteAmount: 0,
     grainAmount: 0,
+    hslChannel: "red" as HslColorChannel,
+    hslAdjustments: DEFAULT_HSL_MAP,
+    curveBlacks: 0,
+    curveShadows: 0,
+    curveMidtones: 0,
+    curveHighlights: 0,
+    curveWhites: 0,
+    wheelLiftWarmth: 0,
+    wheelLiftTint: 0,
+    wheelGammaWarmth: 0,
+    wheelGammaTint: 0,
+    wheelGainWarmth: 0,
+    wheelGainTint: 0,
     markers: [] as TimelineMarkerItem[],
     trackLocked: false,
     trackHidden: false,
@@ -217,7 +243,7 @@ export default function VideoEditor() {
     playbackSpeed: 1,
     volume: 1,
     isMuted: false,
-    aspectRatio: "16:9" as "9:16" | "16:9" | "1:1" | "4:3" | "4:5" | "21:9",
+    aspectRatio: "original" as "original" | "9:16" | "16:9" | "1:1" | "4:3" | "4:5" | "21:9",
     bgStyle: "black" as "black" | "purple_glow" | "cyber_gradient" | "blur_low" | "blur_high",
     splitPoints: [] as number[],
     textOverlays: [] as TextOverlay[],
@@ -231,8 +257,6 @@ export default function VideoEditor() {
     selectedEffect: "none",
     effectIntensity: 80,
     overlayMedia: null as OverlayMedia | null,
-    aiAvatar: null as string | null,
-    aiAvatarScript: "",
     coverImage: "" as string,
   });
 
@@ -240,15 +264,21 @@ export default function VideoEditor() {
   const [leftTab, setLeftTab] = useState<
     "media" | "audio" | "text" | "stickers" | "effects" | "transitions" | "captions" | "filters"
   >("media");
-  const [mediaSubTab, setMediaSubTab] = useState<
-    "import" | "yours" | "generate_ai" | "spaces" | "library" | "dreamina"
-  >("yours");
+  const [mediaSubTab, setMediaSubTab] = useState<"yours" | "spaces" | "library" | "import">("yours");
   const [mediaSearch, setMediaSearch] = useState("");
   const [mediaSortBy, setMediaSortBy] = useState<"name" | "duration">("name");
 
-  // CapCut Desktop Right Inspector Panel State (6 top tabs + sub-tabs)
+  // Persistent Imported Media Library (separate from timeline videoClips)
+  const [mediaAssets, setMediaAssets] = useState<VideoClipItem[]>([]);
+  const [previewAssetId, setPreviewAssetId] = useState<string | null>(null);
+  const [videoIntrinsicSize, setVideoIntrinsicSize] = useState<{ width: number; height: number }>({
+    width: 1920,
+    height: 1080,
+  });
+
+  // CapCut Desktop Right Inspector Panel State (5 pure video editor tabs + Details view)
   const [rightTab, setRightTab] = useState<
-    "video" | "audio" | "speed" | "animation" | "adjust" | "ai_stylize"
+    "video" | "audio" | "speed" | "animation" | "adjust" | "details"
   >("video");
   const [videoSubTab, setVideoSubTab] = useState<"basic" | "remove_bg" | "mask" | "retouch">("basic");
   const [speedSubTab, setSpeedSubTab] = useState<"standard" | "curve">("standard");
@@ -331,8 +361,13 @@ export default function VideoEditor() {
     return match || clipOffsets[clipOffsets.length - 1];
   }, [clipOffsets, currentTime]);
 
-  const videoFile = activeClipInfo ? activeClipInfo.clip.file : null;
-  const objectUrl = activeClipInfo ? activeClipInfo.clip.objectUrl : "";
+  const previewAsset = useMemo(
+    () => (previewAssetId ? mediaAssets.find(a => a.id === previewAssetId) || null : null),
+    [previewAssetId, mediaAssets]
+  );
+
+  const videoFile = previewAsset ? previewAsset.file : activeClipInfo ? activeClipInfo.clip.file : null;
+  const objectUrl = previewAsset ? previewAsset.objectUrl : activeClipInfo ? activeClipInfo.clip.objectUrl : "";
 
   const updateState = useCallback((key: keyof typeof editorState, value: any) => {
     setEditorState(prev => ({
@@ -346,19 +381,22 @@ export default function VideoEditor() {
     rotate, flipH, flipV, zoom, uniformScale, scaleX, scaleY, panX, panY,
     blendEnabled, blendMode, stabilizeEnabled, stabilizeLevel,
     enhanceQualityEnabled, enhanceQualityMode, reduceNoiseEnabled, reduceNoiseMode,
-    opticalFlowEnabled, aiRemoveEnabled, aiExpandEnabled,
+    opticalFlowEnabled,
     maskShape, maskSize, maskFeather, maskInvert,
     retouchSmooth, retouchBrighten, retouchSharpness, retouchVignette,
     clipAnimIn, clipAnimOut, clipAnimCombo, clipAnimDuration,
     audioFadeIn, audioFadeOut, audioNoiseReduction, voiceEffect, keepPitch,
     sharpen, highlight, shadow, fadeAmount, vignetteAmount, grainAmount,
+    hslChannel, hslAdjustments,
+    curveBlacks, curveShadows, curveMidtones, curveHighlights, curveWhites,
+    wheelLiftWarmth, wheelLiftTint, wheelGammaWarmth, wheelGammaTint, wheelGainWarmth, wheelGainTint,
     markers, trackLocked, trackHidden, trackMagnet, autoSnapping, linkAudio, previewAxis, cursorMode,
     trimStart, trimEnd,
     playbackSpeed, volume, isMuted, aspectRatio, bgStyle,
     textOverlays, stickerOverlays, audioLayers,
     autoCaptionsEnabled, captionStyle, captionItems,
     selectedFilter, filterIntensity, selectedEffect, effectIntensity,
-    overlayMedia, aiAvatar, coverImage, projectTitle
+    overlayMedia, coverImage, projectTitle
   } = editorState;
 
   const setBrightness = (v: any) => updateState("brightness", v);
@@ -484,45 +522,6 @@ export default function VideoEditor() {
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [showExportModal, setShowExportModal] = useState(false);
-  const [banglaVoices, setBanglaVoices] = useState<BanglaVoice[]>([]);
-  const [selectedVoiceId, setSelectedVoiceId] = useState("");
-  const [voiceoverScript, setVoiceoverScript] = useState("");
-  const [generatingVoiceover, setGeneratingVoiceover] = useState(false);
-  const [voiceoverError, setVoiceoverError] = useState("");
-
-  useEffect(() => {
-    fetch("/api/elevenlabs/voices")
-      .then(r => r.json())
-      .then(d => {
-        setBanglaVoices(d.voices || []);
-        if (d.voices?.[0]) setSelectedVoiceId(d.voices[0].voiceId);
-      })
-      .catch(() => {});
-  }, []);
-
-  async function generateVoiceover() {
-    if (!voiceoverScript.trim() || !selectedVoiceId) return;
-    setGeneratingVoiceover(true);
-    setVoiceoverError("");
-    try {
-      const res = await fetch("/api/elevenlabs/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: voiceoverScript.trim(), voiceId: selectedVoiceId }),
-      });
-      if (!res.ok) throw new Error("Voice generation failed");
-      const blob = await res.blob();
-      const voiceName = banglaVoices.find(v => v.voiceId === selectedVoiceId)?.name || "Voiceover";
-      const layer = await decodeAudio(blob, "AI Voiceover — " + voiceName, currentTime);
-      importedUrls.current.add(layer.url);
-      setEditorState(prev => ({ ...prev, audioLayers: [...prev.audioLayers, layer] }));
-      setSelectedAudioId(layer.id);
-    } catch {
-      setVoiceoverError("Voice generation failed. Try again.");
-    } finally {
-      setGeneratingVoiceover(false);
-    }
-  }
 
   const [exportFormat, setExportFormat] = useState("mp4");
   const [exportResolution, setExportResolution] = useState("1080p");
@@ -530,8 +529,21 @@ export default function VideoEditor() {
 
   // Active Mobile / Context Tool Panel
   const [activeTool, setActiveTool] = useState<string | null>(null);
-  const [timelineScale, setTimelineScale] = useState(90);
+  const [timelineScale, setTimelineScale] = useState(40);
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
+
+  const autoFitTimelineZoom = useCallback((totalSec: number) => {
+    if (totalSec <= 0) return;
+    const availWidth = Math.max(
+      480,
+      (typeof window !== "undefined" ? window.innerWidth : 1280) - 180
+    );
+    const idealScale = Math.max(
+      2,
+      Math.min(120, Number((availWidth / Math.max(4, totalSec * 1.12)).toFixed(1)))
+    );
+    setTimelineScale(idealScale);
+  }, []);
 
   const opacity = editorState.opacity;
   const setOpacity = (value: number) => updateState("opacity", value);
@@ -545,41 +557,6 @@ export default function VideoEditor() {
   const setTemp = (value: number) => updateState("temp", value);
   const tint = editorState.tint;
   const setTint = (value: number) => updateState("tint", value);
-
-  // Google Veo & AI Assistant state
-  const [veoPrompt, setVeoPrompt] = useState("");
-  const [veoStyle, setVeoStyle] = useState<"cinematic" | "realism" | "anime" | "cyberpunk">("cinematic");
-  const [isGeneratingVeo, setIsGeneratingVeo] = useState(false);
-  const [veoProgress, setVeoProgress] = useState(0);
-  const [veoResultUrl, setVeoResultUrl] = useState<string | null>(null);
-
-  const [aiChatMessages, setAiChatMessages] = useState<Array<{ id: string; sender: "user" | "ai"; text: string }>>([
-    {
-      id: "1",
-      sender: "ai",
-      text: "Welcome to FahiVids CapCut Pro AI Engine! Ask me to generate 4K Veo scenes, write viral scripts, or auto-caption your timeline!",
-    },
-  ]);
-  const [chatInput, setChatInput] = useState("");
-  const [isAiResponding, setIsAiResponding] = useState(false);
-
-  const [extractedText, setExtractedText] = useState("");
-  const [isExtractingText, setIsExtractingText] = useState(false);
-  const [extractMode, setExtractMode] = useState<"speech" | "ocr">("speech");
-
-  const [generatedScript, setGeneratedScript] = useState("");
-  const [isGeneratingScript, setIsGeneratingScript] = useState(false);
-  const [scriptTone, setScriptTone] = useState<"viral_hook" | "storytelling" | "educational" | "cinematic">("viral_hook");
-
-  const [capturedFrameDataUrl, setCapturedFrameDataUrl] = useState<string | null>(null);
-  const [visionAnalysisResult, setVisionAnalysisResult] = useState<{
-    outfits: string;
-    actions: string;
-    environment: string;
-    script: string;
-    bgm: string;
-  } | null>(null);
-  const [isAnalyzingVisionFrame, setIsAnalyzingVisionFrame] = useState(false);
 
   const isSwitchingSourceRef = useRef(false);
   const pendingSeekTimeRef = useRef<number | null>(null);
@@ -733,44 +710,94 @@ export default function VideoEditor() {
 
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [newTextString, setNewTextString] = useState("");
+  const [newCaptionText, setNewCaptionText] = useState("");
+  const [activeHslChannel, setActiveHslChannel] = useState<HslColorChannel>("red");
   const [presets] = useState<ExportPreset[]>([]);
 
-  // Add video files
-  const addVideoFiles = useCallback(async (files: File[]) => {
-    if (!files || files.length === 0) return;
-    const newItems: VideoClipItem[] = [];
-    for (const file of files) {
-      let dur: number;
-      try {
-        dur = await getMediaDuration(file);
-      } catch (error) {
-        alert(error instanceof Error ? error.message : "Unsupported video");
-        continue;
-      }
-      const url = URL.createObjectURL(file);
-      importedUrls.current.add(url);
-
-      newItems.push({
-        id: "clip_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7),
-        file,
-        name: file.name,
-        objectUrl: url,
-        sourceDuration: dur,
-        duration: dur,
-        proxyEnabled: true,
+  // Add a media asset from the Media Library onto the timeline at 00:00 (left edge) and auto-fit zoom
+  const handleAddAssetToTimeline = useCallback(
+    (asset: VideoClipItem) => {
+      if (trackLocked) return;
+      const clipInstance: VideoClipItem = {
+        ...asset,
+        id: "clip_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+        startOffset: 0,
+        duration: asset.sourceDuration || asset.duration,
+      };
+      setPreviewAssetId(null);
+      setVideoClips(prev => {
+        const next = [...prev, clipInstance];
+        const nextTotal = next.reduce((sum, c) => sum + (c.duration || 0), 0);
+        autoFitTimelineZoom(nextTotal);
+        return next;
       });
-    }
-    setVideoClips(prev => [...prev, ...newItems]);
-    if (newItems.length > 0) {
-      setSelectedClipId(newItems[0].id);
-    }
-    setIsPlaying(false);
-  }, [setVideoClips]);
+      setSelectedClipId(clipInstance.id);
+      setRightTab("video");
+      setCurrentTime(0);
+      setIsPlaying(false);
+    },
+    [trackLocked, setVideoClips, autoFitTimelineZoom]
+  );
+
+  // Import video files into Media Library (and onto timeline at 00:00)
+  const addVideoFiles = useCallback(
+    async (files: File[], addToTrack = true) => {
+      if (!files || files.length === 0) return;
+      const newItems: VideoClipItem[] = [];
+      for (const file of files) {
+        let meta: { duration: number; width: number; height: number };
+        try {
+          meta = await getMediaMetadata(file);
+        } catch (error) {
+          alert(error instanceof Error ? error.message : "Unsupported video");
+          continue;
+        }
+        const url = URL.createObjectURL(file);
+        importedUrls.current.add(url);
+
+        newItems.push({
+          id: "clip_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7),
+          file,
+          name: file.name,
+          objectUrl: url,
+          sourceDuration: meta.duration,
+          duration: meta.duration,
+          intrinsicWidth: meta.width,
+          intrinsicHeight: meta.height,
+          proxyEnabled: true,
+        });
+      }
+      if (newItems.length === 0) return;
+
+      setMediaAssets(prev => [...prev, ...newItems]);
+      setVideoIntrinsicSize({
+        width: newItems[0].intrinsicWidth || 1920,
+        height: newItems[0].intrinsicHeight || 1080,
+      });
+
+      if (addToTrack) {
+        setPreviewAssetId(null);
+        setVideoClips(prev => {
+          const next = [...prev, ...newItems];
+          const nextTotal = next.reduce((sum, c) => sum + (c.duration || 0), 0);
+          autoFitTimelineZoom(nextTotal);
+          return next;
+        });
+        setSelectedClipId(newItems[0].id);
+        setRightTab("video");
+        setCurrentTime(0);
+      } else {
+        setPreviewAssetId(newItems[0].id);
+      }
+      setIsPlaying(false);
+    },
+    [setVideoClips, autoFitTimelineZoom]
+  );
 
   useEffect(() => {
     const handleAddVideo = (e: any) => {
       if (e.detail?.file) {
-        addVideoFiles([e.detail.file]);
+        addVideoFiles([e.detail.file], true);
       }
     };
     window.addEventListener("add-video-file" as any, handleAddVideo);
@@ -781,7 +808,7 @@ export default function VideoEditor() {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      addVideoFiles(Array.from(e.target.files));
+      addVideoFiles(Array.from(e.target.files), true);
       e.target.value = "";
     }
   };
@@ -792,26 +819,48 @@ export default function VideoEditor() {
     if (selectedClipId === id) setSelectedClipId(null);
   };
 
-  // Synchronize HTML video element with active clip
+  // Synchronize HTML video element with active clip or previewed media card
   const activeClipId = activeClipInfo?.clip.id;
   const activeStartOffset = activeClipInfo?.clip.startOffset || 0;
+  const activeClipTimelineStart = activeClipInfo?.start || 0;
 
   useEffect(() => {
-    if (!activeClipInfo || !videoRef.current) return;
+    if (!videoRef.current) return;
+    if (previewAsset) {
+      if (videoRef.current.getAttribute("src") !== previewAsset.objectUrl) {
+        videoRef.current.src = previewAsset.objectUrl;
+        videoRef.current.load();
+      }
+      return;
+    }
+    if (!activeClipInfo) return;
+    const clip = activeClipInfo.clip;
     const relTimeInClip = Math.max(0, currentTime - activeClipInfo.start);
-    const targetUrl = activeClipInfo.clip.objectUrl;
-    const expectedMediaTime = (activeClipInfo.clip.startOffset || 0) + relTimeInClip;
+    const targetUrl = clip.objectUrl;
+    const expectedMediaTime = clip.isFreezeFrame
+      ? clip.startOffset || 0
+      : clip.reversed
+        ? Math.max(
+            clip.startOffset || 0,
+            (clip.startOffset || 0) + clip.duration - relTimeInClip
+          )
+        : (clip.startOffset || 0) + relTimeInClip;
 
-    if (videoRef.current.src !== targetUrl) {
+    if (videoRef.current.getAttribute("src") !== targetUrl) {
       isSwitchingSourceRef.current = true;
       pendingSeekTimeRef.current = expectedMediaTime;
       videoRef.current.src = targetUrl;
       videoRef.current.load();
     } else {
-      if (Math.abs(videoRef.current.currentTime - expectedMediaTime) > (isPlaying ? 0.25 : 0.0001)) {
+      if (
+        Math.abs(videoRef.current.currentTime - expectedMediaTime) >
+        (isPlaying && !clip.isFreezeFrame && !clip.reversed ? 0.25 : 0.02)
+      ) {
         videoRef.current.currentTime = expectedMediaTime;
       }
-      if (isPlaying && videoRef.current.paused && !isSwitchingSourceRef.current) {
+      if (clip.isFreezeFrame || clip.reversed) {
+        if (!videoRef.current.paused) videoRef.current.pause();
+      } else if (isPlaying && videoRef.current.paused && !isSwitchingSourceRef.current) {
         videoRef.current.play().catch(e => {
           if (e.name !== "NotAllowedError" && !e.message?.includes("interrupted")) {
             console.warn("Play warning:", e);
@@ -819,7 +868,15 @@ export default function VideoEditor() {
         });
       }
     }
-  }, [activeClipId, activeStartOffset, isPlaying]);
+  }, [
+    previewAsset,
+    activeClipId,
+    activeStartOffset,
+    activeClipTimelineStart,
+    isPlaying,
+    activeClipInfo?.clip.isFreezeFrame,
+    activeClipInfo?.clip.reversed,
+  ]);
 
   const handleVideoLoadedData = () => {
     if (videoRef.current) {
@@ -828,7 +885,12 @@ export default function VideoEditor() {
         pendingSeekTimeRef.current = null;
       }
       isSwitchingSourceRef.current = false;
-      if (isPlaying && videoRef.current.paused) {
+      if (
+        isPlaying &&
+        videoRef.current.paused &&
+        !activeClipInfo?.clip.isFreezeFrame &&
+        !activeClipInfo?.clip.reversed
+      ) {
         videoRef.current.play().catch(e => {
           if (e.name !== "NotAllowedError" && !e.message?.includes("interrupted")) {
             console.warn("Play error after load:", e);
@@ -839,10 +901,21 @@ export default function VideoEditor() {
   };
 
   const togglePlayPause = () => {
-    if (videoRef.current && videoClips.length > 0) {
+    if (!videoRef.current) return;
+    if (previewAsset) {
+      if (videoRef.current.paused) {
+        videoRef.current.play().catch(() => {});
+        setIsPlaying(true);
+      } else {
+        videoRef.current.pause();
+        setIsPlaying(false);
+      }
+      return;
+    }
+    if (videoClips.length > 0) {
       if (isPlaying) {
         videoRef.current.pause();
-      } else {
+      } else if (!activeClipInfo?.clip.isFreezeFrame && !activeClipInfo?.clip.reversed) {
         videoRef.current.play().catch(e => {
           if (!e.message?.includes("interrupted")) {
             console.error("Play error", e);
@@ -854,8 +927,14 @@ export default function VideoEditor() {
   };
 
   const handleTimeUpdate = () => {
-    if (isSwitchingSourceRef.current) return;
-    if (videoRef.current && activeClipInfo && !isExporting) {
+    if (isSwitchingSourceRef.current || previewAsset) return;
+    if (
+      videoRef.current &&
+      activeClipInfo &&
+      !isExporting &&
+      !activeClipInfo.clip.isFreezeFrame &&
+      !activeClipInfo.clip.reversed
+    ) {
       const currentMediaTime = videoRef.current.currentTime;
       const startOffset = activeClipInfo.clip.startOffset || 0;
       const relTimeInClip = Math.max(0, currentMediaTime - startOffset);
@@ -863,7 +942,7 @@ export default function VideoEditor() {
 
       setCurrentTime(newGlobalTime);
 
-      if (relTimeInClip >= activeClipInfo.duration - 0.08) {
+      if (relTimeInClip >= activeClipInfo.duration - 0.05) {
         const currentIdx = clipOffsets.findIndex(c => c.clip.id === activeClipInfo.clip.id);
         if (currentIdx < clipOffsets.length - 1) {
           const nextClipInfo = clipOffsets[currentIdx + 1];
@@ -877,53 +956,100 @@ export default function VideoEditor() {
   };
 
   useEffect(() => {
-    if (!isPlaying || isExporting) return;
-    let frame = 0,
-      last = 0;
+    if (!isPlaying || isExporting || previewAsset) return;
+    let frame = 0;
+    let last = performance.now();
     const tick = (timestamp: number) => {
-      if (timestamp - last >= 33 && (videoRef.current?.readyState || 0) >= 2) {
+      const dt = (timestamp - last) / 1000;
+      if (dt >= 0.03) {
         last = timestamp;
-        handleTimeUpdate();
+        if (activeClipInfo?.clip.isFreezeFrame || activeClipInfo?.clip.reversed) {
+          setCurrentTime(prev => {
+            const nextT = prev + dt * playbackSpeed;
+            if (nextT >= activeClipInfo.end - 0.03) {
+              const idx = clipOffsets.findIndex(c => c.clip.id === activeClipInfo.clip.id);
+              if (idx < clipOffsets.length - 1) {
+                return clipOffsets[idx + 1].start;
+              }
+              setIsPlaying(false);
+              return activeClipInfo.end;
+            }
+            if (activeClipInfo.clip.reversed && videoRef.current) {
+              const rel = Math.max(0, nextT - activeClipInfo.start);
+              const revMediaTime = Math.max(
+                activeClipInfo.clip.startOffset || 0,
+                (activeClipInfo.clip.startOffset || 0) + activeClipInfo.duration - rel
+              );
+              videoRef.current.currentTime = revMediaTime;
+            }
+            return nextT;
+          });
+        } else if ((videoRef.current?.readyState || 0) >= 2) {
+          handleTimeUpdate();
+        }
       }
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [isPlaying, isExporting, activeClipId, activeClipInfo, clipOffsets]);
+  }, [isPlaying, isExporting, previewAsset, activeClipId, activeClipInfo, clipOffsets, playbackSpeed]);
 
   const handleLoadedMetadata = () => {
-    if (videoRef.current && activeClipInfo) {
-      const realDur = videoRef.current.duration;
-      if (realDur && isFinite(realDur) && !activeClipInfo.clip.sourceDuration) {
-        setVideoClips(prev =>
-          prev.map(c => (c.id === activeClipInfo.clip.id ? { ...c, sourceDuration: realDur } : c))
-        );
+    if (videoRef.current) {
+      const vw = videoRef.current.videoWidth;
+      const vh = videoRef.current.videoHeight;
+      if (vw > 0 && vh > 0) {
+        setVideoIntrinsicSize({ width: vw, height: vh });
+      }
+      if (activeClipInfo) {
+        const realDur = videoRef.current.duration;
+        if (realDur && isFinite(realDur) && !activeClipInfo.clip.sourceDuration) {
+          setVideoClips(prev =>
+            prev.map(c =>
+              c.id === activeClipInfo.clip.id
+                ? { ...c, sourceDuration: realDur, intrinsicWidth: vw || c.intrinsicWidth, intrinsicHeight: vh || c.intrinsicHeight }
+                : c
+            )
+          );
+        }
       }
     }
   };
 
-  const seekToTime = useCallback((rawTime: number) => {
-    if (isExporting) return;
-    const time = Math.max(0, Math.min(rawTime, totalTimelineDuration));
-    setCurrentTime(time);
+  const seekToTime = useCallback(
+    (rawTime: number) => {
+      if (isExporting) return;
+      setPreviewAssetId(null);
+      const time = Math.max(0, Math.min(rawTime, totalTimelineDuration));
+      setCurrentTime(time);
 
-    if (clipOffsets.length > 0) {
-      const targetInfo =
-        clipOffsets.find(c => time >= c.start && time < c.end) || clipOffsets[clipOffsets.length - 1];
-      if (targetInfo && videoRef.current) {
-        const relTime = Math.max(0, time - targetInfo.start);
-        const mediaTime = (targetInfo.clip.startOffset || 0) + relTime;
-        if (videoRef.current.getAttribute("src") !== targetInfo.clip.objectUrl) {
-          isSwitchingSourceRef.current = true;
-          pendingSeekTimeRef.current = mediaTime;
-          videoRef.current.src = targetInfo.clip.objectUrl;
-          videoRef.current.load();
-        } else {
-          videoRef.current.currentTime = mediaTime;
+      if (clipOffsets.length > 0) {
+        const targetInfo =
+          clipOffsets.find(c => time >= c.start && time < c.end) ||
+          clipOffsets[clipOffsets.length - 1];
+        if (targetInfo && videoRef.current) {
+          const relTime = Math.max(0, time - targetInfo.start);
+          const mediaTime = targetInfo.clip.isFreezeFrame
+            ? targetInfo.clip.startOffset || 0
+            : targetInfo.clip.reversed
+              ? Math.max(
+                  targetInfo.clip.startOffset || 0,
+                  (targetInfo.clip.startOffset || 0) + targetInfo.duration - relTime
+                )
+              : (targetInfo.clip.startOffset || 0) + relTime;
+          if (videoRef.current.getAttribute("src") !== targetInfo.clip.objectUrl) {
+            isSwitchingSourceRef.current = true;
+            pendingSeekTimeRef.current = mediaTime;
+            videoRef.current.src = targetInfo.clip.objectUrl;
+            videoRef.current.load();
+          } else {
+            videoRef.current.currentTime = mediaTime;
+          }
         }
       }
-    }
-  }, [isExporting, totalTimelineDuration, clipOffsets]);
+    },
+    [isExporting, totalTimelineDuration, clipOffsets]
+  );
 
   const handleScrub = (e: React.ChangeEvent<HTMLInputElement>) => {
     seekToTime(parseFloat(e.target.value));
@@ -958,8 +1084,6 @@ export default function VideoEditor() {
       enhanceQualityEnabled: false,
       reduceNoiseEnabled: false,
       opticalFlowEnabled: false,
-      aiRemoveEnabled: false,
-      aiExpandEnabled: false,
       maskShape: "none",
       maskSize: 75,
       maskFeather: 0,
@@ -977,6 +1101,18 @@ export default function VideoEditor() {
       fadeAmount: 0,
       vignetteAmount: 0,
       grainAmount: 0,
+      hslAdjustments: DEFAULT_HSL_MAP,
+      curveBlacks: 0,
+      curveShadows: 0,
+      curveMidtones: 0,
+      curveHighlights: 0,
+      curveWhites: 0,
+      wheelLiftWarmth: 0,
+      wheelLiftTint: 0,
+      wheelGammaWarmth: 0,
+      wheelGammaTint: 0,
+      wheelGainWarmth: 0,
+      wheelGainTint: 0,
       selectedFilter: "original",
       selectedEffect: "none",
       playbackSpeed: 1,
@@ -1009,33 +1145,35 @@ export default function VideoEditor() {
     [editorState.keyframes, currentTime]
   );
 
-  // CapCut Timeline Tools: Split, Delete Left (Q), Delete Right (W), Freeze, Reverse, Extract Audio, Marker (M), Cover
+  // CapCut Timeline Tools: Split (Ctrl+B), Delete Left (Q), Delete Right (W), Freeze, Reverse, Extract Audio, Marker (M), Cover
   const handleSplitClip = () => {
     if (videoClips.length === 0 || trackLocked) return;
     const targetOffset = clipOffsets.find(c => currentTime >= c.start && currentTime < c.end) || clipOffsets[0];
     if (!targetOffset) return;
 
     const clipToSplit = targetOffset.clip;
-    const relTime = currentTime - targetOffset.start;
+    const rawRelTime = currentTime - targetOffset.start;
+    // Frame-accurate 30fps quantization
+    const relTime = Math.round(rawRelTime * 30) / 30;
     const initialStartOffset = clipToSplit.startOffset || 0;
 
-    if (relTime > 0.15 && relTime < targetOffset.duration - 0.15) {
+    if (relTime > 0.1 && relTime < targetOffset.duration - 0.1) {
       const idx = videoClips.findIndex(c => c.id === clipToSplit.id);
       if (idx !== -1) {
-        const baseName = clipToSplit.name.replace(/_part\d+$/, "");
+        const cleanClipName = clipToSplit.name.replace(/_part\d+$/, "");
         const part1: VideoClipItem = {
           ...clipToSplit,
           id: "clip_" + Date.now() + "_a",
-          name: `${baseName}_part1`,
+          name: cleanClipName,
           startOffset: initialStartOffset,
-          duration: parseFloat(relTime.toFixed(2)),
+          duration: Number(relTime.toFixed(3)),
         };
         const part2: VideoClipItem = {
           ...clipToSplit,
           id: "clip_" + Date.now() + "_b",
-          name: `${baseName}_part2`,
-          startOffset: parseFloat((initialStartOffset + relTime).toFixed(2)),
-          duration: parseFloat((targetOffset.duration - relTime).toFixed(2)),
+          name: cleanClipName,
+          startOffset: Number((initialStartOffset + relTime).toFixed(3)),
+          duration: Number((targetOffset.duration - relTime).toFixed(3)),
         };
         setVideoClips(prev => {
           const updated = [...prev];
@@ -1095,38 +1233,79 @@ export default function VideoEditor() {
     const idx = videoClips.findIndex(c => c.id === clip.id);
     if (idx === -1) return;
 
+    let capturedDataUrl: string | undefined = clip.freezeFrameUrl || clip.thumbnails?.[0];
+    if (videoRef.current && videoRef.current.videoWidth > 0) {
+      try {
+        const snapCanvas = document.createElement("canvas");
+        snapCanvas.width = videoRef.current.videoWidth;
+        snapCanvas.height = videoRef.current.videoHeight;
+        const snapCtx = snapCanvas.getContext("2d");
+        if (snapCtx) {
+          snapCtx.drawImage(videoRef.current, 0, 0, snapCanvas.width, snapCanvas.height);
+          capturedDataUrl = snapCanvas.toDataURL("image/png");
+        }
+      } catch {
+        // fallback to existing thumbnail
+      }
+    }
+
+    const cleanName = clip.name.replace(/_part\d+$/, "");
     const freezeClip: VideoClipItem = {
       ...clip,
       id: "freeze_" + Date.now(),
-      name: `${clip.name} (Freeze 2.0s)`,
+      name: `${cleanName} (Freeze)`,
       startOffset: parseFloat(freezeSourceTime.toFixed(2)),
       duration: 2.0,
+      isFreezeFrame: true,
+      freezeFrameUrl: capturedDataUrl,
+      thumbnails: capturedDataUrl ? [capturedDataUrl, capturedDataUrl, capturedDataUrl, capturedDataUrl] : clip.thumbnails,
     };
 
-    setVideoClips(prev => {
-      const updated = [...prev];
-      updated.splice(idx + 1, 0, freezeClip);
-      return updated;
-    });
+    if (relTime > 0.15 && relTime < targetOffset.duration - 0.15) {
+      const part1: VideoClipItem = {
+        ...clip,
+        id: "clip_" + Date.now() + "_pre",
+        name: cleanName,
+        startOffset: clip.startOffset || 0,
+        duration: Number(relTime.toFixed(3)),
+      };
+      const part2: VideoClipItem = {
+        ...clip,
+        id: "clip_" + Date.now() + "_post",
+        name: cleanName,
+        startOffset: Number(((clip.startOffset || 0) + relTime).toFixed(3)),
+        duration: Number((targetOffset.duration - relTime).toFixed(3)),
+      };
+      setVideoClips(prev => {
+        const updated = [...prev];
+        updated.splice(idx, 1, part1, freezeClip, part2);
+        return updated;
+      });
+    } else {
+      setVideoClips(prev => {
+        const updated = [...prev];
+        updated.splice(idx + 1, 0, freezeClip);
+        return updated;
+      });
+    }
     setSelectedClipId(freezeClip.id);
   };
 
   const handleReverseClips = () => {
     if (videoClips.length === 0 || trackLocked) return;
-    if (selectedClipId) {
+    const targetId = selectedClipId || activeClipInfo?.clip.id || videoClips[0]?.id;
+    if (targetId) {
       setVideoClips(prev =>
         prev.map(c =>
-          c.id === selectedClipId
+          c.id === targetId
             ? {
                 ...c,
                 reversed: !c.reversed,
-                name: c.reversed ? c.name.replace(" (Reversed)", "") : `${c.name} (Reversed)`,
+                name: c.reversed ? c.name.replace(" (Reversed)", "") : `${c.name.replace(" (Reversed)", "")} (Reversed)`,
               }
             : c
         )
       );
-    } else {
-      setVideoClips(prev => [...prev].reverse());
     }
   };
 
@@ -1135,26 +1314,27 @@ export default function VideoEditor() {
     try {
       const layer = await decodeAudio(
         activeClipInfo.clip.file,
-        `${activeClipInfo.clip.name} (Extracted Audio)`,
+        `${activeClipInfo.clip.name.replace(/_part\d+$/, "")} (Extracted Audio)`,
         activeClipInfo.start
       );
       importedUrls.current.add(layer.url);
       setEditorState(prev => ({
         ...prev,
+        isMuted: true,
         audioLayers: [...prev.audioLayers, layer],
       }));
       setSelectedAudioId(layer.id);
     } catch {
-      // Fallback: synthesize a clean companion audio track if video has no audio stream
       const wavFile = synthesizeCapCutSfxWav("lofi_beat");
       const layer = await decodeAudio(
         wavFile,
-        `${activeClipInfo.clip.name} (Extracted Track)`,
+        `${activeClipInfo.clip.name.replace(/_part\d+$/, "")} (Extracted Track)`,
         activeClipInfo.start
       );
       importedUrls.current.add(layer.url);
       setEditorState(prev => ({
         ...prev,
+        isMuted: true,
         audioLayers: [...prev.audioLayers, layer],
       }));
       setSelectedAudioId(layer.id);
@@ -1181,6 +1361,7 @@ export default function VideoEditor() {
       id: "m_" + Date.now(),
       time: parseFloat(currentTime.toFixed(2)),
       label: `Marker ${markers.length + 1}`,
+      color: "#00E5FF",
     };
     updateState("markers", [...markers, newMarker]);
   };
@@ -1247,235 +1428,88 @@ export default function VideoEditor() {
     }
   };
 
-  // Google Veo AI Video Generation Engine Handler
-  const handleGenerateVeoVideo = async () => {
-    if (!veoPrompt.trim()) return;
-    setIsGeneratingVeo(true);
-    setVeoProgress(10);
-
-    const interval = setInterval(() => {
-      setVeoProgress(prev => (prev < 90 ? prev + 15 : prev));
-    }, 400);
-
-    try {
-      const sampleAiVideos = [
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
-      ];
-      const videoUrl = sampleAiVideos[Math.floor(Math.random() * sampleAiVideos.length)];
-
-      setTimeout(() => {
-        clearInterval(interval);
-        setVeoProgress(100);
-        setIsGeneratingVeo(false);
-        setVeoResultUrl(videoUrl);
-
-        const aiClip: VideoClipItem = {
-          id: "veo_" + Date.now(),
-          file: new File([], `Veo_${veoPrompt.slice(0, 10)}.mp4`),
-          name: `Google Veo: ${veoPrompt.slice(0, 18)}...`,
-          objectUrl: videoUrl,
-          duration: 6.0,
-          startOffset: 0,
-          proxyEnabled: true,
-        };
-
-        setVideoClips(prev => [...prev, aiClip]);
-        logActivity({
-          type: "video_edit",
-          title: `Google Veo: ${veoPrompt.slice(0, 20)}`,
-          metadata: { prompt: veoPrompt, style: veoStyle },
-        });
-      }, 2000);
-    } catch {
-      clearInterval(interval);
-      setIsGeneratingVeo(false);
-    }
+  // Pure Manual & .SRT Subtitle Handlers (Zero AI Dependencies)
+  const handleAddManualCaptionAtPlayhead = () => {
+    const startSec = Number(currentTime.toFixed(2));
+    const endSec = Number(Math.min(Math.max(startSec + 2.5, 2.5), Math.max(duration, startSec + 2.5)).toFixed(2));
+    const newItem: CaptionItem = {
+      id: "cap_" + Date.now(),
+      start: startSec,
+      end: endSec,
+      text: newCaptionText.trim() || "New Subtitle Line",
+    };
+    setCaptionItems((prev: CaptionItem[]) => [...prev, newItem].sort((a, b) => a.start - b.start));
+    setAutoCaptionsEnabled(true);
+    setNewCaptionText("");
   };
 
-  // Gemini Intellectual Chat Assistant Handler
-  const handleSendAiChatMessage = async () => {
-    if (!chatInput.trim()) return;
-    const userMsg = { id: Date.now().toString(), sender: "user" as const, text: chatInput };
-    setAiChatMessages(prev => [...prev, userMsg]);
-    const currentInput = chatInput;
-    setChatInput("");
-    setIsAiResponding(true);
-
-    try {
-      const response = await callAi({
-        task: "script",
-        prompt: `You are FahiVids CapCut Pro Gemini Assistant. The user asks: "${currentInput}". Analyze their request in context of video editing (${videoClips.length} clips), visual pacing, or script generation. Provide a concise, expert response.`,
-        systemInstruction:
-          "You are an expert in CapCut Pro video editing, Google Veo video generation, storytelling, and viral video creation.",
-      });
-
-      const responseText =
-        typeof response === "string"
-          ? response
-          : (response as any).text || (response as any).content || JSON.stringify(response);
-      const aiMsg = { id: (Date.now() + 1).toString(), sender: "ai" as const, text: responseText };
-      setAiChatMessages(prev => [...prev, aiMsg]);
-    } catch {
-      const fallbackMsg = {
-        id: (Date.now() + 1).toString(),
-        sender: "ai" as const,
-        text: "I've analyzed your video timeline! Recommending faster cuts at 00:04 and adding neon caption text for maximum engagement.",
-      };
-      setAiChatMessages(prev => [...prev, fallbackMsg]);
-    } finally {
-      setIsAiResponding(false);
-    }
+  const parseSrtTime = (raw: string): number => {
+    const match = raw.trim().match(/(\d+):(\d+):(\d+)[,.](\d+)/);
+    if (!match) return 0;
+    const hours = parseInt(match[1], 10);
+    const mins = parseInt(match[2], 10);
+    const secs = parseInt(match[3], 10);
+    const ms = parseInt(match[4].padEnd(3, "0").slice(0, 3), 10);
+    return hours * 3600 + mins * 60 + secs + ms / 1000;
   };
 
-  // Video-to-Text Speech & OCR Extractor Handler
-  const handleExtractVideoText = async () => {
-    if (videoClips.length === 0) {
-      alert("Please upload or add a video clip first to extract text.");
-      return;
-    }
-    setIsExtractingText(true);
-    setExtractedText("");
+  const formatSrtTime = (sec: number): string => {
+    const safe = Math.max(0, sec);
+    const hours = Math.floor(safe / 3600);
+    const mins = Math.floor((safe % 3600) / 60);
+    const secs = Math.floor(safe % 60);
+    const ms = Math.round((safe % 1) * 1000);
+    return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")},${String(ms).padStart(3, "0")}`;
+  };
 
-    try {
-      if (extractMode === "speech") {
-        const response = await callAi({
-          task: "transcribe",
-          prompt: `Extract full spoken verbatim dialogue and transcripts from this video project titled "${videoFile?.name || "Video Studio Clip"}". Output formatted timestamped transcript lines.`,
-          systemInstruction: "You are an expert video speech-to-text transcriber.",
-        });
-        const textResult =
-          typeof response === "string"
-            ? response
-            : (response as any).text || (response as any).content || "No spoken speech detected in clip.";
-        setExtractedText(textResult);
-
-        const sampleCaptions: CaptionItem[] = [
-          { id: "c1", start: 0.2, end: Math.min(3.0, Math.max(1.5, duration / 2)), text: textResult.slice(0, 48) || "Welcome to FahiVids CapCut Studio!" },
-          { id: "c2", start: Math.min(3.2, Math.max(1.6, duration / 2)), end: Math.max(3.5, duration), text: textResult.slice(48, 96) || "Check out these pro editing features!" },
-        ];
-        setCaptionItems(sampleCaptions);
-        setAutoCaptionsEnabled(true);
-      } else {
-        const response = await callAi({
-          task: "script",
-          prompt: `Perform visual OCR text extraction on the video frames of "${videoFile?.name || "Video Studio Clip"}". List all visible on-screen titles, signs, and text overlays.`,
-          systemInstruction: "You are a video visual OCR text extractor.",
-        });
-        const textResult =
-          typeof response === "string"
-            ? response
-            : (response as any).text || (response as any).content || "No visual text detected on screen.";
-        setExtractedText(textResult);
+  const handleImportSrtFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    const blocks = text.replace(/\r\n/g, "\n").split(/\n\s*\n/);
+    const parsed: CaptionItem[] = [];
+    blocks.forEach((block, idx) => {
+      const lines = block.split("\n").map(l => l.trim()).filter(Boolean);
+      const timeLineIdx = lines.findIndex(l => l.includes("-->"));
+      if (timeLineIdx !== -1) {
+        const [startStr, endStr] = lines[timeLineIdx].split("-->");
+        const start = parseSrtTime(startStr);
+        const end = Math.max(start + 0.5, parseSrtTime(endStr));
+        const body = lines.slice(timeLineIdx + 1).join(" ").trim();
+        if (body) {
+          parsed.push({
+            id: `srt_${Date.now()}_${idx}`,
+            start: Number(start.toFixed(2)),
+            end: Number(end.toFixed(2)),
+            text: body,
+          });
+        }
       }
-    } catch {
-      const fallbackText =
-        "00:00 - 00:03: Welcome to FahiVids CapCut Pro Studio!\n00:03 - 00:06: Full desktop & mobile video editing engine active.";
-      setExtractedText(fallbackText);
-      setCaptionItems([
-        { id: "c1", start: 0.2, end: 3.0, text: "Welcome to FahiVids CapCut Pro Studio!" },
-        { id: "c2", start: 3.1, end: Math.max(6.0, duration), text: "Full desktop & mobile video editing engine active." },
-      ]);
+    });
+    if (parsed.length > 0) {
+      setCaptionItems(parsed);
       setAutoCaptionsEnabled(true);
-    } finally {
-      setIsExtractingText(false);
     }
+    e.target.value = "";
   };
 
-  // Video Scene-to-Script AI Generator Handler
-  const handleGenerateScriptFromVideo = async () => {
-    if (videoClips.length === 0) {
-      alert("Please upload or add a video clip first to generate a script.");
-      return;
-    }
-    setIsGeneratingScript(true);
-    setGeneratedScript("");
-
-    try {
-      const clipNames = videoClips.map(c => c.name).join(", ");
-      const totalDurationSec = totalTimelineDuration.toFixed(1);
-      const promptText = `Analyze the video clips ("${clipNames}", total duration: ${totalDurationSec} seconds). Act as an expert video director and scriptwriter. Write a complete, highly engaging video production script with Tone: "${scriptTone}".`;
-
-      const response = await callAi({
-        task: "script",
-        prompt: promptText,
-        systemInstruction: "You are an elite Google AI Video Scriptwriting & Scene Analysis Director.",
-      });
-
-      const scriptResult =
-        typeof response === "string"
-          ? response
-          : (response as any).text || (response as any).content || "Failed to generate script.";
-      setGeneratedScript(scriptResult);
-    } catch {
-      setGeneratedScript(`🎬 SCENE 1 (00:00 - 00:03) - INTRO HOOK
-🎥 Visual: Dynamic zoom-in with Teal & Orange grade.
-🎙️ Voiceover: "Want to transform your video editing in seconds? Watch this!"
-🎵 SFX: Saphir Whoosh & Bass Drop.`);
-    } finally {
-      setIsGeneratingScript(false);
-    }
+  const handleExportSrtFile = () => {
+    if (!captionItems.length) return;
+    const srtContent = captionItems
+      .map((item, idx) => `${idx + 1}\n${formatSrtTime(item.start)} --> ${formatSrtTime(item.end)}\n${item.text}`)
+      .join("\n\n");
+    const blob = new Blob([srtContent], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${projectTitle || "subtitles"}.srt`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
   };
 
-  // Gemini Vision AI Frame Scene Analyzer Handler
-  const handleAnalyzeCurrentSceneFrame = async () => {
-    if (!videoRef.current || videoClips.length === 0) {
-      alert("Please upload or add a video clip first to analyze scene frames.");
-      return;
-    }
-    setIsAnalyzingVisionFrame(true);
-    setVisionAnalysisResult(null);
-
-    try {
-      const canvas = document.createElement("canvas");
-      const v = videoRef.current;
-      canvas.width = v.videoWidth || 640;
-      canvas.height = v.videoHeight || 360;
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
-      }
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-      setCapturedFrameDataUrl(dataUrl);
-      const base64Image = dataUrl.split(",")[1];
-
-      const response = await callAi({
-        task: "vision",
-        prompt: `Analyze this video scene frame image in detail. Identify: 1) OUTFITS, 2) ACTIONS, 3) ENVIRONMENT, 4) SCRIPT, 5) BGM.`,
-        imageBase64: base64Image,
-      });
-
-      const responseText =
-        typeof response === "string" ? response : (response as any).text || (response as any).content || "";
-
-      setVisionAnalysisResult({
-        outfits: responseText.includes("OUTFITS")
-          ? responseText.split("OUTFITS")[1]?.split("\n\n")[0]?.replace(/[:\n]/g, " ").trim() ||
-            "Detected subject styling in frame."
-          : "Primary subject in crisp studio attire.",
-        actions: responseText.includes("ACTIONS")
-          ? responseText.split("ACTIONS")[1]?.split("\n\n")[0]?.replace(/[:\n]/g, " ").trim() ||
-            "Dynamic scene motion at playhead."
-          : "Active camera movement and expressive gesture.",
-        environment: "Cinematic studio lighting with balanced contrast.",
-        script: 'Voiceover: "Every frame tells a story with precision color and motion."',
-        bgm: "Saphir Ambient Beat - 120 BPM",
-      });
-    } catch {
-      setVisionAnalysisResult({
-        outfits: "Subject styled in high-contrast studio attire",
-        actions: "Dynamic motion captured at current playhead frame",
-        environment: "Cinematic lighting with depth of field",
-        script: 'Voiceover: "Precision editing brings every scene to life."',
-        bgm: "Saphir Beat (120 BPM)",
-      });
-    } finally {
-      setIsAnalyzingVisionFrame(false);
-    }
-  };
-
-  // Comprehensive Filter Calculation incorporating LUTs, Effects, Lumetri, Enhance Quality, Noise Reduction, and Retouch
+  // Comprehensive Filter Calculation incorporating LUTs, Effects, Lumetri, HSL, Curves, Color Wheel, Enhance Quality, Noise Reduction, and Retouch
   const filterStyle = useMemo(() => {
     let b = brightness;
     let c = contrast;
@@ -1574,11 +1608,32 @@ export default function VideoEditor() {
       bl += maskFeather * 0.05;
     }
 
+    // CapCut HSL 8-Channel Color Mixer contribution
+    if (hslAdjustments) {
+      const channels = Object.values(hslAdjustments);
+      const totalHue = channels.reduce((acc, ch) => acc + ch.hue, 0);
+      const totalSat = channels.reduce((acc, ch) => acc + ch.sat, 0);
+      const totalLum = channels.reduce((acc, ch) => acc + ch.lum, 0);
+      hue += totalHue * 0.35;
+      s += totalSat * 0.45;
+      b += totalLum * 0.3;
+    }
+
+    // CapCut Curves (Blacks, Shadows, Midtones, Highlights, Whites)
+    b += (curveMidtones || 0) * 0.35 + (curveHighlights || 0) * 0.2 + (curveWhites || 0) * 0.25;
+    c += ((curveWhites || 0) - (curveBlacks || 0)) * 0.35 + ((curveHighlights || 0) - (curveShadows || 0)) * 0.25;
+
+    // CapCut Color Wheels (Lift / Gamma / Gain Warmth & Tint)
+    const wheelWarmth = (wheelLiftWarmth || 0) + (wheelGammaWarmth || 0) + (wheelGainWarmth || 0);
+    const wheelTint = (wheelLiftTint || 0) + (wheelGammaTint || 0) + (wheelGainTint || 0);
+    sep += Math.max(0, wheelWarmth) * 0.35;
+    hue += wheelWarmth * 0.25 + wheelTint * 0.45;
+
     sep += Math.max(0, temp) * 4;
     hue += temp * 3 + tint * 5;
-    b = b * (exposure / 100);
-    c = c * (lumetriContrast / 200);
-    s = s * lumetriSat;
+    b = Math.max(10, b * (exposure / 100));
+    c = Math.max(10, c * (lumetriContrast / 200));
+    s = Math.max(0, s * lumetriSat);
 
     return `brightness(${b.toFixed(1)}%) contrast(${c.toFixed(1)}%) saturate(${s.toFixed(1)}%) sepia(${sep.toFixed(1)}%) blur(${bl.toFixed(2)}px) hue-rotate(${hue.toFixed(1)}deg) invert(${invert}%)`;
   }, [
@@ -1588,7 +1643,18 @@ export default function VideoEditor() {
     enhanceQualityEnabled, enhanceQualityMode, reduceNoiseEnabled, reduceNoiseMode,
     retouchSmooth, retouchBrighten, retouchSharpness, sharpen, highlight, shadow, fadeAmount,
     maskFeather, maskShape,
+    hslAdjustments,
+    curveBlacks, curveShadows, curveMidtones, curveHighlights, curveWhites,
+    wheelLiftWarmth, wheelLiftTint, wheelGammaWarmth, wheelGammaTint, wheelGainWarmth, wheelGainTint,
   ]);
+
+  const effectiveAspectRatio = useMemo(() => {
+    if (aspectRatio === "original") {
+      return videoIntrinsicSize.width / Math.max(1, videoIntrinsicSize.height);
+    }
+    const [rw, rh] = aspectRatio.split(":").map(Number);
+    return (rw || 16) / (rh || 9);
+  }, [aspectRatio, videoIntrinsicSize]);
 
   const motionAt = (time: number) =>
     transformAt(editorState.keyframes, time, {
@@ -1776,8 +1842,7 @@ export default function VideoEditor() {
     videoRef.current?.pause();
     const canvas = document.createElement("canvas");
     const shortSide = exportResolution === "1080p" ? 1080 : exportResolution === "480p" ? 480 : 720;
-    const [ratioWidth, ratioHeight] = aspectRatio.split(":").map(Number);
-    const ratio = ratioWidth / ratioHeight;
+    const ratio = effectiveAspectRatio;
     const width = Math.round((ratio >= 1 ? shortSide * ratio : shortSide) / 2) * 2;
     const height = Math.round((ratio >= 1 ? shortSide : shortSide / ratio) / 2) * 2;
     canvas.width = width;
@@ -1830,7 +1895,7 @@ export default function VideoEditor() {
 
           ctx.fillStyle = "#000";
           ctx.fillRect(0, 0, width, height);
-          const effectiveBg = aiExpandEnabled ? "blur_high" : bgStyle;
+          const effectiveBg = bgStyle;
           if (effectiveBg === "purple_glow" || effectiveBg === "cyber_gradient") {
             const gradient = ctx.createLinearGradient(0, 0, width, height);
             gradient.addColorStop(0, effectiveBg === "purple_glow" ? "#581c87" : "#083344");
@@ -1991,15 +2056,16 @@ export default function VideoEditor() {
     }
   };
 
-  // Filtered and sorted media clips for Left Media Grid
+  // Filtered and sorted media assets for Left Media Pool Grid
+  const activePoolSource = mediaAssets.length > 0 ? mediaAssets : videoClips;
   const filteredVideoClips = useMemo(() => {
-    const list = videoClips.filter(c =>
+    const list = activePoolSource.filter(c =>
       c.name.toLowerCase().includes(mediaSearch.trim().toLowerCase())
     );
     return [...list].sort((a, b) =>
       mediaSortBy === "name" ? a.name.localeCompare(b.name) : b.duration - a.duration
     );
-  }, [videoClips, mediaSearch, mediaSortBy]);
+  }, [activePoolSource, mediaSearch, mediaSortBy]);
 
   // Helper to select a tool on mobile or desktop and switch the appropriate CapCut panel tab
   const openCapCutTool = (toolId: string) => {
@@ -2024,8 +2090,8 @@ export default function VideoEditor() {
       setRightTab("animation");
     } else if (toolId === "adjust") {
       setRightTab("adjust");
-    } else if (["ai_veo", "vision_ai", "scene_script", "transcribe", "ai_stylize"].includes(toolId)) {
-      setRightTab("ai_stylize");
+    } else if (toolId === "details") {
+      setRightTab("details");
     }
   };
 
@@ -2083,9 +2149,7 @@ export default function VideoEditor() {
             onClick={() => setShowHeaderMenu(!showHeaderMenu)}
             className="flex items-center space-x-1.5 px-2 py-1 rounded hover:bg-white/10 text-xs font-bold text-slate-200 transition-colors"
           >
-            <div className="w-4 h-4 rounded bg-cyan-400 text-black flex items-center justify-center font-black text-[10px]">
-              C
-            </div>
+            <FahiVidsMarkSvg size={18} className="shrink-0" />
             <span>Menu</span>
             <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
           </button>
@@ -2168,8 +2232,9 @@ export default function VideoEditor() {
           />
         </div>
 
-        {/* Right: Admin + Share + Cyan Export Button */}
+        {/* Right: Install + Admin + Share + Cyan Export Button */}
         <div className="flex items-center space-x-2">
+          <PwaInstallButton compact />
           <button
             type="button"
             onClick={() => setShowAdminModal(true)}
@@ -2258,7 +2323,7 @@ export default function VideoEditor() {
             {/* MEDIA TAB WITH CAPCUT SUB-SIDEBAR */}
             {leftTab === "media" && (
               <>
-                {/* Left Sub-Sidebar: Import, Yours, Generate AI, Spaces, Library, Dreamina */}
+                {/* Left Sub-Sidebar: Import, Yours, Spaces, Library (Zero AI Tabs) */}
                 <div className="w-24 shrink-0 bg-[#141519] border-r border-white/5 p-1.5 flex flex-col space-y-1 text-[11px] overflow-y-auto">
                   <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                     Import
@@ -2266,10 +2331,8 @@ export default function VideoEditor() {
                   {(
                     [
                       { id: "yours", label: "Yours" },
-                      { id: "generate_ai", label: "Generate AI" },
                       { id: "spaces", label: "Spaces" },
                       { id: "library", label: "Library" },
-                      { id: "dreamina", label: "Dreamina" },
                     ] as const
                   ).map(sub => (
                     <button
@@ -2340,18 +2403,35 @@ export default function VideoEditor() {
                         />
                       </div>
 
-                      {/* Media Grid Cards matching CapCut Screenshot (1005.mp4, 1006.mp4 with Added & Proxy badges) */}
+                      {/* Media Grid Cards matching CapCut Desktop (1005.mp4, 1006.mp4 with Added & Proxy badges + Drag & '+' Add to Track) */}
                       {filteredVideoClips.length > 0 ? (
                         <div className="grid grid-cols-2 gap-2 pt-1">
                           {filteredVideoClips.map(clip => {
-                            const isSelected = selectedClipId === clip.id || activeClipId === clip.id;
+                            const isAddedToTimeline = videoClips.some(tc => tc.objectUrl === clip.objectUrl);
+                            const isSelected =
+                              previewAssetId === clip.id ||
+                              selectedClipId === clip.id ||
+                              activeClipId === clip.id;
                             return (
                               <div
                                 key={clip.id}
+                                draggable
+                                onDragStart={e => {
+                                  e.dataTransfer.setData("application/x-fahi-asset-id", clip.id);
+                                  e.dataTransfer.effectAllowed = "copy";
+                                }}
                                 onClick={() => {
-                                  setSelectedClipId(clip.id);
-                                  const off = clipOffsets.find(c => c.clip.id === clip.id);
-                                  if (off) seekToTime(off.start);
+                                  const off = clipOffsets.find(
+                                    c => c.clip.id === clip.id || c.clip.objectUrl === clip.objectUrl
+                                  );
+                                  if (off) {
+                                    setPreviewAssetId(null);
+                                    setSelectedClipId(off.clip.id);
+                                    seekToTime(off.start);
+                                  } else {
+                                    setPreviewAssetId(clip.id);
+                                    setSelectedClipId(null);
+                                  }
                                 }}
                                 className={`group relative rounded-lg overflow-hidden bg-[#121316] border cursor-pointer transition-all ${
                                   isSelected ? "border-[#00E5FF] ring-1 ring-[#00E5FF]/50" : "border-white/10 hover:border-white/25"
@@ -2365,10 +2445,12 @@ export default function VideoEditor() {
                                     preload="metadata"
                                     className="w-full h-full object-cover"
                                   />
-                                  {/* Top-Left "Added" Badge */}
-                                  <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/75 text-[9px] font-bold text-emerald-300 border border-emerald-500/30">
-                                    Added
-                                  </span>
+                                  {/* Top-Left "Added" Badge (shown when clip is on the timeline) */}
+                                  {isAddedToTimeline && (
+                                    <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/75 text-[9px] font-bold text-emerald-300 border border-emerald-500/30">
+                                      Added
+                                    </span>
+                                  )}
                                   {/* Bottom-Left "Proxy" Toggle Badge */}
                                   <button
                                     type="button"
@@ -2376,7 +2458,12 @@ export default function VideoEditor() {
                                       e.stopPropagation();
                                       setVideoClips(prev =>
                                         prev.map(c =>
-                                          c.id === clip.id ? { ...c, proxyEnabled: !c.proxyEnabled } : c
+                                          c.objectUrl === clip.objectUrl ? { ...c, proxyEnabled: !c.proxyEnabled } : c
+                                        )
+                                      );
+                                      setMediaAssets(prev =>
+                                        prev.map(a =>
+                                          a.id === clip.id ? { ...a, proxyEnabled: !a.proxyEnabled } : a
                                         )
                                       );
                                     }}
@@ -2392,18 +2479,15 @@ export default function VideoEditor() {
                                   <span className="absolute bottom-1 right-1 px-1 py-0.2 rounded bg-black/80 text-[9px] font-mono text-slate-200">
                                     {formatTime(clip.duration).slice(0, 5)}
                                   </span>
-                                  {/* Bottom-Right '+' Duplicate to Timeline Button on Hover */}
+                                  {/* Bottom-Right / Top-Right '+' Add to Track Button */}
                                   <button
                                     type="button"
-                                    title="Add clip to timeline"
+                                    title="Add to track (00:00)"
                                     onClick={e => {
                                       e.stopPropagation();
-                                      setVideoClips(prev => [
-                                        ...prev,
-                                        { ...clip, id: "clip_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6) },
-                                      ]);
+                                      handleAddAssetToTimeline(clip);
                                     }}
-                                    className="opacity-0 group-hover:opacity-100 absolute top-1 right-1 w-5 h-5 rounded-full bg-[#00E5FF] text-black flex items-center justify-center shadow transition-opacity"
+                                    className="opacity-90 group-hover:opacity-100 absolute top-1 right-1 w-5 h-5 rounded-full bg-[#00E5FF] text-black flex items-center justify-center shadow transition-opacity hover:scale-110"
                                   >
                                     <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
                                   </button>
@@ -2415,6 +2499,7 @@ export default function VideoEditor() {
                                     onClick={e => {
                                       e.stopPropagation();
                                       handleRemoveClip(clip.id);
+                                      setMediaAssets(prev => prev.filter(a => a.id !== clip.id));
                                     }}
                                     className="text-slate-500 hover:text-rose-400 ml-1"
                                     title="Remove clip"
@@ -2436,61 +2521,12 @@ export default function VideoEditor() {
                           <div className="w-10 h-10 rounded-full bg-[#00E5FF]/10 border border-[#00E5FF]/30 flex items-center justify-center mb-2">
                             <Plus className="w-5 h-5 text-[#00E5FF]" />
                           </div>
-                          <p className="text-xs font-semibold text-slate-200">+ Import Media</p>
+                          <p className="text-xs font-semibold text-slate-200">+ Import</p>
                           <p className="text-[10px] text-slate-500 mt-0.5">
                             Drop videos or click to browse MP4, WebM, MOV
                           </p>
                         </div>
                       )}
-                    </div>
-                  )}
-
-                  {(mediaSubTab === "generate_ai" || mediaSubTab === "dreamina") && (
-                    <div className="space-y-3">
-                      <div className="p-2.5 rounded-lg bg-[#121316] border border-white/10 space-y-2.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
-                            <Sparkles className="w-3.5 h-3.5" />
-                            <span>AI Video Generator (Veo / Dreamina)</span>
-                          </span>
-                          <span className="text-[9px] font-mono bg-cyan-500/15 text-cyan-300 px-1.5 py-0.5 rounded">
-                            4K AI
-                          </span>
-                        </div>
-                        <textarea
-                          rows={3}
-                          placeholder="Describe your scene (e.g., 4K drone shot of futuristic neon city)..."
-                          value={veoPrompt}
-                          onChange={e => setVeoPrompt(e.target.value)}
-                          className="w-full bg-black/50 border border-white/10 rounded p-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400"
-                        />
-                        <div className="flex items-center justify-between gap-1">
-                          <div className="flex gap-1">
-                            {(["cinematic", "realism", "anime", "cyberpunk"] as const).map(st => (
-                              <button
-                                key={st}
-                                type="button"
-                                onClick={() => setVeoStyle(st)}
-                                className={`px-1.5 py-0.5 rounded text-[9px] font-bold capitalize border ${
-                                  veoStyle === st
-                                    ? "bg-cyan-500/20 text-cyan-300 border-cyan-400"
-                                    : "bg-white/5 text-slate-400 border-white/10"
-                                }`}
-                              >
-                                {st}
-                              </button>
-                            ))}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={handleGenerateVeoVideo}
-                            disabled={isGeneratingVeo || !veoPrompt.trim()}
-                            className="px-2.5 py-1 rounded bg-[#00E5FF] text-black text-xs font-bold disabled:opacity-40"
-                          >
-                            {isGeneratingVeo ? "Generating..." : "Generate"}
-                          </button>
-                        </div>
-                      </div>
                     </div>
                   )}
 
@@ -2546,6 +2582,25 @@ export default function VideoEditor() {
                   </button>
                 </div>
 
+                {/* Live Microphone Voiceover Recorder */}
+                <div className="p-2.5 rounded-lg bg-[#121316] border border-white/10 flex items-center justify-between">
+                  <div className="flex items-center space-x-1.5 text-cyan-400 font-semibold text-xs">
+                    <Mic className="w-3.5 h-3.5" />
+                    <span>Voiceover Recorder (Mic)</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleLiveRecord("voiceover")}
+                    className={`px-2.5 py-1 rounded text-xs font-bold border transition-colors ${
+                      isRecordingMedia === "voiceover"
+                        ? "bg-rose-500/20 border-rose-500 text-rose-300 animate-pulse"
+                        : "bg-cyan-500/20 border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/30"
+                    }`}
+                  >
+                    {isRecordingMedia === "voiceover" ? "Stop Recording" : "+ Record Mic"}
+                  </button>
+                </div>
+
                 {/* Built-in Synthesized CapCut Sound Effects & Beats */}
                 <div className="space-y-1.5">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
@@ -2577,43 +2632,6 @@ export default function VideoEditor() {
                       </button>
                     </div>
                   ))}
-                </div>
-
-                {/* AI Bangla Voiceover */}
-                <div className="p-2.5 rounded-lg bg-[#121316] border border-white/10 space-y-2">
-                  <div className="flex items-center space-x-1.5 text-cyan-400 font-semibold text-xs">
-                    <Mic className="w-3.5 h-3.5" />
-                    <span>AI Voiceover Generator</span>
-                  </div>
-                  <textarea
-                    value={voiceoverScript}
-                    onChange={e => setVoiceoverScript(e.target.value)}
-                    placeholder="ভয়েসওভার স্ক্রিপ্ট লিখুন..."
-                    rows={2}
-                    className="w-full rounded bg-black/40 border border-white/10 text-slate-200 text-xs p-2 focus:outline-none focus:border-cyan-500/50 resize-none"
-                  />
-                  {banglaVoices.length > 0 && (
-                    <select
-                      value={selectedVoiceId}
-                      onChange={e => setSelectedVoiceId(e.target.value)}
-                      className="w-full rounded bg-black/40 border border-white/10 text-slate-200 text-xs p-1.5"
-                    >
-                      {banglaVoices.map(v => (
-                        <option key={v.voiceId} value={v.voiceId}>
-                          {v.name} — {v.tone}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                  <button
-                    type="button"
-                    onClick={generateVoiceover}
-                    disabled={generatingVoiceover || !voiceoverScript.trim()}
-                    className="w-full py-1.5 rounded bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 text-xs font-bold hover:bg-cyan-500/30 disabled:opacity-40"
-                  >
-                    {generatingVoiceover ? "Generating..." : "Generate AI Voiceover"}
-                  </button>
-                  {voiceoverError && <div className="text-[10px] text-rose-400">{voiceoverError}</div>}
                 </div>
 
                 <AudioTools
@@ -2996,11 +3014,11 @@ export default function VideoEditor() {
               </div>
             )}
 
-            {/* CAPTIONS TAB */}
+            {/* CAPTIONS TAB (Pure Manual & .SRT Subtitle Editor — Zero AI) */}
             {leftTab === "captions" && (
               <div className="flex-1 p-3 space-y-3 overflow-y-auto">
                 <div className="flex items-center justify-between p-2.5 rounded-lg bg-[#121316] border border-white/10">
-                  <span className="text-xs font-semibold text-slate-200">Auto Captions Overlay</span>
+                  <span className="text-xs font-semibold text-slate-200">Subtitles Overlay</span>
                   <button
                     type="button"
                     onClick={() => setAutoCaptionsEnabled(!autoCaptionsEnabled)}
@@ -3016,15 +3034,47 @@ export default function VideoEditor() {
                   </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleExtractVideoText}
-                  disabled={isExtractingText || !videoClips.length}
-                  className="w-full py-2 rounded bg-[#00E5FF] text-black text-xs font-bold disabled:opacity-40 flex items-center justify-center gap-1.5"
-                >
-                  {isExtractingText ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                  <span>{isExtractingText ? "Generating Auto Captions..." : "Generate AI Auto Captions"}</span>
-                </button>
+                {/* Add Manual Subtitle at Playhead */}
+                <div className="space-y-2 p-2.5 rounded-lg bg-[#121316] border border-white/10">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Add Subtitle Line at Playhead ({formatCapCutTimecode(currentTime)})
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Enter subtitle text..."
+                    value={newCaptionText}
+                    onChange={e => setNewCaptionText(e.target.value)}
+                    className="w-full bg-black/50 border border-white/10 rounded px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddManualCaptionAtPlayhead}
+                    className="w-full py-1.5 rounded bg-[#00E5FF] hover:bg-[#33ECFF] text-black text-xs font-bold transition-colors"
+                  >
+                    + Add Subtitle at Playhead
+                  </button>
+                </div>
+
+                {/* .SRT Import / Export Buttons */}
+                <div className="flex gap-1.5">
+                  <label className="flex-1 py-1.5 px-2 rounded bg-[#23252C] hover:bg-[#2C2F38] border border-white/10 text-slate-200 text-xs font-semibold text-center cursor-pointer transition-colors">
+                    Import .SRT
+                    <input
+                      type="file"
+                      accept=".srt,text/plain"
+                      className="hidden"
+                      onChange={handleImportSrtFile}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleExportSrtFile}
+                    disabled={!captionItems.length}
+                    className="flex-1 py-1.5 px-2 rounded bg-[#23252C] hover:bg-[#2C2F38] border border-white/10 text-slate-200 text-xs font-semibold disabled:opacity-40 transition-colors"
+                  >
+                    Export .SRT
+                  </button>
+                </div>
 
                 <div className="space-y-1.5">
                   {captionItems.map(c => (
@@ -3045,6 +3095,14 @@ export default function VideoEditor() {
                         }
                         className="flex-1 bg-transparent text-slate-200 focus:outline-none"
                       />
+                      <button
+                        type="button"
+                        onClick={() => setCaptionItems(captionItems.filter(item => item.id !== c.id))}
+                        className="text-slate-500 hover:text-rose-400"
+                        title="Delete subtitle"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -3105,7 +3163,15 @@ export default function VideoEditor() {
         <div className="fahi-editor-preview w-full h-[min(38dvh,320px)] sm:h-[44dvh] md:h-auto md:flex-1 relative flex flex-col bg-[#121316] overflow-hidden shrink-0 md:shrink select-none">
           {/* Top Player Header Bar: "Player-Timeline 01" */}
           <div className="hidden md:flex items-center justify-between px-3 h-8 border-b border-white/5 bg-[#18191D] text-[11px] text-slate-300 shrink-0">
-            <span className="font-semibold tracking-wide">Player-Timeline 01</span>
+            <div className="flex items-center space-x-2">
+              <span className="font-semibold tracking-wide">Player-Timeline 01</span>
+              {previewAsset && (
+                <span className="px-2 py-0.5 rounded bg-black/70 border border-white/15 text-[10px] text-cyan-300 font-medium flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                  <span>Previewing — {previewAsset.name}</span>
+                </span>
+              )}
+            </div>
             <div className="flex items-center space-x-2">
               <button
                 type="button"
@@ -3165,14 +3231,12 @@ export default function VideoEditor() {
                   width:
                     Math.min(
                       previewBounds.width,
-                      (previewBounds.height * Number(aspectRatio.split(":")[0])) /
-                        Number(aspectRatio.split(":")[1])
+                      previewBounds.height * effectiveAspectRatio
                     ) * (playerZoomMode === "75" ? 0.75 : playerZoomMode === "125" ? 1.15 : 1),
                   height:
                     Math.min(
                       previewBounds.height,
-                      (previewBounds.width * Number(aspectRatio.split(":")[1])) /
-                        Number(aspectRatio.split(":")[0])
+                      previewBounds.width / effectiveAspectRatio
                     ) * (playerZoomMode === "75" ? 0.75 : playerZoomMode === "125" ? 1.15 : 1),
                   background:
                     bgStyle === "purple_glow"
@@ -3182,7 +3246,7 @@ export default function VideoEditor() {
                         : "#000",
                 }}
               >
-                {(bgStyle === "blur_low" || bgStyle === "blur_high" || aiExpandEnabled) && (
+                {(bgStyle === "blur_low" || bgStyle === "blur_high") && (
                   <video
                     src={objectUrl}
                     muted
@@ -3201,9 +3265,11 @@ export default function VideoEditor() {
                   className="relative w-full h-full object-contain max-h-full"
                   style={{
                     filter: filterStyle,
-                    opacity: editorState.chroma.enabled
-                      ? 0
-                      : (previewMotion.opacity / 100) * animOffset.opacity,
+                    opacity:
+                      editorState.chroma.enabled ||
+                      Boolean(activeClipInfo?.clip.isFreezeFrame && activeClipInfo.clip.freezeFrameUrl)
+                        ? 0
+                        : (previewMotion.opacity / 100) * animOffset.opacity,
                     transform: cropTransformStyle,
                     clipPath: maskClipPath,
                     mixBlendMode: blendEnabled ? (blendMode as any) : "normal",
@@ -3218,6 +3284,21 @@ export default function VideoEditor() {
                     else setIsPlaying(false);
                   }}
                 />
+
+                {/* Freeze Frame Still Snapshot Overlay */}
+                {activeClipInfo?.clip.isFreezeFrame && activeClipInfo.clip.freezeFrameUrl && (
+                  <img
+                    src={activeClipInfo.clip.freezeFrameUrl}
+                    alt={activeClipInfo.clip.name}
+                    className="absolute inset-0 w-full h-full object-contain pointer-events-none"
+                    style={{
+                      filter: filterStyle,
+                      opacity: (previewMotion.opacity / 100) * animOffset.opacity,
+                      transform: cropTransformStyle,
+                      clipPath: maskClipPath,
+                    }}
+                  />
+                )}
 
                 {editorState.chroma.enabled && (
                   <ChromaPreview
@@ -3242,13 +3323,6 @@ export default function VideoEditor() {
                       boxShadow: `inset 0 0 ${Math.max(retouchVignette, vignetteAmount) * 1.2}px rgba(0,0,0,0.85)`,
                     }}
                   />
-                )}
-
-                {/* AI Remove Spot Mask Indicator */}
-                {aiRemoveEnabled && (
-                  <div className="absolute w-24 h-24 rounded-full backdrop-blur-md bg-white/5 border border-cyan-400/40 pointer-events-none flex items-center justify-center text-[9px] text-cyan-200 font-mono">
-                    AI Inpaint Active
-                  </div>
                 )}
 
                 {/* Safe Area Grid Overlay */}
@@ -3396,12 +3470,6 @@ export default function VideoEditor() {
                     style={{ opacity: 1 - fadeForTime(currentTime) }}
                   />
                 )}
-
-                {aiAvatar && (
-                  <div className="absolute bottom-10 right-4 w-14 h-14 rounded-full border-2 border-cyan-400 bg-slate-900/80 overflow-hidden shadow-xl flex items-center justify-center">
-                    <UserCircle className="w-8 h-8 text-cyan-300" />
-                  </div>
-                )}
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center space-y-3 p-6 border border-white/10 rounded-2xl max-w-sm w-full bg-[#18191D]">
@@ -3478,6 +3546,7 @@ export default function VideoEditor() {
                 onChange={e => setAspectRatio(e.target.value as any)}
                 className="bg-[#23252C] border border-white/10 rounded px-1.5 py-0.5 text-[10px] font-semibold text-slate-200 focus:outline-none"
               >
+                <option value="original">Original</option>
                 <option value="16:9">16:9</option>
                 <option value="9:16">9:16</option>
                 <option value="1:1">1:1</option>
@@ -3514,7 +3583,7 @@ export default function VideoEditor() {
           </div>
         </div>
 
-        {/* ---------- 3. TOP-RIGHT PANEL: CAPCUT INSPECTOR (Video | Audio | Speed | Animation | Adjust | AI stylize) ---------- */}
+        {/* ---------- 3. TOP-RIGHT PANEL: CAPCUT INSPECTOR (Video | Audio | Speed | Animation | Adjust | Details) ---------- */}
         <div
           data-open={isMobileRightDrawerOpen}
           className={`fahi-tool-panel ${
@@ -3530,7 +3599,7 @@ export default function VideoEditor() {
                 { id: "speed", label: "Speed" },
                 { id: "animation", label: "Animation" },
                 { id: "adjust", label: "Adjust" },
-                { id: "ai_stylize", label: "AI stylize" },
+                { id: "details", label: "Details" },
               ] as const
             ).map(tab => {
               const active = rightTab === tab.id;
@@ -3981,7 +4050,7 @@ export default function VideoEditor() {
                       </div>
                     </div>
 
-                    {/* CapCut Pro Video Basic Checkboxes: Stabilize, Enhance quality, Reduce image noise, Optical flow, AI remove, AI expand */}
+                    {/* CapCut Pro Video Basic Checkboxes: Stabilize, Enhance quality, Reduce image noise, Optical flow */}
                     <div className="p-2.5 rounded-lg bg-[#121316] border border-white/10 space-y-2.5">
                       {/* Stabilize */}
                       <div className="flex items-center justify-between">
@@ -4071,34 +4140,6 @@ export default function VideoEditor() {
                         >
                           Apply to all
                         </button>
-                      </div>
-
-                      {/* AI remove */}
-                      <div className="flex items-center justify-between">
-                        <label className="flex items-center space-x-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={aiRemoveEnabled}
-                            onChange={e => updateState("aiRemoveEnabled", e.target.checked)}
-                            className="accent-[#00E5FF]"
-                          />
-                          <span className="text-slate-200 font-medium text-[11px]">AI remove</span>
-                        </label>
-                        <span className="text-[9px] text-cyan-400 font-mono">Inpaint</span>
-                      </div>
-
-                      {/* AI expand */}
-                      <div className="flex items-center justify-between">
-                        <label className="flex items-center space-x-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={aiExpandEnabled}
-                            onChange={e => updateState("aiExpandEnabled", e.target.checked)}
-                            className="accent-[#00E5FF]"
-                          />
-                          <span className="text-slate-200 font-medium text-[11px]">AI expand</span>
-                        </label>
-                        <span className="text-[9px] text-cyan-400 font-mono">Outpaint</span>
                       </div>
                     </div>
                   </div>
@@ -4632,7 +4673,7 @@ export default function VideoEditor() {
                       { id: "basic", label: "Basic" },
                       { id: "hsl", label: "HSL" },
                       { id: "curves", label: "Curves" },
-                      { id: "wheel", label: "Wheel" },
+                      { id: "wheel", label: "Color wheel" },
                     ] as const
                   ).map(st => (
                     <button
@@ -4648,169 +4689,344 @@ export default function VideoEditor() {
                   ))}
                 </div>
 
-                <div className="p-2.5 rounded-lg bg-[#121316] border border-white/10 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-200">Color & Tone Grading</span>
-                    <button
-                      type="button"
-                      onClick={resetAdjustments}
-                      className="text-[10px] text-cyan-400 hover:underline"
-                    >
-                      Reset All
-                    </button>
-                  </div>
-
-                  {[
-                    { label: "Brightness", value: brightness, set: setBrightness, min: 0, max: 200 },
-                    { label: "Contrast", value: contrast, set: setContrast, min: 0, max: 200 },
-                    { label: "Saturation", value: saturation, set: setSaturation, min: 0, max: 200 },
-                    { label: "Exposure", value: exposure, set: setExposure, min: 0, max: 200 },
-                    { label: "Sharpen", value: sharpen, set: (v: number) => updateState("sharpen", v), min: 0, max: 100 },
-                    { label: "Highlight", value: highlight, set: (v: number) => updateState("highlight", v), min: -50, max: 50 },
-                    { label: "Shadow", value: shadow, set: (v: number) => updateState("shadow", v), min: -50, max: 50 },
-                    { label: "Temp", value: temp, set: setTemp, min: -5, max: 5, step: 0.5 },
-                    { label: "Tint", value: tint, set: setTint, min: -5, max: 5, step: 0.5 },
-                    { label: "Fade", value: fadeAmount, set: (v: number) => updateState("fadeAmount", v), min: 0, max: 100 },
-                    { label: "Vignette", value: vignetteAmount, set: (v: number) => updateState("vignetteAmount", v), min: 0, max: 100 },
-                    { label: "Sepia", value: sepia, set: setSepia, min: 0, max: 100 },
-                    { label: "Blur", value: blur, set: setBlur, min: 0, max: 15 },
-                  ].map(adj => (
-                    <div key={adj.label} className="space-y-1">
-                      <div className="flex justify-between text-[11px]">
-                        <span className="text-slate-400">{adj.label}</span>
-                        <span className="font-mono text-cyan-400">{adj.value}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={adj.min}
-                        max={adj.max}
-                        step={adj.step || 1}
-                        value={adj.value}
-                        onChange={e => adj.set(Number(e.target.value))}
-                        className="w-full capcut-slider"
-                      />
+                {/* ADJUST -> BASIC */}
+                {adjustSubTab === "basic" && (
+                  <div className="p-2.5 rounded-lg bg-[#121316] border border-white/10 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-200">Color & Tone Grading</span>
+                      <button
+                        type="button"
+                        onClick={resetAdjustments}
+                        className="text-[10px] text-cyan-400 hover:underline"
+                      >
+                        Reset All
+                      </button>
                     </div>
-                  ))}
-                </div>
+
+                    {[
+                      { label: "Brightness", value: brightness, set: setBrightness, min: 0, max: 200 },
+                      { label: "Contrast", value: contrast, set: setContrast, min: 0, max: 200 },
+                      { label: "Saturation", value: saturation, set: setSaturation, min: 0, max: 200 },
+                      { label: "Exposure", value: exposure, set: setExposure, min: 0, max: 200 },
+                      { label: "Sharpen", value: sharpen, set: (v: number) => updateState("sharpen", v), min: 0, max: 100 },
+                      { label: "Highlight", value: highlight, set: (v: number) => updateState("highlight", v), min: -50, max: 50 },
+                      { label: "Shadow", value: shadow, set: (v: number) => updateState("shadow", v), min: -50, max: 50 },
+                      { label: "Temp", value: temp, set: setTemp, min: -5, max: 5, step: 0.5 },
+                      { label: "Tint", value: tint, set: setTint, min: -5, max: 5, step: 0.5 },
+                      { label: "Fade", value: fadeAmount, set: (v: number) => updateState("fadeAmount", v), min: 0, max: 100 },
+                      { label: "Vignette", value: vignetteAmount, set: (v: number) => updateState("vignetteAmount", v), min: 0, max: 100 },
+                      { label: "Sepia", value: sepia, set: setSepia, min: 0, max: 100 },
+                      { label: "Blur", value: blur, set: setBlur, min: 0, max: 15 },
+                    ].map(adj => (
+                      <div key={adj.label} className="space-y-1">
+                        <div className="flex justify-between text-[11px]">
+                          <span className="text-slate-400">{adj.label}</span>
+                          <span className="font-mono text-cyan-400">{adj.value}</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={adj.min}
+                          max={adj.max}
+                          step={adj.step || 1}
+                          value={adj.value}
+                          onChange={e => adj.set(Number(e.target.value))}
+                          className="w-full capcut-slider"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* ADJUST -> HSL (8 Color Channels: Red, Orange, Yellow, Green, Cyan, Blue, Purple, Magenta) */}
+                {adjustSubTab === "hsl" && (
+                  <div className="p-2.5 rounded-lg bg-[#121316] border border-white/10 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-200">HSL 8-Channel Mixer</span>
+                      <button
+                        type="button"
+                        onClick={() => updateState("hslAdjustments", DEFAULT_HSL_MAP)}
+                        className="text-[10px] text-cyan-400 hover:underline"
+                      >
+                        Reset
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-1">
+                      {(
+                        [
+                          { id: "red", color: "#ef4444" },
+                          { id: "orange", color: "#f97316" },
+                          { id: "yellow", color: "#eab308" },
+                          { id: "green", color: "#22c55e" },
+                          { id: "cyan", color: "#06b6d4" },
+                          { id: "blue", color: "#3b82f6" },
+                          { id: "purple", color: "#a855f7" },
+                          { id: "magenta", color: "#ec4899" },
+                        ] as const
+                      ).map(ch => (
+                        <button
+                          key={ch.id}
+                          type="button"
+                          title={ch.id}
+                          onClick={() => setActiveHslChannel(ch.id)}
+                          className={`w-6 h-6 rounded-full transition-transform ${
+                            activeHslChannel === ch.id
+                              ? "ring-2 ring-white scale-110"
+                              : "opacity-75 hover:opacity-100"
+                          }`}
+                          style={{ backgroundColor: ch.color }}
+                        />
+                      ))}
+                    </div>
+
+                    {(["hue", "sat", "lum"] as const).map(prop => {
+                      const currentCh = (hslAdjustments || DEFAULT_HSL_MAP)[activeHslChannel] || {
+                        hue: 0,
+                        sat: 0,
+                        lum: 0,
+                      };
+                      const label =
+                        prop === "hue" ? "Hue" : prop === "sat" ? "Saturation" : "Luminance";
+                      return (
+                        <div key={prop} className="space-y-1">
+                          <div className="flex justify-between text-[11px]">
+                            <span className="text-slate-400 capitalize">
+                              {activeHslChannel} {label}
+                            </span>
+                            <span className="font-mono text-cyan-400">{currentCh[prop]}</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="-100"
+                            max="100"
+                            value={currentCh[prop]}
+                            onChange={e => {
+                              const val = Number(e.target.value);
+                              updateState("hslAdjustments", {
+                                ...(hslAdjustments || DEFAULT_HSL_MAP),
+                                [activeHslChannel]: {
+                                  ...currentCh,
+                                  [prop]: val,
+                                },
+                              });
+                            }}
+                            className="w-full capcut-slider"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* ADJUST -> CURVES (Luma & RGB Tone Curve) */}
+                {adjustSubTab === "curves" && (
+                  <div className="p-2.5 rounded-lg bg-[#121316] border border-white/10 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-200">Parametric Tone Curve</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          updateState("curveBlacks", 0);
+                          updateState("curveShadows", 0);
+                          updateState("curveMidtones", 0);
+                          updateState("curveHighlights", 0);
+                          updateState("curveWhites", 0);
+                        }}
+                        className="text-[10px] text-cyan-400 hover:underline"
+                      >
+                        Reset
+                      </button>
+                    </div>
+
+                    {/* Interactive SVG Curve Preview */}
+                    <div className="w-full h-28 rounded bg-[#0E0F12] border border-white/10 relative overflow-hidden p-2">
+                      <svg viewBox="0 0 100 100" className="w-full h-full overflow-visible">
+                        <line x1="0" y1="100" x2="100" y2="0" stroke="rgba(255,255,255,0.12)" strokeDasharray="2 2" />
+                        <polyline
+                          fill="none"
+                          stroke="#00E5FF"
+                          strokeWidth="2"
+                          points={`0,${Math.max(0, Math.min(100, 100 - (curveBlacks || 0) * 0.5))} 25,${Math.max(0, Math.min(100, 75 - (curveShadows || 0) * 0.5))} 50,${Math.max(0, Math.min(100, 50 - (curveMidtones || 0) * 0.5))} 75,${Math.max(0, Math.min(100, 25 - (curveHighlights || 0) * 0.5))} 100,${Math.max(0, Math.min(100, 0 - (curveWhites || 0) * 0.5))}`}
+                        />
+                      </svg>
+                    </div>
+
+                    {[
+                      { label: "Blacks", key: "curveBlacks" as const, val: curveBlacks || 0 },
+                      { label: "Shadows", key: "curveShadows" as const, val: curveShadows || 0 },
+                      { label: "Midtones", key: "curveMidtones" as const, val: curveMidtones || 0 },
+                      { label: "Highlights", key: "curveHighlights" as const, val: curveHighlights || 0 },
+                      { label: "Whites", key: "curveWhites" as const, val: curveWhites || 0 },
+                    ].map(cv => (
+                      <div key={cv.key} className="space-y-1">
+                        <div className="flex justify-between text-[11px]">
+                          <span className="text-slate-400">{cv.label}</span>
+                          <span className="font-mono text-cyan-400">{cv.val}</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="-50"
+                          max="50"
+                          value={cv.val}
+                          onChange={e => updateState(cv.key, Number(e.target.value))}
+                          className="w-full capcut-slider"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* ADJUST -> COLOR WHEEL (Shadows / Lift, Midtones / Gamma, Highlights / Gain) */}
+                {adjustSubTab === "wheel" && (
+                  <div className="p-2.5 rounded-lg bg-[#121316] border border-white/10 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-200">Color Wheels (Lift / Gamma / Gain)</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          updateState("wheelLiftWarmth", 0);
+                          updateState("wheelLiftTint", 0);
+                          updateState("wheelGammaWarmth", 0);
+                          updateState("wheelGammaTint", 0);
+                          updateState("wheelGainWarmth", 0);
+                          updateState("wheelGainTint", 0);
+                        }}
+                        className="text-[10px] text-cyan-400 hover:underline"
+                      >
+                        Reset
+                      </button>
+                    </div>
+
+                    {[
+                      {
+                        title: "Shadows (Lift)",
+                        wKey: "wheelLiftWarmth" as const,
+                        tKey: "wheelLiftTint" as const,
+                        wVal: wheelLiftWarmth || 0,
+                        tVal: wheelLiftTint || 0,
+                      },
+                      {
+                        title: "Midtones (Gamma)",
+                        wKey: "wheelGammaWarmth" as const,
+                        tKey: "wheelGammaTint" as const,
+                        wVal: wheelGammaWarmth || 0,
+                        tVal: wheelGammaTint || 0,
+                      },
+                      {
+                        title: "Highlights (Gain)",
+                        wKey: "wheelGainWarmth" as const,
+                        tKey: "wheelGainTint" as const,
+                        wVal: wheelGainWarmth || 0,
+                        tVal: wheelGainTint || 0,
+                      },
+                    ].map(wh => (
+                      <div key={wh.title} className="p-2 rounded bg-[#18191D] border border-white/5 space-y-1.5">
+                        <span className="text-[11px] font-semibold text-slate-300 block">{wh.title}</span>
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[10px]">
+                            <span className="text-slate-400">Warmth</span>
+                            <span className="font-mono text-cyan-400">{wh.wVal}</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="-50"
+                            max="50"
+                            value={wh.wVal}
+                            onChange={e => updateState(wh.wKey, Number(e.target.value))}
+                            className="w-full capcut-slider"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[10px]">
+                            <span className="text-slate-400">Tint</span>
+                            <span className="font-mono text-cyan-400">{wh.tVal}</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="-50"
+                            max="50"
+                            value={wh.tVal}
+                            onChange={e => updateState(wh.tKey, Number(e.target.value))}
+                            className="w-full capcut-slider"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
-            {/* ==================== TAB 6: AI STYLIZE (Style Transfer + Vision AI + Video2Script + Chat) ==================== */}
-            {rightTab === "ai_stylize" && (
+            {/* ==================== TAB 6: DETAILS (Exact CapCut Desktop Project Details Card) ==================== */}
+            {rightTab === "details" && (
               <div className="space-y-3">
-                {/* One-Click AI Style Presets */}
-                <div className="p-2.5 rounded-lg bg-[#121316] border border-white/10 space-y-2">
-                  <span className="font-bold text-slate-200 block">AI Style Transfer</span>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {[
-                      { id: "cyberpunk", name: "Cyberpunk Neon" },
-                      { id: "teal_orange", name: "Cinema Blockbuster" },
-                      { id: "vintage_1970", name: "1970s Retro Film" },
-                      { id: "noir", name: "Dark Graphic Noir" },
-                    ].map(st => (
-                      <button
-                        key={st.id}
-                        type="button"
-                        onClick={() => setSelectedFilter(st.id)}
-                        className={`py-2 px-2 rounded border text-[10px] font-semibold ${
-                          selectedFilter === st.id
-                            ? "bg-cyan-500/20 border-[#00E5FF] text-[#00E5FF]"
-                            : "bg-[#1C1E24] border-white/10 text-slate-300"
-                        }`}
-                      >
-                        {st.name}
-                      </button>
-                    ))}
+                <div className="p-3 rounded-lg bg-[#121316] border border-white/10 space-y-3">
+                  <div className="pb-2 border-b border-white/10">
+                    <span className="font-bold text-slate-200 text-xs">Details</span>
                   </div>
-                </div>
 
-                {/* Gemini Vision Scene Analyzer */}
-                <div className="p-2.5 rounded-lg bg-[#121316] border border-white/10 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-cyan-300 flex items-center gap-1.5">
-                      <Eye className="w-3.5 h-3.5" />
-                      <span>Gemini Vision Frame Reader</span>
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleAnalyzeCurrentSceneFrame}
-                    disabled={isAnalyzingVisionFrame || !videoClips.length}
-                    className="w-full py-1.5 rounded bg-[#00E5FF] text-black font-bold text-xs disabled:opacity-40"
-                  >
-                    {isAnalyzingVisionFrame ? "Analyzing Scene..." : "Analyze Current Frame"}
-                  </button>
-                  {visionAnalysisResult && (
-                    <div className="p-2 rounded bg-black/50 border border-white/10 space-y-1 text-[11px] text-slate-300">
-                      <div>
-                        <strong className="text-cyan-400">Outfits:</strong> {visionAnalysisResult.outfits}
-                      </div>
-                      <div>
-                        <strong className="text-cyan-400">Actions:</strong> {visionAnalysisResult.actions}
-                      </div>
-                      <div>
-                        <strong className="text-cyan-400">Script:</strong> {visionAnalysisResult.script}
-                      </div>
+                  <div className="space-y-2.5 text-[11px]">
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-slate-400 shrink-0">Name</span>
+                      <span className="text-slate-200 font-medium text-right break-all">
+                        {projectTitle || "1022"}
+                      </span>
                     </div>
-                  )}
-                </div>
 
-                {/* Scene to Script Generator */}
-                <div className="p-2.5 rounded-lg bg-[#121316] border border-white/10 space-y-2">
-                  <span className="font-bold text-emerald-300 flex items-center gap-1.5">
-                    <FileVideo className="w-3.5 h-3.5" />
-                    <span>AI Video-to-Script Director</span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleGenerateScriptFromVideo}
-                    disabled={isGeneratingScript || !videoClips.length}
-                    className="w-full py-1.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold text-xs disabled:opacity-40"
-                  >
-                    {isGeneratingScript ? "Writing Script..." : "Generate Scene Script"}
-                  </button>
-                  {generatedScript && (
-                    <div className="p-2 rounded bg-black/50 border border-white/10 text-[10px] text-slate-300 max-h-36 overflow-y-auto whitespace-pre-wrap">
-                      {generatedScript}
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-slate-400 shrink-0">Media</span>
+                      <span className="text-slate-300 text-right truncate">
+                        {activeClipInfo?.clip.name || previewAsset?.name || "Workspace Project"}
+                      </span>
                     </div>
-                  )}
-                </div>
 
-                {/* Gemini Intellectual Assistant Chat */}
-                <div className="p-2.5 rounded-lg bg-[#121316] border border-white/10 space-y-2">
-                  <span className="font-bold text-slate-200 flex items-center gap-1.5">
-                    <Bot className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>Gemini Editing Assistant</span>
-                  </span>
-                  <div className="h-28 overflow-y-auto space-y-1.5 p-2 rounded bg-black/40 border border-white/5">
-                    {aiChatMessages.map(m => (
-                      <div
-                        key={m.id}
-                        className={`text-[10px] p-1.5 rounded ${
-                          m.sender === "user"
-                            ? "bg-cyan-500/20 text-cyan-200 ml-4"
-                            : "bg-white/5 text-slate-300 mr-4"
-                        }`}
-                      >
-                        {m.text}
-                      </div>
-                    ))}
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-slate-400">Aspect ratio</span>
+                      <span className="text-slate-200 font-medium capitalize">
+                        {aspectRatio === "original" ? "Original" : aspectRatio}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-slate-400">Resolution</span>
+                      <span className="text-slate-200 font-medium">
+                        Adapted ({exportResolution})
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-slate-400">Frame rate</span>
+                      <span className="text-slate-200 font-mono">30.00fps</span>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-slate-400">Imported media</span>
+                      <span className="text-slate-200">Keep in original location</span>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-slate-400">Color space</span>
+                      <span className="text-slate-200">Rec. 709 SDR</span>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-slate-400">Arrange layers</span>
+                      <span className="text-slate-200">Turned off</span>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-slate-400">Proxy</span>
+                      <span className="text-cyan-400 font-medium">Turned on</span>
+                    </div>
                   </div>
-                  <div className="flex gap-1">
-                    <input
-                      type="text"
-                      placeholder="Ask AI assistant..."
-                      value={chatInput}
-                      onChange={e => setChatInput(e.target.value)}
-                      onKeyDown={e => e.key === "Enter" && handleSendAiChatMessage()}
-                      className="flex-1 bg-black/50 border border-white/10 rounded px-2 py-1 text-[11px] text-white"
-                    />
+
+                  <div className="pt-2 border-t border-white/10 flex justify-end">
                     <button
                       type="button"
-                      onClick={handleSendAiChatMessage}
-                      className="px-2 py-1 rounded bg-[#00E5FF] text-black"
+                      onClick={() => setShowExportModal(true)}
+                      className="px-3 py-1 rounded bg-[#252830] hover:bg-[#2F333D] text-slate-200 text-[11px] font-semibold transition-colors"
                     >
-                      <Send className="w-3 h-3" />
+                      Modify
                     </button>
                   </div>
                 </div>
@@ -5060,7 +5276,7 @@ export default function VideoEditor() {
             <div className="hidden sm:flex items-center space-x-1 pl-1">
               <button
                 type="button"
-                onClick={() => setTimelineScale(s => Math.max(30, Math.round(s / 1.3)))}
+                onClick={() => setTimelineScale(s => Math.max(2, Math.round(s / 1.3)))}
                 className="p-1 text-slate-400 hover:text-white"
                 title="Zoom Out Timeline"
               >
@@ -5069,15 +5285,15 @@ export default function VideoEditor() {
               <input
                 aria-label="Timeline zoom slider"
                 type="range"
-                min="30"
-                max="600"
+                min="2"
+                max="220"
                 value={timelineScale}
                 onChange={e => setTimelineScale(Number(e.target.value))}
                 className="w-20 capcut-slider"
               />
               <button
                 type="button"
-                onClick={() => setTimelineScale(s => Math.min(600, Math.round(s * 1.3)))}
+                onClick={() => setTimelineScale(s => Math.min(220, Math.round(s * 1.3)))}
                 className="p-1 text-slate-400 hover:text-white"
                 title="Zoom In Timeline"
               >
@@ -5097,15 +5313,20 @@ export default function VideoEditor() {
           selected={selectedAudioId || editingTextId || selectedClipId}
           volume={volume}
           muted={isMuted}
-          seek={t => seekToTime(t)}
+          seek={t => {
+            setPreviewAssetId(null);
+            seekToTime(t);
+          }}
           pause={() => setIsPlaying(false)}
           select={(id, kind) => {
+            setPreviewAssetId(null);
             setSelectedClipId(kind === "video" ? id : null);
             setSelectedAudioId(kind === "audio" ? id : null);
             setEditingTextId(kind === "text" ? id : null);
             if (kind === "video") setRightTab("video");
-            if (kind === "audio") setRightTab("audio");
-            if (kind === "text") setLeftTab("text");
+            else if (kind === "audio") setRightTab("audio");
+            else if (kind === "text") setLeftTab("text");
+            else setRightTab("details");
           }}
           change={(clips, audio, titles, muted) =>
             setEditorState(prev => ({
@@ -5149,6 +5370,10 @@ export default function VideoEditor() {
           coverImage={coverImage}
           externalScale={timelineScale}
           onScaleChange={setTimelineScale}
+          onDropAssetId={assetId => {
+            const found = activePoolSource.find(a => a.id === assetId);
+            if (found) handleAddAssetToTimeline(found);
+          }}
         />
       </div>
 
@@ -5289,7 +5514,7 @@ export default function VideoEditor() {
             { icon: Sun, label: "Retouch", id: "retouch" },
             { icon: SlidersHorizontal, label: "Adjust", id: "adjust" },
             { icon: Crop, label: "Crop", id: "crop" },
-            { icon: Wand2, label: "AI Stylize", id: "ai_stylize" },
+            { icon: Sliders, label: "Details", id: "details" },
           ].map(t => (
             <button
               key={t.id}

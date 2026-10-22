@@ -19,6 +19,7 @@ import {
   Mic
 } from 'lucide-react';
 import { getActivities, clearActivities, Activity } from '../lib/activity';
+import { FahiVidsMarkSvg } from './FahiVidsLogo';
 
 interface HomeProps {
   setActiveTab: (tab: string) => void;
@@ -163,23 +164,26 @@ export default function Home({ setActiveTab }: HomeProps) {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="inline-flex items-center gap-2 px-3 py-1 mb-8 rounded-full border border-white/10 bg-white/5 backdrop-blur-sm text-sm font-medium text-slate-300"
+            className="inline-flex items-center gap-2.5 px-3.5 py-1.5 mb-6 rounded-full border border-cyan-500/30 bg-cyan-500/10 backdrop-blur-sm text-sm font-medium text-cyan-200 shadow-[0_0_24px_rgba(0,212,255,0.2)]"
           >
-            <Zap className="w-4 h-4 text-violet-400" />
-            <span>Introducing FlowLab Dark Design</span>
+            <img src="/app-icon.png" alt="Fahi-vids Icon" className="w-5 h-5 rounded-md object-cover" />
+            <span>FahiVids 2.5 · Professional Video Studio</span>
           </motion.div>
 
-          <motion.h1 
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="text-5xl md:text-7xl font-extrabold tracking-tight mb-4"
+            className="flex items-center justify-center gap-4 mb-4"
           >
-            <span className="bg-gradient-to-r from-violet-400 to-blue-400 bg-clip-text text-transparent">
-              Fahi
-            </span>
-            <span className="text-white">Vids</span>
-          </motion.h1>
+            <FahiVidsMarkSvg size={64} className="drop-shadow-[0_0_24px_rgba(0,229,255,0.45)] hidden sm:block" />
+            <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight">
+              <span className="text-white">Fahi</span>
+              <span className="bg-gradient-to-r from-[#00E5FF] via-[#0099FF] to-[#0055FF] bg-clip-text text-transparent">
+                Vids
+              </span>
+            </h1>
+          </motion.div>
 
           <motion.h2
             initial={{ opacity: 0, y: 20 }}

@@ -89,8 +89,10 @@ for (const sfxId of ["whoosh", "riser", "bass_drop", "ding", "lofi_beat"]) {
   assert.equal(file.type, "audio/wav");
 }
 
-// 6. Verify VideoEditor.tsx & CSS contain all CapCut Desktop + Mobile Responsive Controls
+// 6. Verify VideoEditor.tsx & CSS contain pure CapCut Desktop + Mobile Responsive Controls (Zero AI)
 const editorSrc = fs.readFileSync(path.join(root, "components/VideoEditor.tsx"), "utf8");
+const cutTimelineSrc = fs.readFileSync(path.join(root, "components/CutTimeline.tsx"), "utf8");
+const studioTimelineCss = fs.readFileSync(path.join(root, "components/studio-timeline.css"), "utf8");
 const cssSrc = fs.readFileSync(path.join(root, "components/video-editor.css"), "utf8");
 
 for (const token of [
@@ -101,11 +103,15 @@ for (const token of [
   "Enhance quality",
   "Reduce image noise",
   "Optical flow",
-  "AI remove",
-  "AI expand",
   "Remove BG",
   "Retouch",
-  "AI stylize",
+  "Details",
+  "HSL 8-Channel Mixer",
+  "Parametric Tone Curve",
+  "Color Wheels (Lift / Gamma / Gain)",
+  "Import .SRT",
+  "Export .SRT",
+  "FahiVidsMarkSvg",
   "handleDeleteLeftOfPlayhead",
   "handleDeleteRightOfPlayhead",
   "handleFreezeFrame",
@@ -118,8 +124,48 @@ for (const token of [
   assert(editorSrc.includes(token), `Expected VideoEditor.tsx to include "${token}"`);
 }
 
+// Verify Zero AI / Gemini dependencies in VideoEditor.tsx
+for (const forbidden of [
+  "callAi(",
+  "AI remove",
+  "AI expand",
+  "AI stylize",
+  "generate_ai",
+  "dreamina",
+  "Gemini Vision Frame Reader",
+]) {
+  assert(!editorSrc.includes(forbidden), `Expected VideoEditor.tsx NOT to include AI token "${forbidden}"`);
+}
+
+// Verify Left-Aligned 00:00 Timeline Architecture (No 50% Center Offset)
+assert(cutTimelineSrc.includes("const TRACK_LEFT_PAD = 12"), "Expected CutTimeline.tsx to use left-aligned TRACK_LEFT_PAD = 12");
+assert(cutTimelineSrc.includes("cut-moving-playhead"), "Expected CutTimeline.tsx to render moving playhead");
+assert(cutTimelineSrc.includes("cut-clip-header-strip"), "Expected CutTimeline.tsx to render CapCut clip header strip");
+assert(!studioTimelineCss.includes("left: 50%"), "Expected studio-timeline.css NOT to pin playhead at left: 50%");
+
+// Verify Official FahiVids App Icon, Vector SVG Logo & 1-Click PWA Install files exist
+for (const assetRel of [
+  "public/app-icon.png",
+  "public/icon-512.png",
+  "public/icon-192.png",
+  "public/apple-touch-icon.png",
+  "public/favicon.ico",
+  "public/icon.svg",
+  "public/logo.svg",
+  "public/sw.js",
+  "components/FahiVidsLogo.tsx",
+  "components/PwaInstallButton.tsx",
+]) {
+  const fullPath = path.join(root, assetRel);
+  assert(fs.existsSync(fullPath), `Expected branding/PWA asset ${assetRel} to exist`);
+  assert(fs.statSync(fullPath).size > 100, `Expected branding/PWA asset ${assetRel} to be non-empty`);
+}
+
+const navbarSrc = fs.readFileSync(path.join(root, "components/Navbar.tsx"), "utf8");
+assert(navbarSrc.includes("PwaInstallButton"), "Expected Navbar.tsx to render PwaInstallButton next to Admin");
+
 assert(cssSrc.includes("@media (max-width:767px)"), "Expected mobile responsive media query in video-editor.css");
 
 console.log(
-  "PASS: CapCut Pro timecodes, masks, clip animations, synthesized WAV SFX, desktop 4-zone panels, timeline tools, and mobile responsive drawers verified"
+  "PASS: CapCut Pro left-aligned 00:00 timeline, pure zero-AI Video Studio, HSL/Curves/Wheel grading, .SRT subtitles, official App Icon & SVG Logo, and mobile responsive drawers verified"
 );

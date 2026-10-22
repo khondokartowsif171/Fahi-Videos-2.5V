@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 140" fill="none">
+  <defs>
+    <linearGradient id="logo-cyan-top" x1="12" y1="18" x2="128" y2="55" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00E5FF" />
+      <stop offset="65%" stop-color="#00C4FF" />
+      <stop offset="100%" stop-color="#0088FF" />
+    </linearGradient>
+    <linearGradient id="logo-blue-mid" x1="12" y1="45" x2="55" y2="115" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0072FF" />
+      <stop offset="100%" stop-color="#002B7F" />
+    </linearGradient>
+    <linearGradient id="logo-blue-bot" x1="14" y1="82" x2="112" y2="122" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0048FF" />
+      <stop offset="55%" stop-color="#0088FF" />
+      <stop offset="100%" stop-color="#00C8FF" />
+    </linearGradient>
+    <linearGradient id="logo-vids-text" x1="315" y1="30" x2="510" y2="95" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00C6FF" />
+      <stop offset="55%" stop-color="#0072FF" />
+      <stop offset="100%" stop-color="#0048FF" />
+    </linearGradient>
+  </defs>
+
+  <!-- Left 3D Ribbon F + Play + Camera Mark -->
+  <g transform="translate(8, 8)">
+    <!-- Top Cyan Ribbon -->
+    <path
+      d="M12 36C12 18.327 26.327 4 44 4H116C121.523 4 125.158 9.756 122.742 14.72L115.6 29.4C111.71 37.396 103.593 42.47 94.696 42.47H48C41.373 42.47 36 47.843 36 54.47V102C36 110.837 28.837 118 20 118C15.582 118 12 114.418 12 110V36Z"
+      fill="url(#logo-cyan-top)"
+    />
+    <!-- Left Vertical Fold Shadow -->
+    <path
+      d="M12 68C12 52 24 42.47 42 42.47H34C21.85 42.47 12 52.32 12 64.47V110C12 114.418 15.582 118 20 118C28.837 118 36 110.837 36 102V74C28 79 18 82 12 86V68Z"
+      fill="url(#logo-blue-mid)"
+    />
+    <!-- Bottom Upward Ribbon Curve -->
+    <path
+      d="M12 108C12 99 21 93 33 88L96 61C102.5 58.2 110 62.9 110 70V81C110 87.8 105.9 93.9 99.6 96.6L32 125.2C21.5 129.6 12 121.9 12 110.5V108Z"
+      fill="url(#logo-blue-bot)"
+    />
+    <!-- Center Dark/Cyan Play Triangle -->
+    <path
+      d="M52 50.5C52 46.75 56.12 44.46 59.31 46.44L88.5 64.56C91.53 66.44 91.53 70.86 88.5 72.74L59.31 90.86C56.12 92.84 52 90.55 52 86.8V50.5Z"
+      fill="#071936"
+      stroke="#00E5FF"
+      stroke-width="2"
+    />
+    <!-- Right Camera Cone -->
+    <path
+      d="M108 55.5L142 35.8C147.33 32.71 154 36.56 154 42.72V90.28C154 96.44 147.33 100.29 142 97.2L108 77.5V55.5Z"
+      fill="#071936"
+      stroke="#0088FF"
+      stroke-width="2"
+    />
+  </g>
+
+  <!-- Wordmark: FahiVids -->
+  <text x="184" y="88" font-family="Inter, system-ui, -apple-system, sans-serif" font-weight="900" font-size="68" fill="#F8FAFC" letter-spacing="-1.5">
+    Fahi
+  </text>
+  <text x="334" y="88" font-family="Inter, system-ui, -apple-system, sans-serif" font-weight="900" font-size="68" fill="url(#logo-vids-text)" letter-spacing="-1.5">
+    Vids
+  </text>
+
+  <!-- Subtitle: Professional Video Studio -->
+  <text x="186" y="114" font-family="Inter, system-ui, -apple-system, sans-serif" font-weight="600" font-size="15" fill="#94A3B8" letter-spacing="5.5">
+    PROFESSIONAL VIDEO STUDIO
+  </text>
+</svg>
