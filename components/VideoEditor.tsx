@@ -2093,8 +2093,8 @@ export default function VideoEditor() {
         speed: playbackSpeed,
         volume: isMuted ? 0 : volume,
         audioLayers,
-        start: trimStart,
-        end: trimEnd > trimStart ? trimEnd : duration,
+        start: 0,
+        end: totalTimelineDuration || duration,
         progress: setExportProgress,
         rateAt: speedForTime,
         gainAt: fadeForTime,
@@ -2152,9 +2152,11 @@ export default function VideoEditor() {
             (50 - cropBox.left - cropBox.width / 2) * 3 * previewScale,
             (50 - cropBox.top - cropBox.height / 2) * 3 * previewScale
           );
-          const fit = Math.min(width / videoElement.videoWidth, height / videoElement.videoHeight);
-          const dw = videoElement.videoWidth * fit,
-            dh = videoElement.videoHeight * fit;
+          const vw = videoElement.videoWidth || width;
+          const vh = videoElement.videoHeight || height;
+          const fit = Math.min(width / vw, height / vh);
+          const dw = vw * fit,
+            dh = vh * fit;
           ctx.drawImage(
             editorState.chroma.enabled
               ? keyedFrame(
