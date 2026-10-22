@@ -107,7 +107,7 @@ export function createAudioMixer(
         .connect(gain)
         .connect(destination);
     media.onerror = () => onError?.(`Could not play ${layer.name}`);
-    return { layer, media, gain, analyser, pending: false };
+    return { layer, media, gain, analyser, pending: false, lastSeekAt: 0 };
   });
   return {
     update(layers: AudioLayer[]) {
@@ -128,18 +128,35 @@ export function createAudioMixer(
       return Math.min(1, peak);
     },
     sync(time: number, playing: boolean, rate: number) {
+      const now = performance.now();
       for (const entry of entries) {
         const { media, gain, layer } = entry,
           state = audioState(layer, time);
         gain.gain.value = state.gain;
-        media.playbackRate = rate;
-        if (
-          media.readyState >= 1 &&
-          Math.abs(media.currentTime - state.source) > 0.12
-        )
+        if (Math.abs(media.playbackRate - rate) > 0.01) {
+          media.playbackRate = rate;
+        }
+        if (!playing || !state.active) {
+          if (!media.paused) media.pause();
+          if (
+            media.readyState >= 1 &&
+            !media.seeking &&
+            Math.abs(media.currentTime - state.source) > 0.08
+          ) {
+            entry.lastSeekAt = now;
+            media.currentTime = state.source;
+          }
+          continue;
+        }
+        const drift = Math.abs(media.currentTime - state.source);
+        const shouldSeek = media.paused
+          ? drift > 0.08
+          : drift > 1.2 && now - entry.lastSeekAt > 1200;
+        if (media.readyState >= 1 && !media.seeking && shouldSeek) {
+          entry.lastSeekAt = now;
           media.currentTime = state.source;
-        if (!playing || !state.active) media.pause();
-        else if (media.paused && !entry.pending) {
+        }
+        if (media.paused && !entry.pending) {
           entry.pending = true;
           void media
             .play()
