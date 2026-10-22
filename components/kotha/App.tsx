@@ -1,4 +1,5 @@
 import { kothaFetch as fetch } from './api-client';
+import { isEmbedded, useStudioProject } from '@/lib/studio-client';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Play,
@@ -87,7 +88,7 @@ export default function App() {
 
   const [projectTitle, setProjectTitle] = useState<string>(() => {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = (isEmbedded ? null : localStorage.getItem(STORAGE_KEY));
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed.projectTitle) return parsed.projectTitle;
@@ -149,6 +150,7 @@ export default function App() {
     uiLang === 'en' ? DEFAULT_BANNER_EN : DEFAULT_BANNER_BN
   );
 
+  useStudioProject('kotha', () => ({projectTitle,scenes,selectedPersonaId,selectedTone,speechSpeed,bilingualSubtitles,attachedVideoUrl}), value => {setProjectTitle(value.projectTitle);setScenes(value.scenes||[]);setSelectedPersonaId(value.selectedPersonaId);setSelectedTone(value.selectedTone);setSpeechSpeed(value.speechSpeed);setBilingualSubtitles(value.bilingualSubtitles);setAttachedVideoUrl(value.attachedVideoUrl);});
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const syncedVideoRef = useRef<HTMLVideoElement | null>(null);
   const continuousPlayFlagRef = useRef<boolean>(false);
@@ -187,7 +189,7 @@ export default function App() {
           status: 'pending',
         })
       );
-      localStorage.setItem(
+      if (!isEmbedded) localStorage.setItem(
         STORAGE_KEY,
         JSON.stringify({
           projectTitle,

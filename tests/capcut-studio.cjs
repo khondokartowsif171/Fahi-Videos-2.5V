@@ -96,7 +96,7 @@ const studioTimelineCss = fs.readFileSync(path.join(root, "components/studio-tim
 const cssSrc = fs.readFileSync(path.join(root, "components/video-editor.css"), "utf8");
 
 for (const token of [
-  "Auto saved:",
+  "Local changes",
   "Player-Timeline 01",
   "Uniform scale",
   "Stabilize",

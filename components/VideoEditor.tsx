@@ -1,5 +1,6 @@
 "use client";
 
+import { isEmbedded, useStudioProject } from '@/lib/studio-client';
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import "./video-editor.css";
 import StudioTimeline from "./StudioTimeline";
@@ -286,6 +287,7 @@ export default function VideoEditor() {
 
   // CapCut Header & Player UI State
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
+  useStudioProject('editor', () => editorState, value => setEditorState(value));
   const [lastSavedTime, setLastSavedTime] = useState("01:02:01");
   const [showSafeGrid, setShowSafeGrid] = useState(false);
   const [showTransformBox, setShowTransformBox] = useState(false);
@@ -2440,7 +2442,7 @@ export default function VideoEditor() {
 
           <div className="hidden sm:flex items-center space-x-1.5 text-[11px] text-slate-400">
             <Check className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Auto saved: {lastSavedTime}</span>
+            <span>{isEmbedded ? "Local changes" : "Edited: " + lastSavedTime}</span>
           </div>
         </div>
 
@@ -2459,7 +2461,7 @@ export default function VideoEditor() {
         <div className="flex items-center space-x-2">
           <button
             type="button"
-            onClick={() => setShowAdminModal(true)}
+            hidden={isEmbedded} onClick={() => setShowAdminModal(true)}
             className="hidden lg:flex items-center space-x-1 px-2 py-1 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] text-slate-300"
             title="Admin Console"
           >
@@ -2470,13 +2472,15 @@ export default function VideoEditor() {
           <button
             type="button"
             onClick={() => {
-              handleCaptureCover();
-              alert(`Project "${projectTitle}" snapshot saved & ready to share!`);
+              const video=videoRef.current;if(!video)return;
+              const canvas=document.createElement('canvas');canvas.width=video.videoWidth;canvas.height=video.videoHeight;
+              canvas.getContext('2d')?.drawImage(video,0,0);
+              const link=document.createElement('a');link.download=projectTitle+'-cover.jpg';link.href=canvas.toDataURL('image/jpeg',0.92);link.click();
             }}
             className="hidden sm:flex items-center space-x-1 px-2.5 py-1 rounded bg-[#23252C] hover:bg-[#2C2F38] text-slate-200 text-xs font-medium transition-colors"
           >
             <Share2 className="w-3.5 h-3.5" />
-            <span>Share</span>
+            <span>Export Cover</span>
           </button>
 
           <button
@@ -4290,7 +4294,7 @@ export default function VideoEditor() {
                             onChange={e => updateState("stabilizeEnabled", e.target.checked)}
                             className="accent-[#00E5FF]"
                           />
-                          <span className="text-slate-200 font-medium text-[11px]">Stabilize</span>
+                          <span className="text-slate-200 font-medium text-[11px]">Steady framing margin</span>
                         </label>
                         {stabilizeEnabled && (
                           <select
@@ -4314,7 +4318,7 @@ export default function VideoEditor() {
                             onChange={e => updateState("enhanceQualityEnabled", e.target.checked)}
                             className="accent-[#00E5FF]"
                           />
-                          <span className="text-slate-200 font-medium text-[11px]">Enhance quality</span>
+                          <span className="text-slate-200 font-medium text-[11px]">Contrast & colour boost</span>
                         </label>
                         {enhanceQualityEnabled && (
                           <select
@@ -4356,15 +4360,15 @@ export default function VideoEditor() {
                         <label className="flex items-center space-x-2 cursor-pointer">
                           <input
                             type="checkbox"
-                            checked={opticalFlowEnabled}
+                            disabled checked={false}
                             onChange={e => updateState("opticalFlowEnabled", e.target.checked)}
                             className="accent-[#00E5FF]"
                           />
-                          <span className="text-slate-200 font-medium text-[11px]">Optical flow</span>
+                          <span className="text-slate-200 font-medium text-[11px]">Optical flow — unavailable</span>
                         </label>
                         <button
                           type="button"
-                          onClick={() => updateState("opticalFlowEnabled", true)}
+                          disabled title="Optical flow processing is unavailable"
                           className="px-2 py-0.5 rounded bg-[#1C1E24] hover:bg-white/10 text-[10px] text-slate-300"
                         >
                           Apply to all
@@ -4797,7 +4801,7 @@ export default function VideoEditor() {
                       <span className="text-slate-300 text-[11px]">Smooth slow-mo (Optical flow)</span>
                       <input
                         type="checkbox"
-                        checked={opticalFlowEnabled}
+                        disabled checked={false}
                         onChange={e => updateState("opticalFlowEnabled", e.target.checked)}
                         className="accent-[#00E5FF]"
                       />

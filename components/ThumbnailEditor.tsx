@@ -1,4 +1,5 @@
 "use client";
+import { useStudioProject } from '@/lib/studio-client';
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Undo2, Redo2 } from "lucide-react";
@@ -28,6 +29,7 @@ export default function ThumbnailEditor() {
     overlayOpacity: 40
 });
 
+    useStudioProject('thumbnail', () => editorState, value => setEditorState(value));
     const updateState = (key: keyof typeof editorState, value: any) => {
         setEditorState(prev => ({ ...prev, [key]: value }));
     };

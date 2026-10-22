@@ -9,5 +9,9 @@ export async function GET(req: NextRequest) {
          return NextResponse.json({ error: "Missing link" }, { status: 400 });
     }
 
-    return NextResponse.redirect(new URL(directLink));
+    const target=new URL(directLink);
+    if(target.protocol!=='https:'||target.username||target.password||target.port) return NextResponse.json({error:'Only public HTTPS downloads are supported.'},{status:400});
+    const allowed=['googlevideo.com','fbcdn.net','cdninstagram.com','storage.googleapis.com','loader.to'];
+    if(!allowed.some(host=>target.hostname===host||target.hostname.endsWith('.'+host))) return NextResponse.json({error:'The media provider returned an unsupported download host.'},{status:400});
+    return NextResponse.redirect(target);
 }

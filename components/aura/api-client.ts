@@ -1,4 +1,6 @@
+import { isEmbedded } from '@/lib/studio-client';
 export async function auraFetch(input: string, init: RequestInit = {}) {
+  if (isEmbedded) return window.fetch(input.replace(/^\/api\//, '/api/aura/'), init);
   const headers = new Headers(init.headers);
   const key = localStorage.getItem("fahi_gemini_api_key");
   if (key) headers.set("x-gemini-api-key", key);

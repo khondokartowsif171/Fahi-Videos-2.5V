@@ -1,3 +1,5 @@
+import { embedded, studioContext } from './studio-context';
+import { studioProviderRequest, idempotentGeneration } from './studio-server';
 import { GoogleGenAI, Type } from '@google/genai';
 import {
   createSynthesizedSpeechWav,
@@ -20,7 +22,7 @@ const ttsAudioCache = new Map<
 function keyFor(req: Request): string {
   const headerKey = req.headers.get('x-gemini-api-key')?.trim();
   if (headerKey && headerKey !== 'MY_GEMINI_API_KEY') return headerKey;
-  const envKey = process.env.GEMINI_API_KEY?.trim();
+  const envKey = embedded() ? '' : process.env.GEMINI_API_KEY?.trim();
   if (envKey && envKey !== 'MY_GEMINI_API_KEY') return envKey;
   return '';
 }
@@ -163,7 +165,7 @@ export async function handleKothaTtsGenerate(
       ? durationSec
       : estimateBanglaSpeechDuration(cleanText, 1.0);
 
-  const cacheKey = `${safeVoice}::${cleanText}`;
+  const cacheKey = `${embedded() ? studioContext(req).tenant : 'standalone'}::${safeVoice}::${cleanText}`;
   const cached = ttsAudioCache.get(cacheKey);
   if (cached) {
     return Response.json({
@@ -256,6 +258,7 @@ export async function handleKothaTtsGenerate(
     });
   }
 
+  if (embedded()) return Response.json({error:'No speech provider returned spoken audio. Try again or configure your workspace Gemini key.'},{status:502});
   // Offline hermetic fallback: 24kHz 16-bit mono WAV
   const wavBytes = createSynthesizedSpeechWav(
     cleanText,
@@ -539,7 +542,7 @@ Return a JSON array of ${frames.length} scene objects. For each frame provide:
   return Response.json({ scenes: results });
 }
 
-export async function handleKotha(
+async function handleKothaCore(
   req: Request,
   parts: string[]
 ): Promise<Response> {
@@ -583,4 +586,9 @@ export async function handleKotha(
       { status: 500 }
     );
   }
+}
+
+export async function handleKotha(req: Request, parts: string[]) {
+ const normalized=await studioProviderRequest(req);
+ return req.method==='POST' ? idempotentGeneration(normalized,r=>handleKothaCore(r,parts)) : handleKothaCore(normalized,parts);
 }

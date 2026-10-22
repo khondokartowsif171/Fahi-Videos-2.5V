@@ -1,4 +1,5 @@
 "use client";
+import { studioBase, isEmbedded } from "@/lib/studio-client";
 
 import { useState } from "react";
 import { Download, AlertCircle, Video, Music } from "lucide-react";
@@ -50,7 +51,7 @@ export default function YoutubeDownloader() {
           </span>
         </h2>
         <p className="text-xs md:text-sm text-slate-400 leading-relaxed">
-          Premium media extraction suite. Download video, reels, and audio tracks from YouTube, Facebook, and Instagram instantly with high-fidelity streams.
+          Premium media extraction suite. Download video, reels, and audio tracks from YouTube and Facebook instantly with high-fidelity streams.
         </p>
       </div>
 
@@ -137,7 +138,7 @@ export default function YoutubeDownloader() {
                       </div>
                     </div>
                     <a
-                      href={`/api/video/download?url=${encodeURIComponent(format.url)}`}
+                      href={`${studioBase}/api/video/download?url=${encodeURIComponent(format.url)}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-bold text-white transition-all active:scale-95 shadow-md shadow-indigo-600/10 cursor-pointer"

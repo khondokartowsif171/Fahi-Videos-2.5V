@@ -1,0 +1,9 @@
+node_modules
+.next*
+.git
+.env*
+.fahicut-data
+.aura-data
+.studio-media
+work
+*.log

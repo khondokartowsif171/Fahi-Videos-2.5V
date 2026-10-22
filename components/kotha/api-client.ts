@@ -1,4 +1,6 @@
+import { isEmbedded } from '@/lib/studio-client';
 export async function kothaFetch(input: string, init: RequestInit = {}) {
+  if (isEmbedded) return window.fetch(input.replace(/^\/api\//, '/api/kotha/'), init);
   const headers = new Headers(init.headers);
   try {
     const key = localStorage.getItem("fahi_gemini_api_key");

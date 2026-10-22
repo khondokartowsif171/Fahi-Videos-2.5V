@@ -1,3 +1,5 @@
+import { embedded } from '@/lib/studio-context';
+import { studioProviderRequest } from '@/lib/studio-server';
 import { GoogleGenAI } from "@google/genai";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -66,7 +68,8 @@ async function generateContentWithModelFallback(ai: GoogleGenAI, payload: {
 }
 
 export async function POST(req: NextRequest) {
-  const apiKey = req.headers.get("x-gemini-api-key") || process.env.GEMINI_API_KEY;
+  req = await studioProviderRequest(req) as NextRequest;
+  const apiKey = req.headers.get("x-gemini-api-key") || (embedded() ? undefined : process.env.GEMINI_API_KEY);
   let reqBody: any = {};
   try {
     reqBody = await req.json();

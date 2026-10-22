@@ -3,6 +3,8 @@
 export const dynamic = "force-dynamic";
 
 import { useState, useEffect } from "react";
+import { isEmbedded, setupStudioFetch } from '@/lib/studio-client';
+import StudioCloud from '@/components/StudioCloud';
 import Navbar from "@/components/Navbar";
 import Home from "@/components/Home";
 import YoutubeDownloader from "@/components/YoutubeDownloader";
@@ -24,13 +26,15 @@ const TAB_ALIASES: Record<string, string> = {
 };
 
 export default function Page() {
-  const [activeTab, setActiveTab] = useState("home");
+  const [activeTab, setActiveTab] = useState(isEmbedded ? "ai" : "home");
   const [hasMounted, setHasMounted] = useState(false);
 
   useEffect(() => {
+    const cleanup=setupStudioFetch();
     setHasMounted(true);
     if (new URLSearchParams(window.location.search).get("studio") === "1") setActiveTab("editor");
     if (new URLSearchParams(window.location.search).get("kotha") === "1") setActiveTab("kotha");
+    return cleanup;
   }, []);
 
   useEffect(() => {
@@ -88,6 +92,7 @@ export default function Page() {
       {/* Cap-Style Navigation */}
       <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
 
+      {isEmbedded && <StudioCloud kind={activeTab === 'editor' ? 'editor' : activeTab === 'kotha' ? 'kotha' : activeTab === 'thumbnail' ? 'thumbnail' : 'aura'} />}
       {/* Main Workspace: Keep-Alive Video Editor (Never unmounts on tab switch, preserving all video edits) */}
       <main className={`flex-1 overflow-hidden ${activeTab === "editor" ? "block" : "hidden"}`}>
         <VideoEditor />

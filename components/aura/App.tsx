@@ -1,4 +1,5 @@
 import { auraFetch as fetch } from './api-client';
+import { isEmbedded, useStudioProject } from '@/lib/studio-client';
 import React, { useState, useRef, useEffect } from 'react';
 import { TOOLS, ToolModule, default as AuraStudioToolLibrary } from './components/AuraStudioToolLibrary';
 import {
@@ -236,6 +237,7 @@ export default function App() {
   const [isDirectorLoading, setIsDirectorLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
 
+  useStudioProject('aura', () => ({studioMode,veoAspectRatio,prompt,extendPrompt,image1,image2,references,segments,history,selectedSegmentIndex,ugcAudioUrl,directorMessages}), value => {setStudioMode(value.studioMode);setVeoAspectRatio(value.veoAspectRatio);setPrompt(value.prompt);setExtendPrompt(value.extendPrompt||'');setImage1(value.image1);setImage2(value.image2);setReferences(value.references||[]);setSegments(value.segments||[]);setHistory(value.history||[]);setSelectedSegmentIndex(value.selectedSegmentIndex||0);setUgcAudioUrl(value.ugcAudioUrl);setDirectorMessages(value.directorMessages||[]);});
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInput1Ref = useRef<HTMLInputElement>(null);
   const fileInput2Ref = useRef<HTMLInputElement>(null);
@@ -990,7 +992,7 @@ CRITICAL RULES:
 
             <div className="flex items-center space-x-1.5">
               <button
-                onClick={() => setIsBanglaCareOpen(true)}
+                hidden={isEmbedded} onClick={() => setIsBanglaCareOpen(true)}
                 className="text-indigo-400 hover:text-white p-2 rounded-lg bg-[#14141c] border border-[#22222a] min-w-[38px] min-h-[38px] flex items-center justify-center"
                 title="Open Bangla Customer Care Service"
               >
@@ -998,7 +1000,7 @@ CRITICAL RULES:
               </button>
 
               <button
-                onClick={() => setIsSettingsOpen(true)}
+                hidden={isEmbedded} onClick={() => setIsSettingsOpen(true)}
                 className="text-neutral-400 hover:text-white p-2 rounded-lg min-w-[38px] min-h-[38px] flex items-center justify-center"
                 title="Open Agent Settings"
               >
@@ -1299,7 +1301,7 @@ CRITICAL RULES:
           <div className="flex items-center space-x-1 sm:space-x-2">
             {/* Mobile Quick Action Buttons */}
             <button
-              onClick={() => setIsBanglaCareOpen(true)}
+              hidden={isEmbedded} onClick={() => setIsBanglaCareOpen(true)}
               className="lg:hidden text-indigo-400 hover:text-white p-2 rounded-lg bg-[#14141c] border border-[#22222a] min-w-[38px] min-h-[38px] flex items-center justify-center active:scale-95"
               title="Bangla Care AI Agent"
             >
@@ -2054,12 +2056,12 @@ CRITICAL RULES:
         tailImage={image2?.url}
       />
 
-      <BanglaCustomerCare
+      {!isEmbedded && <BanglaCustomerCare
         isOpen={isBanglaCareOpen}
         onClose={() => setIsBanglaCareOpen(false)}
-      />
+      />}
 
-      {isAutomationDashboardOpen && (
+      {!isEmbedded && isAutomationDashboardOpen && (
         <div className="fixed inset-0 z-50 bg-[#0a0a0d] flex flex-col pt-safe pb-safe">
           <div className="p-3 border-b border-[#22222a] flex items-center justify-between bg-[#121217]">
             <div className="flex items-center space-x-2">
@@ -2080,7 +2082,7 @@ CRITICAL RULES:
         </div>
       )}
 
-      {isSettingsOpen && (
+      {!isEmbedded && isSettingsOpen && (
         <GoogleFlowSettings onClose={() => setIsSettingsOpen(false)} />
       )}
 

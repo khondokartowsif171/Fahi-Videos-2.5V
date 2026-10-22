@@ -1,5 +1,6 @@
 'use client';
 
+import { isEmbedded } from '@/lib/studio-client';
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { House, Download, Video, ImageIcon, Sparkles, Mic, Settings, Key, ShieldCheck } from 'lucide-react';
@@ -68,9 +69,9 @@ export default function Navbar({ activeTab, setActiveTab }: NavbarProps) {
 
           {/* Right Actions */}
           <div className="flex items-center gap-2">
-            <PwaInstallButton />
+            {!isEmbedded && <PwaInstallButton />}
             <button
-              onClick={() => setAdminModalOpen(true)}
+              hidden={isEmbedded} onClick={() => setAdminModalOpen(true)}
               className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30 transition-all shadow-sm"
               title="Admin Login Console"
             >
@@ -78,14 +79,14 @@ export default function Navbar({ activeTab, setActiveTab }: NavbarProps) {
               <span>Admin</span>
             </button>
             <button
-              onClick={() => setApiBoxOpen(true)}
+              hidden={isEmbedded} onClick={() => setApiBoxOpen(true)}
               className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-full transition-colors"
               title="API Settings"
             >
               <Key className="w-5 h-5" />
             </button>
             <button
-              onClick={() => setSettingsOpen(true)}
+              hidden={isEmbedded} onClick={() => setSettingsOpen(true)}
               className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-full transition-colors"
               title="User Settings"
             >
