@@ -1,23 +1,294 @@
-'use client';
-import {useEffect,useState} from 'react';
-import {bridge,saveStudioExport} from '@/lib/studio-client';
-type Allowance={enabled:boolean;remaining:number;used:number;reserved:number;total:number;duration:number;resetAt:string};
-export default function ManagedVideo(){
-  const [prompt,setPrompt]=useState(''),[duration,setDuration]=useState(20),[aspectRatio,setAspect]=useState('16:9'),[references,setReferences]=useState<File[]>([]);
-  const [allowance,setAllowance]=useState<Allowance|null>(null),[estimate,setEstimate]=useState<any>(null),[jobs,setJobs]=useState<any[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState('');
-  async function refresh(){const [a,j]=await Promise.all([bridge('video/allowance'),bridge('video/jobs')]);setAllowance(await a.json());setJobs((await j.json()).jobs);}
-  useEffect(()=>{let active=true;const load=()=>{if(active)refresh().catch(e=>setError(e.message));};load();const timer=setInterval(load,5000);return()=>{active=false;clearInterval(timer);};},[]);
-  async function preview(){setBusy(true);setError('');try{const ids=[];for(const file of references){const url=await saveStudioExport(file,file.name);ids.push(url.split('/').pop());}const input={prompt,duration,aspectRatio,assetIds:ids};const r=await bridge('video/estimate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(input)});setEstimate({...await r.json(),input,requestId:crypto.randomUUID()});}catch(e){setError(e instanceof Error?e.message:'Estimate failed.');}finally{setBusy(false);}}
-  async function generate(){if(!estimate)return;setBusy(true);setError('');try{await bridge('video/jobs',{method:'POST',headers:{'Content-Type':'application/json','x-request-id':estimate.requestId},body:JSON.stringify(estimate.input)});setEstimate(null);await refresh();}catch(e){setError(e instanceof Error?e.message:'Submission failed. Keep this estimate to retry the same request ID.');}finally{setBusy(false);}}
-  return <section className="max-w-5xl mx-auto p-4 sm:p-8 space-y-5">
-    <header><h1 className="text-2xl font-semibold text-cyan-200">Aura Studio · Omni</h1><p className="text-sm text-slate-400">Gemini Omni · gemini-omni-1.1-flash · 720p · Aura-managed provider</p></header>
-    <p className="rounded-xl border border-cyan-900 p-4">{allowance?.enabled?`${allowance.remaining} of ${allowance.total} videos available · ${allowance.reserved} processing · up to ${allowance.duration}s each`:'Managed video has not been assigned to this package. Ask your Aura administrator to enable it.'}{allowance&&<span className="block text-xs text-slate-400 mt-2">Cycle resets {new Date(allowance.resetAt).toLocaleString()}. Editing, cloud projects and free Kotha stay available.</span>}</p>
-    <label className="block">Describe your video<textarea className="mt-2 w-full min-h-32 bg-slate-950 border border-slate-700 rounded-xl p-3" maxLength={6000} value={prompt} onChange={e=>{setPrompt(e.target.value);setEstimate(null);}}/></label>
-    <div className="flex flex-wrap gap-5"><label>Final seconds <input className="w-20 bg-slate-900 p-2 rounded" type="number" min={4} max={allowance?.duration||30} value={duration} onChange={e=>{setDuration(Number(e.target.value));setEstimate(null);}}/></label><label>Shape <select className="bg-slate-900 p-2 rounded" value={aspectRatio} onChange={e=>{setAspect(e.target.value);setEstimate(null);}}><option>16:9</option><option>9:16</option></select></label><label>Reference images (up to 3, 10 MB each)<input type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={e=>{const files=Array.from(e.target.files||[]);if(files.length>3||files.some(f=>f.size>10*1024**2)){setError('Choose up to three images, each 10 MB or smaller.');return;}setReferences(files);setEstimate(null);}}/></label></div>
-    <button className="rounded-lg bg-cyan-700 px-5 py-3 disabled:opacity-40" disabled={busy||!prompt.trim()||!allowance?.enabled||!allowance.remaining} onClick={preview}>Preview storyboard and reserve estimate</button>
-    {estimate&&<div className="rounded-xl border border-violet-700 p-5 space-y-3"><h2>Storyboard: {estimate.shots.join(' + ')} seconds</h2><p>{estimate.input.prompt}</p><p>Estimated output ${estimate.outputUsd.toFixed(3)} · conservative application reserve ${estimate.reserveUsd.toFixed(2)}. Provider input and actual billing can differ.</p><p>One final video uses one allowance slot. Regenerating a successful video uses another slot.</p><button className="rounded bg-violet-700 p-3 disabled:opacity-40" disabled={busy} onClick={generate}>Generate one video</button></div>}
-    {error&&<p role="alert" className="text-red-300">{error}</p>}
-    <h2 className="text-xl">Your video jobs</h2>
-    {jobs.map(job=><article key={job.id} className="rounded-xl border border-slate-800 p-4 space-y-2"><p>{job.duration}s · {job.state.replaceAll('_',' ')} <span className="text-xs text-slate-500">{new Date(job.created_at).toLocaleString()}</span></p>{job.error&&<p className="text-amber-300">{job.error}</p>}{job.asset_id&&<><video controls preload="metadata" className="max-h-80 w-full" src={'/api/fahi/assets/'+job.asset_id}/><a className="text-cyan-300 underline" download href={'/api/fahi/assets/'+job.asset_id+'?download=1'}>Download private MP4</a><button className="ml-4 underline" onClick={async()=>{try{const r=await bridge('assets/'+job.asset_id);const blob=await r.blob();window.dispatchEvent(new CustomEvent('add-video-file',{detail:{file:new File([blob],'aura-omni-video.mp4',{type:'video/mp4'})}}));window.dispatchEvent(new CustomEvent('change-app-tab',{detail:{tab:'editor'}}));}catch(e){setError(e instanceof Error?e.message:'Import failed.');}}}>Open in Video Studio</button></>}{['queued','running','confirmation_pending'].includes(job.state)&&<button className="text-sm underline" onClick={async()=>{try{await bridge('video/jobs/'+job.id+'/cancel',{method:'POST'});await refresh();}catch(e){setError(e instanceof Error?e.message:'Cancel failed.');}}}>Cancel unstarted work</button>}</article>)}
-  </section>;
+"use client";
+import { useEffect, useState } from "react";
+import { bridge, saveStudioExport, useStudioProject } from "@/lib/studio-client";
+type Allowance = {
+  enabled: boolean;
+  remaining: number;
+  used: number;
+  reserved: number;
+  total: number;
+  duration: number;
+  resetAt: string;
+};
+export default function ManagedVideo() {
+  const [prompt, setPrompt] = useState(""),
+    [duration, setDuration] = useState(20),
+    [aspectRatio, setAspect] = useState("16:9"),
+    [references, setReferences] = useState<File[]>([]);
+  const [allowance, setAllowance] = useState<Allowance | null>(null),
+    [estimate, setEstimate] = useState<any>(null),
+    [jobs, setJobs] = useState<any[]>([]),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  useStudioProject('aura',()=>({prompt,duration,aspectRatio,references,referenceNames:references.map(f=>f.name)}),state=>{setPrompt(state.prompt||'');setDuration(state.duration||20);setAspect(state.aspectRatio==='9:16'?'9:16':'16:9');setReferences(state.references||[]);setEstimate(null);},'omni');
+  async function refresh() {
+    const [a, j] = await Promise.all([
+      bridge("video/allowance"),
+      bridge("video/jobs"),
+    ]);
+    setAllowance(await a.json());
+    setJobs((await j.json()).jobs);
+  }
+  useEffect(() => {
+    let active = true;
+    const load = () => {
+      if (active) refresh().catch((e) => setError(e.message));
+    };
+    load();
+    const timer = setInterval(load, 5000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, []);
+  async function preview() {
+    setBusy(true);
+    setError("");
+    try {
+      const ids = [];
+      for (const file of references) {
+        const url = await saveStudioExport(file, file.name);
+        ids.push(url.split("/").pop());
+      }
+      const input = { prompt, duration, aspectRatio, assetIds: ids };
+      const r = await bridge("video/estimate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      setEstimate({
+        ...(await r.json()),
+        input,
+        requestId: crypto.randomUUID(),
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Estimate failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function generate() {
+    if (!estimate) return;
+    setBusy(true);
+    setError("");
+    try {
+      await bridge("video/jobs", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-request-id": estimate.requestId,
+        },
+        body: JSON.stringify(estimate.input),
+      });
+      setEstimate(null);
+      await refresh();
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Submission failed. Keep this estimate to retry the same request ID.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section className="max-w-5xl mx-auto p-4 sm:p-8 space-y-5">
+      <header>
+        <h1 className="text-2xl font-semibold text-cyan-200">
+          Aura Studio · Omni
+        </h1>
+        <p className="text-sm text-slate-400">
+          Gemini Omni · gemini-omni-1.1-flash · 720p · Aura-managed provider
+        </p>
+      </header>
+      <p className="rounded-xl border border-cyan-900 p-4">
+        {allowance?.enabled
+          ? `${allowance.remaining} of ${allowance.total} videos available · ${allowance.reserved} processing · up to ${allowance.duration}s each`
+          : "Managed video has not been assigned to this package. Ask your Aura administrator to enable it."}
+        {allowance && (
+          <span className="block text-xs text-slate-400 mt-2">
+            Cycle resets {new Date(allowance.resetAt).toLocaleString()}.
+            Editing, cloud projects and free Kotha stay available.
+          </span>
+        )}
+      </p>
+      <label className="block">
+        Describe your video
+        <textarea
+          className="mt-2 w-full min-h-32 bg-slate-950 border border-slate-700 rounded-xl p-3"
+          maxLength={6000}
+          value={prompt}
+          onChange={(e) => {
+            setPrompt(e.target.value);
+            setEstimate(null);
+          }}
+        />
+      </label>
+      <div className="flex flex-wrap gap-5">
+        <label>
+          Final seconds{" "}
+          <input
+            className="w-20 bg-slate-900 p-2 rounded"
+            type="number"
+            min={4}
+            max={allowance?.duration || 30}
+            value={duration}
+            onChange={(e) => {
+              setDuration(Number(e.target.value));
+              setEstimate(null);
+            }}
+          />
+        </label>
+        <label>
+          Shape{" "}
+          <select
+            className="bg-slate-900 p-2 rounded"
+            value={aspectRatio}
+            onChange={(e) => {
+              setAspect(e.target.value);
+              setEstimate(null);
+            }}
+          >
+            <option>16:9</option>
+            <option>9:16</option>
+          </select>
+        </label>
+        <label>
+          Reference images (up to 3, 10 MB each)
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            multiple
+            onChange={(e) => {
+              const files = Array.from(e.target.files || []);
+              if (
+                files.length > 3 ||
+                files.some((f) => f.size > 10 * 1024 ** 2)
+              ) {
+                setError("Choose up to three images, each 10 MB or smaller.");
+                return;
+              }
+              setReferences(files);
+              setEstimate(null);
+            }}
+          />
+        </label>
+      </div>
+      <button
+        className="rounded-lg bg-cyan-700 px-5 py-3 disabled:opacity-40"
+        disabled={
+          busy || !prompt.trim() || !allowance?.enabled || !allowance.remaining
+        }
+        onClick={preview}
+      >
+        Preview storyboard and reserve estimate
+      </button>
+      {estimate && (
+        <div className="rounded-xl border border-violet-700 p-5 space-y-3">
+          <h2>Storyboard: {estimate.shots.join(" + ")} seconds</h2>
+          <p>{estimate.input.prompt}</p>
+          <p>
+            Estimated output ${estimate.outputUsd.toFixed(3)} · conservative
+            application reserve ${estimate.reserveUsd.toFixed(2)}. Provider
+            input and actual billing can differ.
+          </p>
+          <p>
+            One final video uses one allowance slot. Regenerating a successful
+            video uses another slot.
+          </p>
+          <button
+            className="rounded bg-violet-700 p-3 disabled:opacity-40"
+            disabled={busy}
+            onClick={generate}
+          >
+            Generate one video
+          </button>
+        </div>
+      )}
+      {error && (
+        <p role="alert" className="text-red-300">
+          {error}
+        </p>
+      )}
+      <h2 className="text-xl">Your video jobs</h2>
+      {jobs.map((job) => (
+        <article
+          key={job.id}
+          className="rounded-xl border border-slate-800 p-4 space-y-2"
+        >
+          <p>
+            {job.duration}s · {job.state.replaceAll("_", " ")}{" "}
+            <span className="text-xs text-slate-500">
+              {new Date(job.created_at).toLocaleString()}
+            </span>
+          </p>
+          {job.error && <p className="text-amber-300">{job.error}</p>}
+          {job.asset_id && (
+            <>
+              <video
+                controls
+                preload="metadata"
+                className="max-h-80 w-full"
+                src={"/api/fahi/assets/" + job.asset_id}
+              />
+              <a
+                className="text-cyan-300 underline"
+                download
+                href={"/api/fahi/assets/" + job.asset_id + "?download=1"}
+              >
+                Download private MP4
+              </a>
+              <button
+                className="ml-4 underline"
+                onClick={async () => {
+                  try {
+                    const r = await bridge("assets/" + job.asset_id);
+                    const blob = await r.blob();
+                    window.dispatchEvent(
+                      new CustomEvent("add-video-file", {
+                        detail: {
+                          file: new File([blob], "aura-omni-video.mp4", {
+                            type: "video/mp4",
+                          }),
+                        },
+                      }),
+                    );
+                    window.dispatchEvent(
+                      new CustomEvent("change-app-tab", {
+                        detail: { tab: "editor" },
+                      }),
+                    );
+                  } catch (e) {
+                    setError(e instanceof Error ? e.message : "Import failed.");
+                  }
+                }}
+              >
+                Open in Video Studio
+              </button>
+            </>
+          )}
+          {["queued", "running", "confirmation_pending"].includes(
+            job.state,
+          ) && (
+            <button
+              className="text-sm underline"
+              onClick={async () => {
+                try {
+                  await bridge("video/jobs/" + job.id + "/cancel", {
+                    method: "POST",
+                  });
+                  await refresh();
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : "Cancel failed.");
+                }
+              }}
+            >
+              Cancel unstarted work
+            </button>
+          )}
+        </article>
+      ))}
+    </section>
+  );
 }

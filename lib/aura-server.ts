@@ -85,7 +85,9 @@ async function encode(video: string, audio?: string, upscale?: string) {
   encoding = true;
   fs.mkdirSync(dataDir(), { recursive:true });
   const folder = fs.mkdtempSync(path.join(dataDir(), 'export-'));
+  let release:(()=>Promise<void>)|undefined;
   try {
+    if(embedded())release=await require('./managed-video.cjs').takeProcessingLock(false);
     const input = path.join(folder,'input.mp4'), output = path.join(folder,'output.mp4');
     fs.writeFileSync(input, Buffer.from(video,'base64'));
     const args = ['-y','-i',input];
@@ -100,7 +102,7 @@ async function encode(video: string, audio?: string, upscale?: string) {
       proc.on('close',code=> {clearTimeout(timer); code === 0 ? resolve() : reject(new ApiError(422,'Unable to process this video or audio.')); });
     });
     return new Response(fs.readFileSync(output), { headers: { 'Content-Type':'video/mp4','Content-Disposition':'attachment; filename="aura-studio.mp4"' } });
-  } finally { fs.rmSync(folder,{recursive:true,force:true}); }
+  } finally { encoding=false;await release?.();fs.rmSync(folder,{recursive:true,force:true}); }
 }
 type Lead = { id:string; customerName:string; phone:string; product:string; notes:string; status:string; timestamp:string };
 const limits = new Map<string, { count:number; since:number }>();
