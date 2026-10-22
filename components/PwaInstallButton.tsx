@@ -27,6 +27,7 @@ export default function PwaInstallButton({ compact = false }: PwaInstallButtonPr
   const [isInstalled, setIsInstalled] = useState(false);
   const [showGuideModal, setShowGuideModal] = useState(false);
   const [platformTab, setPlatformTab] = useState<"pc" | "android" | "ios">("pc");
+  const [downloadedPcLauncher, setDownloadedPcLauncher] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -104,10 +105,66 @@ export default function PwaInstallButton({ compact = false }: PwaInstallButtonPr
         }
         return;
       } catch {
-        // Fallback to guide modal if prompt was already used
+        // Fallback to modal if prompt was already consumed
       }
     }
     setShowGuideModal(true);
+  };
+
+  const handleDownloadPcApp = () => {
+    if (typeof window === "undefined") return;
+    const appUrl = window.location.origin;
+    const isMac = /macintosh|mac os x/i.test(window.navigator.userAgent);
+
+    if (isMac) {
+      const macScript = [
+        "#!/bin/bash",
+        `open -a "Google Chrome" --args --app="${appUrl}" || open "${appUrl}"`,
+      ].join("\n");
+      const blob = new Blob([macScript], { type: "application/x-sh;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "FahiVids-Studio-Mac.command";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } else {
+      // Windows 1-Click Standalone App Installer & Launcher (.bat)
+      // Creates a Desktop Shortcut "FahiVids Studio" and opens the app in standalone window mode
+      const winScript = [
+        "@echo off",
+        "title FahiVids Studio Desktop Installer",
+        `set "APP_URL=${appUrl}"`,
+        "set \"CHROME_PATH=\"",
+        "if exist \"%ProgramFiles%\\Google\\Chrome\\Application\\chrome.exe\" set \"CHROME_PATH=%ProgramFiles%\\Google\\Chrome\\Application\\chrome.exe\"",
+        "if exist \"%ProgramFiles(x86)%\\Google\\Chrome\\Application\\chrome.exe\" set \"CHROME_PATH=%ProgramFiles(x86)%\\Google\\Chrome\\Application\\chrome.exe\"",
+        "if exist \"%LocalAppData%\\Google\\Chrome\\Application\\chrome.exe\" set \"CHROME_PATH=%LocalAppData%\\Google\\Chrome\\Application\\chrome.exe\"",
+        "if defined CHROME_PATH (",
+        "  powershell -NoProfile -ExecutionPolicy Bypass -Command \"$s=(New-Object -COM WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Desktop')+'\\FahiVids Studio.lnk');$s.TargetPath='%CHROME_PATH%';$s.Arguments='--app=%APP_URL%';$s.IconLocation='%CHROME_PATH%,0';$s.Save()\" >nul 2>&1",
+        "  start \"\" \"%CHROME_PATH%\" --app=\"%APP_URL%\"",
+        "  exit",
+        ")",
+        "if exist \"%ProgramFiles(x86)%\\Microsoft\\Edge\\Application\\msedge.exe\" (",
+        "  powershell -NoProfile -ExecutionPolicy Bypass -Command \"$s=(New-Object -COM WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Desktop')+'\\FahiVids Studio.lnk');$s.TargetPath='%ProgramFiles(x86)%\\Microsoft\\Edge\\Application\\msedge.exe';$s.Arguments='--app=%APP_URL%';$s.Save()\" >nul 2>&1",
+        "  start \"\" \"%ProgramFiles(x86)%\\Microsoft\\Edge\\Application\\msedge.exe\" --app=\"%APP_URL%\"",
+        "  exit",
+        ")",
+        "start \"\" \"%APP_URL%\"",
+      ].join("\r\n");
+
+      const blob = new Blob([winScript], { type: "application/octet-stream" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "FahiVids-Studio-PC-Installer.bat";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+    setDownloadedPcLauncher(true);
   };
 
   if (isInstalled) {
@@ -218,25 +275,44 @@ export default function PwaInstallButton({ compact = false }: PwaInstallButtonPr
             {/* Platform Instructions Body */}
             <div className="p-5 space-y-4 text-xs">
               {platformTab === "pc" && (
-                <div className="space-y-3">
-                  <p className="text-slate-300 leading-relaxed">
-                    Install <strong className="text-white">FahiVids Studio</strong> as a standalone desktop app on Windows, macOS, or Linux:
-                  </p>
-                  <div className="space-y-2.5 bg-white/5 p-3.5 rounded-xl border border-white/10">
-                    <div className="flex items-start space-x-2.5">
-                      <span className="w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-300 font-bold flex items-center justify-center shrink-0 text-[11px]">
-                        1
+                <div className="space-y-3.5">
+                  {/* Direct 1-Click Download to PC Button */}
+                  <div className="p-3.5 rounded-xl bg-gradient-to-r from-cyan-500/15 to-indigo-500/20 border border-cyan-400/35 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-white text-xs">
+                        Direct Download for PC (Windows / Mac)
                       </span>
-                      <span className="text-slate-200">
-                        Look at the right side of your browser address bar (URL bar) in <strong>Chrome, Edge, or Brave</strong>.
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-bold">
+                        1-Click
                       </span>
                     </div>
-                    <div className="flex items-start space-x-2.5">
-                      <span className="w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-300 font-bold flex items-center justify-center shrink-0 text-[11px]">
-                        2
+                    <p className="text-slate-300 text-[11px] leading-relaxed">
+                      Download the standalone Desktop App launcher directly to your PC. Run it once to add <strong className="text-white">FahiVids Studio</strong> to your Desktop and open in full-screen app mode.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleDownloadPcApp}
+                      className="w-full py-2.5 px-4 rounded-xl bg-[#00E5FF] hover:bg-[#33ECFF] text-black font-extrabold text-xs flex items-center justify-center space-x-2 shadow-[0_0_20px_rgba(0,229,255,0.35)] transition-all"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>
+                        {downloadedPcLauncher
+                          ? "Downloaded! Open FahiVids-Studio-PC-Installer"
+                          : "Download FahiVids for PC"}
                       </span>
-                      <span className="text-slate-200">
-                        Click the <strong className="text-cyan-300">Install FahiVids (⊕ / Monitor icon)</strong> button and confirm <strong>Install</strong>.
+                    </button>
+                  </div>
+
+                  <div className="space-y-2 bg-white/5 p-3 rounded-xl border border-white/10">
+                    <p className="text-[11px] font-bold text-cyan-300">
+                      Or install directly from your browser bar:
+                    </p>
+                    <div className="flex items-start space-x-2">
+                      <span className="w-4 h-4 rounded-full bg-cyan-500/20 text-cyan-300 font-bold flex items-center justify-center shrink-0 text-[10px]">
+                        1
+                      </span>
+                      <span className="text-slate-300 text-[11px]">
+                        Click the <strong className="text-white">Install FahiVids (⊕ / Monitor icon)</strong> on the right side of your Chrome/Edge address bar, or open browser menu <strong>⋮ → Cast, save, and share → Install page as app</strong>.
                       </span>
                     </div>
                   </div>
@@ -317,7 +393,7 @@ export default function PwaInstallButton({ compact = false }: PwaInstallButtonPr
                     onClick={handleInstallClick}
                     className="px-4 py-2 rounded-xl bg-[#00E5FF] hover:bg-[#33ECFF] text-black font-bold text-xs shadow-lg transition-all"
                   >
-                    Install Now (1-Click)
+                    Install in Browser (1-Click)
                   </button>
                 )}
                 <button
@@ -325,7 +401,7 @@ export default function PwaInstallButton({ compact = false }: PwaInstallButtonPr
                   onClick={() => setShowGuideModal(false)}
                   className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-slate-200 font-semibold text-xs transition-colors"
                 >
-                  Got it
+                  Close
                 </button>
               </div>
             </div>

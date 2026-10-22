@@ -38,7 +38,6 @@ import {
 } from "lucide-react";
 import { logActivity } from "@/lib/activity";
 import { FahiVidsMarkSvg } from "./FahiVidsLogo";
-import PwaInstallButton from "./PwaInstallButton";
 import UserSettingsModal from "./UserSettingsModal";
 import AdminLoginModal from "./AdminLoginModal";
 
@@ -289,7 +288,7 @@ export default function VideoEditor() {
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
   const [lastSavedTime, setLastSavedTime] = useState("01:02:01");
   const [showSafeGrid, setShowSafeGrid] = useState(false);
-  const [showTransformBox, setShowTransformBox] = useState(true);
+  const [showTransformBox, setShowTransformBox] = useState(false);
   const [playerZoomMode, setPlayerZoomMode] = useState<"fit" | "75" | "100" | "125">("fit");
 
   // Live Browser Media Recording State (Voiceover / Webcam / Screen)
@@ -904,6 +903,14 @@ export default function VideoEditor() {
     if (!videoRef.current) return;
     if (previewAsset) {
       if (videoRef.current.paused) {
+        if (
+          videoRef.current.ended ||
+          (videoRef.current.duration &&
+            isFinite(videoRef.current.duration) &&
+            videoRef.current.currentTime >= videoRef.current.duration - 0.08)
+        ) {
+          videoRef.current.currentTime = 0;
+        }
         videoRef.current.play().catch(() => {});
         setIsPlaying(true);
       } else {
@@ -915,14 +922,61 @@ export default function VideoEditor() {
     if (videoClips.length > 0) {
       if (isPlaying) {
         videoRef.current.pause();
-      } else if (!activeClipInfo?.clip.isFreezeFrame && !activeClipInfo?.clip.reversed) {
-        videoRef.current.play().catch(e => {
-          if (!e.message?.includes("interrupted")) {
-            console.error("Play error", e);
+        setIsPlaying(false);
+      } else {
+        const isAtEnd =
+          (totalTimelineDuration > 0 && currentTime >= totalTimelineDuration - 0.08) ||
+          (videoRef.current.ended &&
+            clipOffsets.findIndex(c => c.clip.id === activeClipId) === clipOffsets.length - 1);
+
+        if (isAtEnd && clipOffsets.length > 0) {
+          const firstInfo = clipOffsets[0];
+          const firstClip = firstInfo.clip;
+          const firstMediaTime = firstClip.isFreezeFrame
+            ? firstClip.startOffset || 0
+            : firstClip.reversed
+              ? (firstClip.startOffset || 0) + firstClip.duration
+              : firstClip.startOffset || 0;
+
+          isSwitchingSourceRef.current = true;
+          setCurrentTime(0);
+          setSelectedClipId(firstClip.id);
+
+          if (videoRef.current.getAttribute("src") !== firstClip.objectUrl) {
+            pendingSeekTimeRef.current = firstMediaTime;
+            videoRef.current.src = firstClip.objectUrl;
+            videoRef.current.load();
+            setIsPlaying(true);
+          } else {
+            videoRef.current.currentTime = firstMediaTime;
+            setIsPlaying(true);
+            requestAnimationFrame(() => {
+              isSwitchingSourceRef.current = false;
+              if (
+                videoRef.current &&
+                !firstClip.isFreezeFrame &&
+                !firstClip.reversed
+              ) {
+                videoRef.current.play().catch(e => {
+                  if (!e.message?.includes("interrupted")) {
+                    console.error("Play error", e);
+                  }
+                });
+              }
+            });
           }
-        });
+          return;
+        }
+
+        if (!activeClipInfo?.clip.isFreezeFrame && !activeClipInfo?.clip.reversed) {
+          videoRef.current.play().catch(e => {
+            if (!e.message?.includes("interrupted")) {
+              console.error("Play error", e);
+            }
+          });
+        }
+        setIsPlaying(true);
       }
-      setIsPlaying(!isPlaying);
     }
   };
 
@@ -949,6 +1003,7 @@ export default function VideoEditor() {
           setCurrentTime(nextClipInfo.start);
         } else {
           videoRef.current.pause();
+          if (totalTimelineDuration > 0) setCurrentTime(totalTimelineDuration);
           setIsPlaying(false);
         }
       }
@@ -2232,9 +2287,8 @@ export default function VideoEditor() {
           />
         </div>
 
-        {/* Right: Install + Admin + Share + Cyan Export Button */}
+        {/* Right: Admin + Share + Cyan Export Button */}
         <div className="flex items-center space-x-2">
-          <PwaInstallButton compact />
           <button
             type="button"
             onClick={() => setShowAdminModal(true)}
@@ -3278,10 +3332,17 @@ export default function VideoEditor() {
                   onLoadedMetadata={handleLoadedMetadata}
                   onLoadedData={handleVideoLoadedData}
                   onEnded={() => {
+                    if (previewAsset) {
+                      setIsPlaying(false);
+                      return;
+                    }
                     const index = clipOffsets.findIndex(c => c.clip.id === activeClipId);
-                    if (index >= 0 && index < clipOffsets.length - 1)
+                    if (index >= 0 && index < clipOffsets.length - 1) {
                       setCurrentTime(clipOffsets[index + 1].start);
-                    else setIsPlaying(false);
+                    } else {
+                      if (totalTimelineDuration > 0) setCurrentTime(totalTimelineDuration);
+                      setIsPlaying(false);
+                    }
                   }}
                 />
 
@@ -3341,7 +3402,7 @@ export default function VideoEditor() {
                 )}
 
                 {/* CapCut White Selection Bounding Box + 4 Corner Resize Handles (Matches Screenshot 1:1) */}
-                {showTransformBox && activeTool !== "crop" && (
+                {showTransformBox && !isPlaying && activeTool !== "crop" && (
                   <div
                     onMouseDown={e => handleTransformBoxStart("move", e)}
                     onTouchStart={e => handleTransformBoxStart("move", e)}
