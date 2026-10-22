@@ -1,10 +1,13 @@
 const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
+const { Transform } = require('stream');
 const { gate } = require('../middleware/gate');
 const { getClientServices } = require('../config/pgstore');
 
 function installFahi(app) {
+  const limits=new Map();
+  setInterval(()=>{for(const [key,bucket]of limits)if(Date.now()>bucket.until)limits.delete(key);},60000).unref();
   // This route is intentionally mounted BEFORE body parsers: media stays streamed.
   app.use(['/fahi-studio', '/api/fahi', '/fahi-preview'], (req, res, next) => {
     if (process.env.FAHI_PREVIEW_ENABLED !== '1') return res.status(404).json({error:'Studio preview is not enabled.'});
@@ -29,17 +32,22 @@ function installFahi(app) {
         const origin = req.headers.origin;
         const expected = new URL(process.env.SELF_URL || 'https://client.auraajenticai.cloud').origin;
         if (origin !== expected) return res.status(403).json({error:'Open this action from your Aura dashboard.'});
+        const key=req.tenant+':'+req.user.sub,now=Date.now();let bucket=limits.get(key);
+        if(!bucket||bucket.until<now){bucket={count:0,until:now+60000};limits.set(key,bucket);}
+        if(++bucket.count>60)return res.status(429).json({error:'Studio request limit reached. Try again in a minute.'});
       }
       const raw = req.originalUrl;
       const prefix = raw.startsWith('/api/fahi') ? '/fahi-studio/api/bridge' : '/fahi-studio';
       const suffix = raw.startsWith('/api/fahi') ? raw.slice('/api/fahi'.length) : raw.slice('/fahi-studio'.length);
-      const target = new URL(prefix + (suffix || '/'), process.env.FAHI_INTERNAL_URL);
+      const target = new URL(prefix + suffix, process.env.FAHI_INTERNAL_URL);
       const platformAdmin = ['owner','admin'].includes(req.user.role);
       const payload = Buffer.from(JSON.stringify({aud:'fahi-studio',tenant:req.tenant,actor:String(req.user.sub || req.user.email),role:platformAdmin?'admin':req.teamRole,name:req.clientName,exp:Math.floor(Date.now()/1000)+60})).toString('base64url');
       const signature = crypto.createHmac('sha256',secret).update(payload).digest('base64url');
       const headers = {...req.headers,host:target.host,'x-fahi-context':payload+'.'+signature};
       for (const name of Object.keys(headers)) if (/^x-(?:aura|gemini|n8n|fahi)-/.test(name) && name !== 'x-fahi-context') delete headers[name];
       delete headers.cookie; delete headers.authorization; delete headers.connection;
+      const maximum=/\/assets(?:\?|$)/.test(raw)?250*1024*1024:112*1024*1024;
+      if(Number(req.headers['content-length']||0)>maximum)return res.status(413).json({error:'Studio request is too large.'});
       const upstream = (target.protocol==='https:'?https:http).request(target,{method:req.method,headers,timeout:300000},reply=>{
         res.status(reply.statusCode || 502);
         for (const [key,value] of Object.entries(reply.headers)) if(value!==undefined&&!['connection','transfer-encoding','set-cookie'].includes(key)) res.setHeader(key,value);
@@ -50,9 +58,12 @@ function installFahi(app) {
       upstream.on('timeout',()=>upstream.destroy(new Error('Studio timeout')));
       upstream.on('error',()=>{if(!res.headersSent)res.status(502).json({error:'Studio is temporarily unavailable.'});else res.destroy();});
       req.on('aborted',()=>upstream.destroy());
-      req.pipe(upstream);
+      let bytes=0;const limiter=new Transform({transform(chunk,_enc,cb){bytes+=chunk.length;cb(bytes>maximum?new Error('Request too large'):null,chunk);}});
+      limiter.on('error',()=>{if(!res.headersSent)res.status(413).json({error:'Studio request is too large.'});upstream.destroy();});
+      req.pipe(limiter).pipe(upstream);
       } catch(err) { next(err); }
     }).catch(next);
   });
 }
 module.exports={installFahi};
+

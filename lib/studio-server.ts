@@ -78,12 +78,19 @@ export async function idempotentGeneration(req:Request,run:(req:Request)=>Promis
 }
 function assetPath(tenant:string,id:string) {return path.join(root(),createHash('sha256').update(tenant).digest('hex'),id);}
 function uuid(id:string) {if(!/^[a-f0-9-]{36}$/i.test(id)) throw new StudioError(404,'Not found.');return id;}
+let lastUploadCleanup=0;
+async function cleanupUploads(){
+  if(Date.now()-lastUploadCleanup<600000)return;lastUploadCleanup=Date.now();
+  const sql=studioDb(),stale=await sql`SELECT id,tenant FROM studio_assets WHERE status='uploading' AND created_at<now()-interval '1 hour'`;
+  for(const asset of stale){const file=assetPath(asset.tenant,uuid(asset.id));await fsp.rm(file+'.part',{force:true});await fsp.rm(file,{force:true});await sql`DELETE FROM studio_assets WHERE id=${asset.id} AND status='uploading'`;}
+}
 export async function studioBridge(req:Request,parts:string[]) {
   try {
     if(!embedded()) throw new StudioError(404,'Embedded studio is disabled.');
     const ctx=studioContext(req),sql=studioDb(),route=parts[0],id=parts[1],url=new URL(req.url);
     if(req.method!=='GET'&&req.method!=='HEAD') requireWriter(ctx.role);
     if(route==='bootstrap') {
+      await cleanupUploads();
       const [usage]=await sql`SELECT coalesce(sum(bytes),0)::text AS bytes FROM studio_assets WHERE tenant=${ctx.tenant}`;
       const keys=await sql`SELECT 1 FROM studio_keys WHERE tenant=${ctx.tenant}`;
       return Response.json({tenant:ctx.tenant,actor:ctx.actor,name:ctx.name,role:ctx.role,keyConfigured:!!keys.length,storage:{used:Number(usage.bytes),limit:TENANT_LIMIT,fileLimit:FILE_LIMIT}});
