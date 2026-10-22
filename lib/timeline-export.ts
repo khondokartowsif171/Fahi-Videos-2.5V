@@ -33,7 +33,23 @@ export async function recordTimeline(options: {
   const video = document.createElement("video");
   video.playsInline = true;
   video.preload = "auto";
-  video.crossOrigin = "anonymous";
+
+  // Mount video and canvas in an active, in-viewport, non-occluded DOM host so Chromium
+  // never triggers its 10-second background/hidden video track decoder suspension.
+  const exportHost = document.createElement("div");
+  exportHost.setAttribute("data-fahivids-export-host", "true");
+  exportHost.style.cssText =
+    "position:fixed;right:12px;bottom:12px;width:160px;height:90px;opacity:0.08;pointer-events:none;z-index:99999;overflow:hidden;border-radius:6px;";
+  video.style.cssText =
+    "width:160px;height:90px;display:block;object-fit:contain;";
+  exportHost.appendChild(video);
+  if (!options.canvas.isConnected) {
+    options.canvas.style.cssText =
+      "position:absolute;left:0;top:0;width:160px;height:90px;display:block;pointer-events:none;";
+    exportHost.appendChild(options.canvas);
+  }
+  document.body.appendChild(exportHost);
+
   const audioContext = new AudioContext();
   const output = audioContext.createMediaStreamDestination();
   const gain = audioContext.createGain();
@@ -41,7 +57,12 @@ export async function recordTimeline(options: {
   audioContext.createMediaElementSource(video).connect(gain).connect(output);
   const music = options.audioUrl ? new Audio() : undefined;
   if (music) {
-    music.crossOrigin = "anonymous";
+    if (
+      !options.audioUrl!.startsWith("blob:") &&
+      !options.audioUrl!.startsWith("data:")
+    ) {
+      music.crossOrigin = "anonymous";
+    }
     music.src = options.audioUrl!;
     audioContext.createMediaElementSource(music).connect(output);
   }
@@ -55,6 +76,9 @@ export async function recordTimeline(options: {
     },
   );
   const canvasStream = options.canvas.captureStream(30);
+  const canvasVideoTrack = canvasStream.getVideoTracks()[0] as
+    | (MediaStreamTrack & { requestFrame?: () => void })
+    | undefined;
   const stream = new MediaStream([
     ...canvasStream.getVideoTracks(),
     ...output.stream.getAudioTracks(),
@@ -137,6 +161,7 @@ export async function recordTimeline(options: {
       await waitFor(music, "loadeddata", () => music.load());
     }
     let offset = 0;
+    let loadedUrl = "";
     for (const clip of options.clips) {
       const localStart = Math.max(0, options.start - offset);
       const localEnd = Math.min(clip.duration, end - offset);
@@ -144,19 +169,39 @@ export async function recordTimeline(options: {
         offset += clip.duration;
         continue;
       }
-      await waitFor(video, "loadeddata", () => {
-        video.src = clip.objectUrl;
-        video.load();
-      });
+      if (loadedUrl !== clip.objectUrl || video.readyState < 2) {
+        if (
+          clip.objectUrl.startsWith("blob:") ||
+          clip.objectUrl.startsWith("data:")
+        ) {
+          video.removeAttribute("crossorigin");
+        } else {
+          video.crossOrigin = "anonymous";
+        }
+        await waitFor(video, "loadeddata", () => {
+          video.src = clip.objectUrl;
+          video.load();
+        });
+        loadedUrl = clip.objectUrl;
+      }
 
       const sourceStart = clip.reversed
         ? (clip.startOffset || 0) + (clip.duration - localStart)
         : (clip.startOffset || 0) + (clip.isFreezeFrame ? 0 : localStart);
 
-      if (Math.abs(video.currentTime - sourceStart) > 0.001)
+      if (Math.abs(video.currentTime - sourceStart) > 0.04) {
+        video.pause();
         await waitFor(video, "seeked", () => {
           video.currentTime = sourceStart;
         });
+      }
+
+      if (!clip.isFreezeFrame && !clip.reversed && video.readyState < 3) {
+        await Promise.race([
+          waitFor(video, "canplay", () => {}),
+          new Promise<void>((r) => setTimeout(r, 400)),
+        ]);
+      }
 
       video.playbackRate =
         options.rateAt?.(offset + localStart) || options.speed;
@@ -165,6 +210,7 @@ export async function recordTimeline(options: {
           ? 0
           : options.volume * (options.gainAt?.(offset + localStart) ?? 1);
       options.draw(video, offset + localStart);
+      canvasVideoTrack?.requestFrame?.();
       mixer.sync(
         options.audioTimeAt?.(offset + localStart) ?? offset + localStart,
         true,
@@ -172,15 +218,20 @@ export async function recordTimeline(options: {
       );
 
       if (!clip.isFreezeFrame && !clip.reversed) {
-        await video.play();
+        if (video.paused) {
+          await video.play();
+        }
+      } else {
+        video.pause();
       }
-      if (music) {
+      if (music && music.paused) {
         await music.play();
       }
       if (recorder.state === "inactive") recorder.start(250);
-      else recorder.resume();
+      else if (recorder.state === "paused") recorder.resume();
 
       await new Promise<void>((resolve, reject) => {
+        let finished = false;
         const watchdog = setTimeout(
           () => done(new Error("Playback stalled during export")),
           ((localEnd - localStart) /
@@ -190,20 +241,33 @@ export async function recordTimeline(options: {
         );
         let frame = 0;
         const wallStart = performance.now();
+        let lastTotalFrames =
+          video.getVideoPlaybackQuality?.().totalVideoFrames ?? 0;
+        let lastFrameAdvanceAt = wallStart;
+        let lastRenderAt = 0;
+
         const done = (error?: Error) => {
+          if (finished) return;
+          finished = true;
           clearTimeout(watchdog);
+          clearInterval(interval);
           cancelAnimationFrame(frame);
           video.removeEventListener("error", decodeError);
-          video.pause();
-          music?.pause();
-          mixer.pause();
-          error ? reject(error) : resolve();
+          if (error) {
+            video.pause();
+            music?.pause();
+            mixer.pause();
+            reject(error);
+          } else {
+            resolve();
+          }
         };
         const decodeError = () =>
           done(new Error("Video decoding failed during export"));
         video.addEventListener("error", decodeError, { once: true });
 
         const render = () => {
+          if (finished) return;
           if (audioFailure) {
             done(new Error(audioFailure));
             return;
@@ -223,10 +287,17 @@ export async function recordTimeline(options: {
             return;
           }
 
+          const now = performance.now();
+          if (now - lastRenderAt < 12) {
+            frame = requestAnimationFrame(render);
+            return;
+          }
+          lastRenderAt = now;
+
           let localTime: number;
           if (clip.isFreezeFrame || clip.reversed) {
             const elapsedSec =
-              ((performance.now() - wallStart) / 1000) *
+              ((now - wallStart) / 1000) *
               (options.rateAt?.(offset + localStart) || options.speed);
             localTime = localStart + elapsedSec;
             if (clip.reversed) {
@@ -239,7 +310,35 @@ export async function recordTimeline(options: {
               }
             }
           } else {
-            localTime = video.currentTime - (clip.startOffset || 0);
+            const currentDecoded =
+              video.getVideoPlaybackQuality?.().totalVideoFrames ?? 0;
+            if (currentDecoded > lastTotalFrames) {
+              lastTotalFrames = currentDecoded;
+              lastFrameAdvanceAt = now;
+            } else if (now - lastFrameAdvanceAt > 200) {
+              lastFrameAdvanceAt = now;
+              const rate =
+                options.rateAt?.(offset + localStart) || options.speed;
+              const expectedMediaTime = Math.min(
+                (clip.startOffset || 0) + localEnd,
+                (clip.startOffset || 0) +
+                  localStart +
+                  ((now - wallStart) / 1000) * rate,
+              );
+              if (!video.seeking) {
+                video.currentTime =
+                  Math.abs(video.currentTime - expectedMediaTime) > 0.12
+                    ? expectedMediaTime
+                    : video.currentTime + 0.001;
+              }
+              if (video.paused && !video.ended) {
+                void video.play().catch(() => {});
+              }
+            }
+            localTime = Math.max(
+              localStart,
+              video.currentTime - (clip.startOffset || 0),
+            );
           }
 
           video.playbackRate =
@@ -254,6 +353,7 @@ export async function recordTimeline(options: {
             options.audioRateAt?.(offset + localTime) ?? video.playbackRate,
           );
           options.draw(video, offset + localTime);
+          canvasVideoTrack?.requestFrame?.();
           options.progress(
             Math.min(
               99,
@@ -262,7 +362,7 @@ export async function recordTimeline(options: {
             ),
           );
           if (
-            localTime >= localEnd ||
+            localTime >= localEnd - 0.015 ||
             (!clip.isFreezeFrame && !clip.reversed && video.ended)
           ) {
             done();
@@ -270,11 +370,14 @@ export async function recordTimeline(options: {
           }
           frame = requestAnimationFrame(render);
         };
+        const interval = window.setInterval(render, 33);
         render();
       });
-      recorder.pause();
       offset += clip.duration;
     }
+    video.pause();
+    music?.pause();
+    mixer.pause();
     if (recorder.state === "inactive")
       throw new Error("No video in the selected export range");
     recorder.stop();
@@ -290,6 +393,7 @@ export async function recordTimeline(options: {
     music?.pause();
     video.removeAttribute("src");
     video.load();
+    exportHost.remove();
     stream.getTracks().forEach((track) => track.stop());
     await audioContext.close();
   }
