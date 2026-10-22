@@ -522,6 +522,7 @@ export default function VideoEditor() {
   }, []);
 
   const [isExporting, setIsExporting] = useState(false);
+  const exportAbort=useRef<AbortController|null>(null);
   const [exportDownload, setExportDownload] = useState<{url:string;name:string}|null>(null);
   const [exportError, setExportError] = useState("");
   useEffect(() => () => { if (exportDownload) URL.revokeObjectURL(exportDownload.url); }, [exportDownload]);
@@ -2064,6 +2065,7 @@ export default function VideoEditor() {
     if (!videoClips.length || isExporting) return;
     setShowExportModal(false);
     setIsExporting(true);
+    exportAbort.current=new AbortController();
     setExportProgress(0);
     setIsPlaying(false);
     videoRef.current?.pause();
@@ -2102,6 +2104,7 @@ export default function VideoEditor() {
         start: 0,
         end: totalTimelineDuration || duration,
         progress: setExportProgress,
+        signal: exportAbort.current.signal,
         rateAt: speedForTime,
         gainAt: fadeForTime,
         draw: (videoElement, timelineTime) => {
@@ -3449,6 +3452,7 @@ export default function VideoEditor() {
                 />
               </div>
               <span className="text-xs text-cyan-300 font-mono">{Math.round(exportProgress)}%</span>
+              <button className="rounded border border-slate-600 px-4 py-2" onClick={()=>exportAbort.current?.abort(new Error('Export cancelled. Your project is preserved.'))}>Cancel export</button>
             </div>
           )}
 
@@ -5990,7 +5994,7 @@ export default function VideoEditor() {
             </div>
 
             <p className="px-5 pb-3 text-xs text-slate-400">
-              Recording runs in real time with all CapCut transforms, masks, blend modes, audio layers, and captions.
+              Frames use explicit timestamps with offline mixed audio. Transforms, masks, blend modes, audio layers and captions are included. Unsupported MP4 codecs use a clearly labelled WebM file.
             </p>
             <div className="px-5 py-4 border-t border-white/10 bg-[#121316] flex justify-end space-x-3">
               <button

@@ -1,4 +1,5 @@
 import { embedded, studioContext } from './studio-context';
+import {creativeModel} from './provider-models';
 import { studioProviderRequest, saveStudioJob, getStudioJob, updateStudioJob, idempotentGeneration } from './studio-server';
 import { GoogleGenAI, GenerateVideosOperation } from '@google/genai';
 import { createHash, randomUUID } from 'node:crypto';
@@ -104,6 +105,7 @@ async function encode(video: string, audio?: string, upscale?: string) {
 type Lead = { id:string; customerName:string; phone:string; product:string; notes:string; status:string; timestamp:string };
 const limits = new Map<string, { count:number; since:number }>();
 export async function handleAura(req: Request, parts: string[]) {
+  if(embedded() && req.method==='POST' && /^(veo\/generate|omni)$/.test(parts.join('/'))) return Response.json({error:'Use Aura Studio · Omni for managed video generation. Legacy video requests are disabled.'},{status:410});
   const normalized=await studioProviderRequest(req);
   if (req.method==='POST' && /^(veo\/generate|omni|image\/(generate|edit)|ugc\/generate-(script|voiceover)|director\/chat|flow\/enhance-prompt)$/.test(parts.join('/'))) return idempotentGeneration(normalized, r=>handleAuraCore(r,parts));
   return handleAuraCore(normalized,parts);
@@ -160,7 +162,7 @@ async function handleAuraCore(req: Request, parts: string[]) {
         if (!Array.isArray(body.media) || body.media.length !== 2) throw new ApiError(400,'Two keyframe images are required.');
         payload.image = media(body.media[0].data,body.media[0].mimeType); config.lastFrame = media(body.media[1].data,body.media[1].mimeType);
         if (body.references?.length) {
-          const response = await ai.models.generateContent({model:process.env.AURA_TEXT_MODEL || 'gemini-2.5-flash',contents:{parts:[{text:'Describe only the visual style, colors, lighting and camera treatment of these references in 70 words.'},...body.references.slice(0,3).map((r:any)=>({inlineData:{data:required(r.data,'Reference',20_000_000),mimeType:r.mimeType}}))]}});
+          const response = await ai.models.generateContent({model:await creativeModel(key,'text',process.env.AURA_TEXT_MODEL,'gemini-2.5-flash'),contents:{parts:[{text:'Describe only the visual style, colors, lighting and camera treatment of these references in 70 words.'},...body.references.slice(0,3).map((r:any)=>({inlineData:{data:required(r.data,'Reference',20_000_000),mimeType:r.mimeType}}))]}});
           payload.prompt += '\nStyle guidance: ' + response.text;
         }
       }
@@ -171,14 +173,14 @@ async function handleAuraCore(req: Request, parts: string[]) {
       const prompt = required(body.prompt,'Prompt');
       const input:any[] = [{text:prompt}];
       if (route === 'image/edit') { const image:any = media(body.image,body.mimeType); input.unshift({inlineData:{data:image.imageBytes,mimeType:image.mimeType}}); }
-      const result = await ai.models.generateContent({model:process.env.AURA_IMAGE_MODEL || 'gemini-3.1-flash-image-preview',contents:{parts:input},config:{responseModalities:['TEXT','IMAGE'],imageConfig:{aspectRatio:['16:9','9:16','1:1','4:3','3:4'].includes(body.aspectRatio) ? body.aspectRatio : '16:9'}}});
+      const result = await ai.models.generateContent({model:await creativeModel(key,'image',process.env.AURA_IMAGE_MODEL,'gemini-3.1-flash-image-preview'),contents:{parts:input},config:{responseModalities:['TEXT','IMAGE'],imageConfig:{aspectRatio:['16:9','9:16','1:1','4:3','3:4'].includes(body.aspectRatio) ? body.aspectRatio : '16:9'}}});
       const image = result.candidates?.[0]?.content?.parts?.find(p=>p.inlineData?.mimeType?.startsWith('image/'))?.inlineData;
       if (!image?.data) throw new ApiError(502,result.text || 'No image was returned.');
       const url = `data:${image.mimeType};base64,${image.data}`; return Response.json({url,imageUrl:url,data:image.data,mimeType:image.mimeType});
     }
     if (route === 'ugc/generate-voiceover') {
       const text = required(body.text,'Voiceover script',5000);
-      const response = await ai.models.generateContent({model:process.env.AURA_TTS_MODEL || 'gemini-2.5-flash-preview-tts',contents:text,config:{responseModalities:['AUDIO'],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:body.voiceName || 'Puck'}}}}});
+      const response = await ai.models.generateContent({model:await creativeModel(key,'tts',process.env.AURA_TTS_MODEL,'gemini-2.5-flash-preview-tts'),contents:text,config:{responseModalities:['AUDIO'],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:body.voiceName || 'Puck'}}}}});
       const audio = response.candidates?.[0]?.content?.parts?.find(p=>p.inlineData?.data)?.inlineData;
       if (!audio?.data) throw new ApiError(502,'No voiceover audio returned.');
       const bytes = Buffer.from(audio.data,'base64'); const out = audio.mimeType?.includes('wav') ? bytes : wav(bytes);
@@ -196,7 +198,7 @@ async function handleAuraCore(req: Request, parts: string[]) {
         instruction = 'Write authentic Bangladeshi UGC for the requested topic and tone. Return JSON with videoPrompt (English cinematic video direction), voiceoverScript (30-45 words of conversational Bengali), englishTranslation.';
         contents = JSON.stringify({topic:required(body.topic,'Topic'),tone:body.tone,dialect:body.dialect});
       }
-      const result = await ai.models.generateContent({model:process.env.AURA_TEXT_MODEL || 'gemini-2.5-flash',contents,config:{systemInstruction:instruction,...(route==='ugc/generate-script'?{responseMimeType:'application/json'}:{})}});
+      const result = await ai.models.generateContent({model:await creativeModel(key,'text',process.env.AURA_TEXT_MODEL,'gemini-2.5-flash'),contents,config:{systemInstruction:instruction,...(route==='ugc/generate-script'?{responseMimeType:'application/json'}:{})}});
       return Response.json(route === 'ugc/generate-script' ? JSON.parse(result.text || '{}') : route === 'director/chat' ? {reply:result.text} : {enhancedPrompt:result.text});
     }
     throw new ApiError(404,'Unknown studio endpoint.');

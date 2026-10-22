@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { Transform } = require('stream');
 const { gate } = require('../middleware/gate');
 const { getClientServices } = require('../config/pgstore');
+const core = require('postgres')(process.env.DATABASE_URL,{max:2,prepare:false});
 
 function installFahi(app) {
   const limits=new Map();
@@ -41,7 +42,8 @@ function installFahi(app) {
       const suffix = raw.startsWith('/api/fahi') ? raw.slice('/api/fahi'.length) : raw.slice('/fahi-studio'.length);
       const target = new URL(prefix + suffix, process.env.FAHI_INTERNAL_URL);
       const platformAdmin = ['owner','admin'].includes(req.user.role);
-      const payload = Buffer.from(JSON.stringify({aud:'fahi-studio',tenant:req.tenant,actor:String(req.user.sub || req.user.email),role:platformAdmin?'admin':req.teamRole,name:req.clientName,exp:Math.floor(Date.now()/1000)+60})).toString('base64url');
+      const [subscription]=await core`SELECT s.id,s.service_id AS "serviceId",s.tier_id AS "tierId",s.status FROM client_service_subscriptions s JOIN services sv ON sv.id=s.service_id WHERE s.client_id=${req.clientId} AND sv.slug='video-ad-studio' LIMIT 1`;
+      const payload = Buffer.from(JSON.stringify({aud:'fahi-studio',tenant:req.tenant,actor:String(req.user.sub || req.user.email),role:platformAdmin?'admin':req.teamRole,name:req.clientName,subscription,exp:Math.floor(Date.now()/1000)+60})).toString('base64url');
       const signature = crypto.createHmac('sha256',secret).update(payload).digest('base64url');
       const headers = {...req.headers,host:target.host,'x-fahi-context':payload+'.'+signature};
       for (const name of Object.keys(headers)) if (/^x-(?:aura|gemini|n8n|fahi)-/.test(name) && name !== 'x-fahi-context') delete headers[name];

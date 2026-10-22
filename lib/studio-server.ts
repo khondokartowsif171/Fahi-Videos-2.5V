@@ -88,6 +88,7 @@ export async function studioBridge(req:Request,parts:string[]) {
   try {
     if(!embedded()) throw new StudioError(404,'Embedded studio is disabled.');
     const ctx=studioContext(req),sql=studioDb(),route=parts[0],id=parts[1],url=new URL(req.url);
+    if(route==='video') return require('./managed-video.cjs').publicApi(req,ctx,parts.slice(1));
     if(req.method!=='GET'&&req.method!=='HEAD') requireWriter(ctx.role);
     if(route==='bootstrap') {
       await cleanupUploads();
@@ -133,7 +134,9 @@ export async function studioBridge(req:Request,parts:string[]) {
       await sql.begin(async tx=>{
         await tx`SELECT pg_advisory_xact_lock(66390122)`;
         const [usage]=await tx`SELECT coalesce(sum(bytes),0)::text AS total,coalesce(sum(bytes) FILTER(WHERE tenant=${ctx.tenant}),0)::text AS own FROM studio_assets`;
-        if(Number(usage.own)+bytes>TENANT_LIMIT||Number(usage.total)+bytes>TOTAL_LIMIT) throw new StudioError(413,'Studio storage limit reached.');
+        const [reserved]=await tx`SELECT coalesce(sum(reserved_bytes),0)::text AS total,coalesce(sum(reserved_bytes) FILTER(WHERE tenant=${ctx.tenant}),0)::text AS own FROM managed_jobs WHERE state IN ('queued','running','confirmation_pending','composing')`;
+        if(Number(usage.own)+Number(reserved.own)+bytes>TENANT_LIMIT||Number(usage.total)+Number(reserved.total)+bytes>TOTAL_LIMIT) throw new StudioError(413,'Studio storage limit reached.');
+        const free=await fsp.statfs(root());if(free.bavail*free.bsize-Number(reserved.total)-bytes<10*1024**3)throw new StudioError(507,'Studio disk reserve reached.');
         await tx`INSERT INTO studio_assets(id,tenant,name,mime,bytes,status) VALUES(${assetId},${ctx.tenant},${name},${mime},${bytes},'uploading')`;
       });
       let received=0;
@@ -150,7 +153,7 @@ export async function studioBridge(req:Request,parts:string[]) {
       const [asset]=await sql`SELECT * FROM studio_assets WHERE id=${uuid(id)} AND tenant=${ctx.tenant} AND status='ready'`;
       if(!asset) throw new StudioError(404,'Media not found.');
       const size=Number(asset.bytes),range=req.headers.get('range');let start=0,end=size-1,status=200;
-      const headers:Record<string,string>={'Content-Type':asset.mime,'Accept-Ranges':'bytes','Cache-Control':'private, no-store','Content-Disposition':`inline; filename*=UTF-8''${encodeURIComponent(asset.name)}`};
+      const headers:Record<string,string>={'Content-Type':asset.mime,'X-Content-Type-Options':'nosniff','Accept-Ranges':'bytes','Cache-Control':'private, no-store','Content-Disposition':`${url.searchParams.get('download')==='1'?'attachment':'inline'}; filename*=UTF-8''${encodeURIComponent(asset.name)}`};
       if(range){const match=/^bytes=(\d*)-(\d*)$/.exec(range);if(!match||(!match[1]&&!match[2])) return new Response(null,{status:416,headers:{'Content-Range':`bytes */${size}`}});
         if(!match[1]){start=Math.max(0,size-Number(match[2]));}else {start=Number(match[1]);end=match[2]?Math.min(size-1,Number(match[2])):size-1;}
         if(start>end||start>=size) return new Response(null,{status:416,headers:{'Content-Range':`bytes */${size}`}});
