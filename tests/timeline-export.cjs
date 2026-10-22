@@ -128,6 +128,7 @@ class OfflineAudioContextMock {
 class Context {
   constructor() {
     this.currentTime = 0;
+    this.state = 'running';
     activeContext = this;
   }
   createMediaStreamDestination() {
@@ -151,7 +152,12 @@ class Context {
       stop() {},
     };
   }
-  async resume() {}
+  async suspend() {
+    this.state = 'suspended';
+  }
+  async resume() {
+    this.state = 'running';
+  }
   async close() {
     contextsClosed++;
   }
@@ -216,7 +222,7 @@ Object.assign(global, {
   },
   requestAnimationFrame(fn) {
     return setImmediate(() => {
-      if (activeContext) activeContext.currentTime += 0.05;
+      if (activeContext && activeContext.state === 'running') activeContext.currentTime += 0.05;
       if (currentVideo && !currentVideo.paused) currentVideo._time += 0.05;
       fn();
     });
@@ -269,7 +275,7 @@ async function run() {
   const blob = await mod.exports.recordTimeline(options);
   assert(blob.size > 0);
   assert(blob.type.startsWith('video/webm'));
-  assert.deepEqual(Recorder.last.actions, ['start', 'stop']);
+  assert.deepEqual(Recorder.last.actions, ['start', 'pause', 'resume', 'stop']);
   assert.equal(frames[0].source, 'red');
   assert.equal(frames[0].time, 0.25);
 
