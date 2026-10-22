@@ -58,6 +58,7 @@ export default function ThumbnailEditor() {
 
     
     const [isExporting, setIsExporting] = useState(false);
+    const [exportError,setExportError]=useState("");
     const [activeTab, setActiveTab] = useState<"background" | "typography">("background");
 
     useEffect(() => {
@@ -105,8 +106,9 @@ export default function ThumbnailEditor() {
     const handleExport = useCallback(async () => {
         if (!canvasRef.current) return;
         setIsExporting(true);
+        setExportError("");
         try {
-            const dataUrl = await htmlToImage.toJpeg(canvasRef.current, { quality: 0.95, width: 1280, height: 720 });
+            const dataUrl = await Promise.race([htmlToImage.toJpeg(canvasRef.current, { quality: 0.95, width: 1280, height: 720, pixelRatio: 1, skipFonts: true }), new Promise<never>((_,reject)=>setTimeout(()=>reject(new Error("Image export timed out. Try a locally uploaded background.")),30000))]);
             const link = document.createElement("a");
             link.download = "thumbnail-export.jpg";
             link.href = dataUrl;
@@ -121,7 +123,7 @@ export default function ThumbnailEditor() {
             });
         } catch (err) {
             console.error("Export failed:", err);
-            alert("Failed to export thumbnail.");
+            setExportError(err instanceof Error ? err.message : "Failed to export thumbnail.");
         } finally {
             setIsExporting(false);
         }
@@ -349,6 +351,7 @@ export default function ThumbnailEditor() {
                         {isExporting ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></span> : <Download className="w-4 h-4 mr-2"/>}
                         {isExporting ? "Processing Image..." : "Export Standard JPG"}
                     </button>
+                    {exportError&&<p role="alert" className="mt-2 text-xs text-red-300">{exportError}</p>}
                     <p className="text-[9px] text-center text-slate-500 mt-3 font-mono">Outputs 1280x720 HD Thumbnail</p>
                </div>
             </div>
