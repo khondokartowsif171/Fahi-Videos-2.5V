@@ -6,7 +6,7 @@ import StudioTimeline from "./StudioTimeline";
 import { TimelineMarkerItem } from "./CutTimeline";
 import AudioTools from "./AudioTools";
 import AudioPreview from "./AudioPreview";
-import { AudioLayer, decodeAudio } from "@/lib/editor-audio";
+import { AudioLayer, audioLength, decodeAudio } from "@/lib/editor-audio";
 import ChromaPreview from "./ChromaPreview";
 import { TransformFrame, SpeedPoint, transformAt, speedAt, fadeAt, keyedFrame } from "@/lib/editor-motion";
 import { recordTimeline } from "@/lib/timeline-export";
@@ -1202,7 +1202,89 @@ export default function VideoEditor() {
 
   // CapCut Timeline Tools: Split (Ctrl+B), Delete Left (Q), Delete Right (W), Freeze, Reverse, Extract Audio, Marker (M), Cover
   const handleSplitClip = () => {
-    if (videoClips.length === 0 || trackLocked) return;
+    if (trackLocked) return;
+
+    // 1. If an Audio clip is selected (or no video clips exist), split the Audio clip at playhead
+    if (selectedAudioId || (videoClips.length === 0 && audioLayers.length > 0)) {
+      const targetAudio =
+        audioLayers.find(
+          a =>
+            a.id === selectedAudioId &&
+            currentTime > a.start + 0.05 &&
+            currentTime < a.start + audioLength(a) - 0.05
+        ) ||
+        audioLayers.find(
+          a => currentTime > a.start + 0.05 && currentTime < a.start + audioLength(a) - 0.05
+        );
+
+      if (targetAudio) {
+        const rawRel = currentTime - targetAudio.start;
+        const relTime = Math.round(rawRel * 30) / 30;
+        const len = audioLength(targetAudio);
+        if (relTime > 0.05 && relTime < len - 0.05) {
+          const splitSourceTime = Number((targetAudio.trimStart + relTime).toFixed(3));
+          const splitTimelineTime = Number((targetAudio.start + relTime).toFixed(3));
+          const part1: AudioLayer = {
+            ...targetAudio,
+            id: "aud_" + Date.now() + "_a",
+            trimEnd: splitSourceTime,
+            fadeOut: 0,
+          };
+          const part2: AudioLayer = {
+            ...targetAudio,
+            id: "aud_" + Date.now() + "_b",
+            start: splitTimelineTime,
+            trimStart: splitSourceTime,
+            fadeIn: 0,
+          };
+          const audioIdx = audioLayers.findIndex(a => a.id === targetAudio.id);
+          if (audioIdx !== -1) {
+            const nextLayers = [...audioLayers];
+            nextLayers.splice(audioIdx, 1, part1, part2);
+            setAudioLayers(nextLayers);
+            setSelectedClipId(null);
+            setSelectedAudioId(part2.id);
+          }
+        }
+        return;
+      }
+      if (selectedAudioId) return;
+    }
+
+    // 2. If a Text overlay clip is selected, split the Text clip at playhead
+    if (editingTextId) {
+      const targetText = textOverlays.find((t: TextOverlay) => {
+        const tStart = t.start ?? 0;
+        const tEnd = t.end ?? totalTimelineDuration;
+        return t.id === editingTextId && currentTime > tStart + 0.08 && currentTime < tEnd - 0.08;
+      });
+      if (targetText) {
+        const tStart = targetText.start ?? 0;
+        const tEnd = targetText.end ?? totalTimelineDuration;
+        const splitAt = Number((Math.round(currentTime * 30) / 30).toFixed(3));
+        const part1: TextOverlay = {
+          ...targetText,
+          id: "txt_" + Date.now() + "_a",
+          start: tStart,
+          end: splitAt,
+        };
+        const part2: TextOverlay = {
+          ...targetText,
+          id: "txt_" + Date.now() + "_b",
+          start: splitAt,
+          end: tEnd,
+        };
+        setTextOverlays((prev: TextOverlay[]) =>
+          prev.flatMap((t: TextOverlay) => (t.id === targetText.id ? [part1, part2] : [t]))
+        );
+        setSelectedClipId(null);
+        setEditingTextId(part2.id);
+      }
+      return;
+    }
+
+    // 3. Default: Split the active Video clip at playhead
+    if (videoClips.length === 0) return;
     const targetOffset = clipOffsets.find(c => currentTime >= c.start && currentTime < c.end) || clipOffsets[0];
     if (!targetOffset) return;
 
@@ -1241,7 +1323,44 @@ export default function VideoEditor() {
   };
 
   const handleDeleteLeftOfPlayhead = () => {
-    if (videoClips.length === 0 || trackLocked) return;
+    if (trackLocked) return;
+    if (selectedAudioId) {
+      const targetAudio = audioLayers.find(
+        a =>
+          a.id === selectedAudioId &&
+          currentTime > a.start + 0.08 &&
+          currentTime < a.start + audioLength(a) - 0.08
+      );
+      if (targetAudio) {
+        const rel = Number((currentTime - targetAudio.start).toFixed(3));
+        setAudioLayers(
+          audioLayers.map(a =>
+            a.id === targetAudio.id
+              ? {
+                  ...a,
+                  start: Number(currentTime.toFixed(3)),
+                  trimStart: Number((a.trimStart + rel).toFixed(3)),
+                }
+              : a
+          )
+        );
+      }
+      return;
+    }
+    if (editingTextId) {
+      setTextOverlays((prev: TextOverlay[]) =>
+        prev.map((t: TextOverlay) => {
+          const tStart = t.start ?? 0;
+          const tEnd = t.end ?? totalTimelineDuration;
+          if (t.id === editingTextId && currentTime > tStart + 0.08 && currentTime < tEnd - 0.08) {
+            return { ...t, start: Number(currentTime.toFixed(2)) };
+          }
+          return t;
+        })
+      );
+      return;
+    }
+    if (videoClips.length === 0) return;
     const targetOffset = clipOffsets.find(c => currentTime >= c.start && currentTime < c.end);
     if (!targetOffset) return;
     const relTime = currentTime - targetOffset.start;
@@ -1261,7 +1380,43 @@ export default function VideoEditor() {
   };
 
   const handleDeleteRightOfPlayhead = () => {
-    if (videoClips.length === 0 || trackLocked) return;
+    if (trackLocked) return;
+    if (selectedAudioId) {
+      const targetAudio = audioLayers.find(
+        a =>
+          a.id === selectedAudioId &&
+          currentTime > a.start + 0.08 &&
+          currentTime < a.start + audioLength(a) - 0.08
+      );
+      if (targetAudio) {
+        const rel = Number((currentTime - targetAudio.start).toFixed(3));
+        setAudioLayers(
+          audioLayers.map(a =>
+            a.id === targetAudio.id
+              ? {
+                  ...a,
+                  trimEnd: Number((a.trimStart + rel).toFixed(3)),
+                }
+              : a
+          )
+        );
+      }
+      return;
+    }
+    if (editingTextId) {
+      setTextOverlays((prev: TextOverlay[]) =>
+        prev.map((t: TextOverlay) => {
+          const tStart = t.start ?? 0;
+          const tEnd = t.end ?? totalTimelineDuration;
+          if (t.id === editingTextId && currentTime > tStart + 0.08 && currentTime < tEnd - 0.08) {
+            return { ...t, end: Number(currentTime.toFixed(2)) };
+          }
+          return t;
+        })
+      );
+      return;
+    }
+    if (videoClips.length === 0) return;
     const targetOffset = clipOffsets.find(c => currentTime >= c.start && currentTime < c.end);
     if (!targetOffset) return;
     const relTime = currentTime - targetOffset.start;
@@ -4382,108 +4537,190 @@ export default function VideoEditor() {
             )}
 
             {/* ==================== TAB 2: AUDIO INSPECTOR ==================== */}
-            {rightTab === "audio" && (
-              <div className="space-y-3">
-                <div className="p-2.5 rounded-lg bg-[#121316] border border-white/10 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-200">Basic Audio</span>
-                    <button
-                      type="button"
-                      onClick={() => setIsMuted(!isMuted)}
-                      className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        isMuted ? "bg-rose-500/20 text-rose-400" : "bg-cyan-500/15 text-cyan-300"
-                      }`}
-                    >
-                      {isMuted ? "Muted" : "Active"}
-                    </button>
-                  </div>
+            {rightTab === "audio" && (() => {
+              const selectedAudioClip = audioLayers.find(a => a.id === selectedAudioId);
+              const updateSelectedAudio = (patch: Partial<AudioLayer>) => {
+                if (!selectedAudioClip) return;
+                setAudioLayers(
+                  audioLayers.map(a => (a.id === selectedAudioClip.id ? { ...a, ...patch } : a))
+                );
+              };
 
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px]">
-                      <span className="text-slate-400">Volume</span>
-                      <span className="font-mono text-cyan-400">
-                        {Math.round((isMuted ? 0 : volume) * 100)}%
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="2"
-                      step="0.05"
-                      value={isMuted ? 0 : volume}
-                      onChange={e => {
-                        setIsMuted(false);
-                        setVolume(parseFloat(e.target.value));
-                      }}
-                      className="w-full capcut-slider"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px]">
-                      <span className="text-slate-400">Fade in</span>
-                      <span className="font-mono text-slate-300">{audioFadeIn.toFixed(1)}s</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="5"
-                      step="0.1"
-                      value={audioFadeIn}
-                      onChange={e => updateState("audioFadeIn", parseFloat(e.target.value))}
-                      className="w-full capcut-slider"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px]">
-                      <span className="text-slate-400">Fade out</span>
-                      <span className="font-mono text-slate-300">{audioFadeOut.toFixed(1)}s</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="5"
-                      step="0.1"
-                      value={audioFadeOut}
-                      onChange={e => updateState("audioFadeOut", parseFloat(e.target.value))}
-                      className="w-full capcut-slider"
-                    />
-                  </div>
-
-                  <label className="flex items-center justify-between pt-1 cursor-pointer">
-                    <span className="text-slate-300 text-[11px]">Noise reduction</span>
-                    <input
-                      type="checkbox"
-                      checked={audioNoiseReduction}
-                      onChange={e => updateState("audioNoiseReduction", e.target.checked)}
-                      className="accent-[#00E5FF]"
-                    />
-                  </label>
-                </div>
-
-                {/* Voice Changer */}
-                <div className="p-2.5 rounded-lg bg-[#121316] border border-white/10 space-y-2">
-                  <span className="font-bold text-slate-200 block">Voice Changer</span>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {(["normal", "chipmunk", "deep", "robot", "echo", "megaphone"] as const).map(vf => (
+              return (
+                <div className="space-y-3">
+                  <div className="p-2.5 rounded-lg bg-[#121316] border border-white/10 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <span className="font-bold text-slate-200 block">Basic Audio</span>
+                        {selectedAudioClip && (
+                          <span className="text-[10px] text-cyan-400 truncate block">
+                            {selectedAudioClip.name}
+                          </span>
+                        )}
+                      </div>
                       <button
-                        key={vf}
                         type="button"
-                        onClick={() => updateState("voiceEffect", vf)}
-                        className={`py-1.5 rounded border text-[10px] font-semibold capitalize ${
-                          voiceEffect === vf
-                            ? "bg-cyan-500/20 border-[#00E5FF] text-[#00E5FF]"
-                            : "bg-[#1C1E24] border-white/10 text-slate-300"
+                        onClick={() => {
+                          if (selectedAudioClip) {
+                            updateSelectedAudio({ muted: !selectedAudioClip.muted });
+                          } else {
+                            setIsMuted(!isMuted);
+                          }
+                        }}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold shrink-0 ${
+                          (selectedAudioClip ? selectedAudioClip.muted : isMuted)
+                            ? "bg-rose-500/20 text-rose-400"
+                            : "bg-cyan-500/15 text-cyan-300"
                         }`}
                       >
-                        {vf}
+                        {(selectedAudioClip ? selectedAudioClip.muted : isMuted) ? "Muted" : "Active"}
                       </button>
-                    ))}
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[11px]">
+                        <span className="text-slate-400">Volume</span>
+                        <span className="font-mono text-cyan-400">
+                          {selectedAudioClip
+                            ? `${Math.round((selectedAudioClip.muted ? 0 : selectedAudioClip.volume) * 100)}%`
+                            : `${Math.round((isMuted ? 0 : volume) * 100)}%`}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="2"
+                        step="0.05"
+                        value={
+                          selectedAudioClip
+                            ? selectedAudioClip.muted
+                              ? 0
+                              : selectedAudioClip.volume
+                            : isMuted
+                              ? 0
+                              : volume
+                        }
+                        onChange={e => {
+                          const val = parseFloat(e.target.value);
+                          if (selectedAudioClip) {
+                            updateSelectedAudio({ muted: false, volume: val });
+                          } else {
+                            setIsMuted(false);
+                            setVolume(val);
+                          }
+                        }}
+                        className="w-full capcut-slider"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[11px]">
+                        <span className="text-slate-400">Fade in</span>
+                        <span className="font-mono text-slate-300">
+                          {(selectedAudioClip ? selectedAudioClip.fadeIn : audioFadeIn).toFixed(1)}s
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="5"
+                        step="0.1"
+                        value={selectedAudioClip ? selectedAudioClip.fadeIn : audioFadeIn}
+                        onChange={e => {
+                          const val = parseFloat(e.target.value);
+                          if (selectedAudioClip) {
+                            updateSelectedAudio({ fadeIn: val });
+                          } else {
+                            updateState("audioFadeIn", val);
+                          }
+                        }}
+                        className="w-full capcut-slider"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[11px]">
+                        <span className="text-slate-400">Fade out</span>
+                        <span className="font-mono text-slate-300">
+                          {(selectedAudioClip ? selectedAudioClip.fadeOut : audioFadeOut).toFixed(1)}s
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="5"
+                        step="0.1"
+                        value={selectedAudioClip ? selectedAudioClip.fadeOut : audioFadeOut}
+                        onChange={e => {
+                          const val = parseFloat(e.target.value);
+                          if (selectedAudioClip) {
+                            updateSelectedAudio({ fadeOut: val });
+                          } else {
+                            updateState("audioFadeOut", val);
+                          }
+                        }}
+                        className="w-full capcut-slider"
+                      />
+                    </div>
+
+                    {selectedAudioClip && (
+                      <div className="grid grid-cols-2 gap-1.5 pt-1">
+                        <button
+                          type="button"
+                          onClick={handleSplitClip}
+                          className="py-1.5 px-2 rounded bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/35 text-cyan-300 text-[10px] font-bold flex items-center justify-center gap-1"
+                        >
+                          <Scissors className="w-3 h-3" />
+                          <span>Split Audio</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAudioLayers(audioLayers.filter(a => a.id !== selectedAudioClip.id));
+                            setSelectedAudioId(null);
+                          }}
+                          className="py-1.5 px-2 rounded bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/35 text-rose-300 text-[10px] font-bold flex items-center justify-center gap-1"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Delete Audio</span>
+                        </button>
+                      </div>
+                    )}
+
+                    <label className="flex items-center justify-between pt-1 cursor-pointer">
+                      <span className="text-slate-300 text-[11px]">Noise reduction</span>
+                      <input
+                        type="checkbox"
+                        checked={audioNoiseReduction}
+                        onChange={e => updateState("audioNoiseReduction", e.target.checked)}
+                        className="accent-[#00E5FF]"
+                      />
+                    </label>
+                  </div>
+
+                  {/* Voice Changer */}
+                  <div className="p-2.5 rounded-lg bg-[#121316] border border-white/10 space-y-2">
+                    <span className="font-bold text-slate-200 block">Voice Changer</span>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {(["normal", "chipmunk", "deep", "robot", "echo", "megaphone"] as const).map(vf => (
+                        <button
+                          key={vf}
+                          type="button"
+                          onClick={() => updateState("voiceEffect", vf)}
+                          className={`py-1.5 rounded border text-[10px] font-semibold capitalize ${
+                            voiceEffect === vf
+                              ? "bg-cyan-500/20 border-[#00E5FF] text-[#00E5FF]"
+                              : "bg-[#1C1E24] border-white/10 text-slate-300"
+                          }`}
+                        >
+                          {vf}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* ==================== TAB 3: SPEED (Standard | Curve) ==================== */}
             {rightTab === "speed" && (

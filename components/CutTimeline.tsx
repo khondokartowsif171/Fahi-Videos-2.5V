@@ -166,6 +166,11 @@ export default function CutTimeline({
     timelineTime: number;
     sourceTime: number;
   } | null>(null);
+  const [hoverSoundCut, setHoverSoundCut] = useState<{
+    soundId: string;
+    timelineTime: number;
+    sourceTime: number;
+  } | null>(null);
   const [trimBadge, setTrimBadge] = useState<{
     x: number;
     label: string;
@@ -266,13 +271,19 @@ export default function CutTimeline({
     select(id, kind.includes("audio") ? "audio" : kind.includes("text") ? "text" : "video");
     const button = e.currentTarget;
     const startX = e.clientX;
+    let maxMovedPx = 0;
     const snapshot = project;
     try {
       button.setPointerCapture(e.pointerId);
     } catch {}
 
     const move = (ev: PointerEvent) => {
-      const delta = (ev.clientX - startX) / scale;
+      const rawPx = ev.clientX - startX;
+      maxMovedPx = Math.max(maxMovedPx, Math.abs(rawPx));
+      if ((kind === "move-audio" || kind === "move-text") && maxMovedPx <= 3) {
+        return;
+      }
+      const delta = rawPx / scale;
 
       if (kind === "video") {
         let seekTarget = time;
@@ -356,12 +367,49 @@ export default function CutTimeline({
       }
     };
 
-    const up = () => {
+    const up = (ev: PointerEvent) => {
       preview(null);
       setTrimBadge(null);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
+
+      if ((kind === "move-audio" || kind === "move-text") && maxMovedPx <= 3) {
+        const clickTimelineTime = clientXToTimelineTime(ev.clientX || startX);
+        if (kind === "move-audio" && cursorMode === "split") {
+          const targetSound = snapshot.sounds.find((snd) => snd.id === id);
+          if (targetSound) {
+            const rel = frameTime(clickTimelineTime - targetSound.start);
+            const len = targetSound.out - targetSound.in;
+            if (rel > 0.08 && rel < len - 0.08) {
+              const splitSource = frameTime(targetSound.in + rel);
+              const nextId = `aud_${Date.now()}_b`;
+              const part1: CutSound = {
+                ...targetSound,
+                out: splitSource,
+                fadeOut: 0,
+              };
+              const part2: CutSound = {
+                ...targetSound,
+                id: nextId,
+                start: frameTime(targetSound.start + rel),
+                in: splitSource,
+                fadeIn: 0,
+              };
+              seek(clickTimelineTime);
+              change({
+                ...snapshot,
+                sounds: snapshot.sounds.flatMap((snd) =>
+                  snd.id === id ? [part1, part2] : [snd],
+                ),
+              });
+              select(nextId, "audio");
+              return;
+            }
+          }
+        }
+        seek(clickTimelineTime);
+      }
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -829,9 +877,9 @@ export default function CutTimeline({
                     <button
                       type="button"
                       data-trim="move"
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         select(t.id, "text");
-                        seek(t.start);
                       }}
                       onPointerDown={(e) =>
                         startTrim(e, "move-text", t.id, "in")
@@ -872,23 +920,67 @@ export default function CutTimeline({
             <div className="cut-precision-row">
               {project.sounds.map((s) => {
                 const asset = assets.find((a) => a.id === s.assetId);
-                const len = s.out - s.in;
+                const len = Math.max(0.05, s.out - s.in);
+                const w = Math.max(24, len * scale);
                 const active = selected === s.id;
+                const isHoveringSound =
+                  hoverSoundCut && hoverSoundCut.soundId === s.id;
+                const totalPeaks = asset?.peaks || [];
+                const assetDur = Math.max(0.01, asset?.duration || s.out || len);
+                const startPeakIdx = Math.max(
+                  0,
+                  Math.floor((s.in / assetDur) * totalPeaks.length),
+                );
+                const endPeakIdx = Math.min(
+                  totalPeaks.length,
+                  Math.max(
+                    startPeakIdx + 1,
+                    Math.ceil((s.out / assetDur) * totalPeaks.length),
+                  ),
+                );
+                const slicedPeaks =
+                  totalPeaks.length > 0
+                    ? totalPeaks.slice(startPeakIdx, endPeakIdx)
+                    : [];
+
                 return (
                   <div
                     key={s.id}
-                    className={`cut-precision-sound ${active ? "selected" : ""}`}
+                    className={`cut-precision-sound group ${active ? "selected" : ""}`}
                     style={{
                       left: s.start * scale,
-                      width: Math.max(24, len * scale),
+                      width: w,
                     }}
+                    onMouseMove={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const relX = Math.max(
+                        0,
+                        Math.min(rect.width, e.clientX - rect.left),
+                      );
+                      const offsetTimeline = relX / scale;
+                      const timelineTime = frameTime(s.start + offsetTimeline);
+                      const sourceTime = frameTime(s.in + offsetTimeline);
+                      if (
+                        sourceTime > s.in + 0.08 &&
+                        sourceTime < s.out - 0.08
+                      ) {
+                        setHoverSoundCut({
+                          soundId: s.id,
+                          timelineTime,
+                          sourceTime,
+                        });
+                      } else {
+                        setHoverSoundCut(null);
+                      }
+                    }}
+                    onMouseLeave={() => setHoverSoundCut(null)}
                   >
                     <button
                       type="button"
                       data-trim="move"
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         select(s.id, "audio");
-                        seek(s.start);
                       }}
                       onPointerDown={(e) =>
                         startTrim(e, "move-audio", s.id, "in")
@@ -897,8 +989,67 @@ export default function CutTimeline({
                       <span>
                         <Music size={10} /> {asset?.name || "Audio"}
                       </span>
-                      <Wave peaks={asset?.peaks || []} id={`w-${s.id}`} />
+                      <Wave peaks={slicedPeaks} id={`w-${s.id}`} />
                     </button>
+
+                    {/* Hover / Blade Split Line & Badge on Audio Clip */}
+                    {isHoveringSound && !trackLocked && (
+                      <button
+                        type="button"
+                        aria-label={`Split audio ${asset?.name || "Audio"} at ${formatCapCutTimecode(hoverSoundCut.timelineTime, OUTPUT_FPS)}`}
+                        title={`Split Audio at ${formatCapCutTimecode(hoverSoundCut.timelineTime, OUTPUT_FPS)}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const nextId = `aud_${Date.now()}_b`;
+                          const part1: CutSound = {
+                            ...s,
+                            out: hoverSoundCut.sourceTime,
+                            fadeOut: 0,
+                          };
+                          const part2: CutSound = {
+                            ...s,
+                            id: nextId,
+                            start: hoverSoundCut.timelineTime,
+                            in: hoverSoundCut.sourceTime,
+                            fadeIn: 0,
+                          };
+                          seek(hoverSoundCut.timelineTime);
+                          change({
+                            ...project,
+                            sounds: project.sounds.flatMap((snd) =>
+                              snd.id === s.id ? [part1, part2] : [snd],
+                            ),
+                          });
+                          select(nextId, "audio");
+                          setHoverSoundCut(null);
+                        }}
+                        style={{
+                          left: Math.max(
+                            8,
+                            Math.min(
+                              w - 8,
+                              (hoverSoundCut.timelineTime - s.start) * scale,
+                            ),
+                          ),
+                        }}
+                        className={`
+                          absolute top-0 bottom-0 -translate-x-1/2 z-20
+                          w-4 flex flex-col items-center justify-start
+                          transition-opacity cursor-pointer bg-transparent border-0 p-0
+                          ${cursorMode === "split" ? "opacity-100" : "opacity-0 group-hover:opacity-100"}
+                        `}
+                      >
+                        <span className="mt-0.5 px-1.5 py-0.5 rounded bg-rose-600 text-white text-[9px] font-bold shadow flex items-center gap-0.5 whitespace-nowrap">
+                          <Scissors size={9} />
+                          {formatCapCutTimecode(
+                            hoverSoundCut.timelineTime,
+                            OUTPUT_FPS,
+                          )}
+                        </span>
+                        <span className="flex-1 w-[1.5px] border-l border-dashed border-rose-400 shadow-[0_0_4px_rgba(244,63,94,0.9)]" />
+                      </button>
+                    )}
+
                     {active && (
                       <>
                         <button
