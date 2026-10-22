@@ -10,6 +10,12 @@ import {
   Type,
   Volume2,
   VolumeX,
+  Lock,
+  Unlock,
+  Eye,
+  EyeOff,
+  Bookmark,
+  Image as ImageIcon,
 } from "lucide-react";
 import {
   CutProject,
@@ -30,6 +36,13 @@ import {
 } from "@/lib/cut-timeline";
 import CutFilmstrip from "./CutFilmstrip";
 import { Waveform } from "./AudioTools";
+
+export interface TimelineMarkerItem {
+  id: string;
+  time: number;
+  label: string;
+}
+
 type Props = {
   project: CutProject;
   assets: CutAsset[];
@@ -41,7 +54,21 @@ type Props = {
   change: (project: CutProject) => void;
   pause: () => void;
   preview: (clip: CutClip | null, source?: number) => void;
+  markers?: TimelineMarkerItem[];
+  onSelectMarker?: (time: number) => void;
+  onRemoveMarker?: (id: string) => void;
+  previewAxisEnabled?: boolean;
+  cursorMode?: "select" | "split";
+  trackLocked?: boolean;
+  trackHidden?: boolean;
+  onToggleTrackLock?: () => void;
+  onToggleTrackHide?: () => void;
+  onCaptureCover?: () => void;
+  coverImage?: string;
+  externalScale?: number;
+  onScaleChange?: (scale: number) => void;
 };
+
 type EditDrag = {
   id: string;
   kind: "video" | "audio" | "text";
@@ -50,13 +77,30 @@ type EditDrag = {
   clip?: CutClip;
   sound?: CutSound;
 };
+
 export default function CutTimeline(props: Props) {
   const sourceVolumes = useRef<Record<string, number>>({});
   const { project, assets, time, playing, selected } = props;
-  const [scale, setScale] = useState(90),
+  const [scale, setScale] = useState(props.externalScale || 90),
     [width, setWidth] = useState(390),
     [view, setView] = useState(0),
-    [draft, setDraft] = useState<CutProject | null>(null);
+    [draft, setDraft] = useState<CutProject | null>(null),
+    [hoverTime, setHoverTime] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (props.externalScale && Math.abs(props.externalScale - scale) > 1) {
+      setScale(props.externalScale);
+    }
+  }, [props.externalScale]);
+
+  const updateScale = (updater: (prev: number) => number) => {
+    setScale((prev) => {
+      const next = Math.round(updater(prev));
+      props.onScaleChange?.(next);
+      return next;
+    });
+  };
+
   const scroll = useRef<HTMLDivElement>(null),
     drag = useRef<{
       x: number;
@@ -139,6 +183,7 @@ export default function CutTimeline(props: Props) {
     id: string,
     edge: "in" | "out" | "move",
   ) {
+    if (props.trackLocked) return;
     event.stopPropagation();
     event.preventDefault();
     props.pause();
@@ -157,7 +202,7 @@ export default function CutTimeline(props: Props) {
   }
   function moveEdit(event: React.PointerEvent) {
     const edit = editDrag.current;
-    if (!edit) return;
+    if (!edit || props.trackLocked) return;
     event.stopPropagation();
     const delta = (event.clientX - edit.x) / scale;
     if (edit.kind === "video" && edit.clip) {
@@ -243,6 +288,12 @@ export default function CutTimeline(props: Props) {
       event.currentTarget.releasePointerCapture(event.pointerId);
   }
   function moveScroll(event: React.PointerEvent) {
+    if (props.previewAxisEnabled && scroll.current) {
+      const rect = scroll.current.getBoundingClientRect();
+      const offsetX = event.clientX - rect.left + scroll.current.scrollLeft - width / 2;
+      const t = Math.max(0, Math.min(mediaEnd, offsetX / scale));
+      setHoverTime(t);
+    }
     const action = drag.current;
     if (!action || !action.mouse || editDrag.current) return;
     const delta = event.clientX - action.x;
@@ -260,6 +311,7 @@ export default function CutTimeline(props: Props) {
     edge: "in" | "out",
     direction: number,
   ) {
+    if (props.trackLocked) return;
     props.pause();
     if (kind === "video") {
       const c = project.clips.find((c) => c.id === id)!,
@@ -373,6 +425,7 @@ export default function CutTimeline(props: Props) {
         <button
           aria-label="Split at playhead"
           onClick={() => {
+            if (props.trackLocked) return;
             const at = locateClip(project, time);
             if (at) {
               const source = frameTime(at.source);
@@ -390,49 +443,101 @@ export default function CutTimeline(props: Props) {
         </button>
         <button
           aria-label="Zoom timeline out"
-          onClick={() => setScale((s) => Math.max(30, s / 1.6))}
+          onClick={() => updateScale((s) => Math.max(30, s / 1.4))}
         >
           <ZoomOut size={16} />
         </button>
         <button
           aria-label="Zoom timeline in"
-          onClick={() => setScale((s) => Math.min(1800, s * 1.6))}
+          onClick={() => updateScale((s) => Math.min(1800, s * 1.4))}
         >
           <ZoomIn size={16} />
         </button>
       </div>
-      <button
-        className="cut-source-mute"
-        aria-label={
-          project.clips.every((c) => c.volume === 0)
-            ? "Unmute original video sound"
-            : "Mute original video sound"
-        }
-        onClick={() => {
-          const muted = project.clips.every((c) => c.volume === 0);
-          if (!muted)
-            project.clips.forEach((c) => {
-              sourceVolumes.current[c.id] = c.volume;
-            });
-          props.change({
-            ...project,
-            clips: project.clips.map((c) => ({
-              ...c,
-              volume: muted ? (sourceVolumes.current[c.id] ?? 1) : 0,
-            })),
-          });
-        }}
-      >
-        {project.clips.every((c) => c.volume === 0) ? (
-          <VolumeX size={18} />
-        ) : (
-          <Volume2 size={18} />
+
+      {/* CapCut Left Track Controls Strip: Cover + Mute + Lock + Hide */}
+      <div className="absolute left-1.5 top-[66px] z-[8] flex items-center gap-1 bg-[#18191d]/95 border border-white/10 rounded-md px-1 py-1 shadow-lg">
+        {props.onCaptureCover && (
+          <button
+            type="button"
+            onClick={props.onCaptureCover}
+            title="Set Current Frame as Cover"
+            className="w-8 h-10 rounded bg-[#25262c] hover:bg-[#30323a] border border-white/10 flex flex-col items-center justify-center text-[8px] text-slate-200 overflow-hidden relative"
+          >
+            {props.coverImage ? (
+              <img src={props.coverImage} alt="Cover" className="w-full h-full object-cover" />
+            ) : (
+              <>
+                <ImageIcon size={11} className="text-cyan-400 mb-0.5" />
+                <span>Cover</span>
+              </>
+            )}
+          </button>
         )}
-      </button>
+        <button
+          className="w-7 h-10 rounded bg-[#25262c] hover:bg-[#30323a] border border-white/10 flex items-center justify-center text-slate-200"
+          aria-label={
+            project.clips.every((c) => c.volume === 0)
+              ? "Unmute original video sound"
+              : "Mute original video sound"
+          }
+          title={project.clips.every((c) => c.volume === 0) ? "Unmute track" : "Mute track"}
+          onClick={() => {
+            const muted = project.clips.every((c) => c.volume === 0);
+            if (!muted)
+              project.clips.forEach((c) => {
+                sourceVolumes.current[c.id] = c.volume;
+              });
+            props.change({
+              ...project,
+              clips: project.clips.map((c) => ({
+                ...c,
+                volume: muted ? (sourceVolumes.current[c.id] ?? 1) : 0,
+              })),
+            });
+          }}
+        >
+          {project.clips.every((c) => c.volume === 0) ? (
+            <VolumeX size={14} className="text-rose-400" />
+          ) : (
+            <Volume2 size={14} />
+          )}
+        </button>
+        {props.onToggleTrackLock && (
+          <button
+            type="button"
+            onClick={props.onToggleTrackLock}
+            title={props.trackLocked ? "Unlock Track" : "Lock Track"}
+            className={`w-6 h-10 rounded border flex items-center justify-center ${
+              props.trackLocked
+                ? "bg-cyan-500/20 border-cyan-500/50 text-cyan-300"
+                : "bg-[#25262c] hover:bg-[#30323a] border-white/10 text-slate-400"
+            }`}
+          >
+            {props.trackLocked ? <Lock size={12} /> : <Unlock size={12} />}
+          </button>
+        )}
+        {props.onToggleTrackHide && (
+          <button
+            type="button"
+            onClick={props.onToggleTrackHide}
+            title={props.trackHidden ? "Show Track" : "Hide Track"}
+            className={`w-6 h-10 rounded border flex items-center justify-center ${
+              props.trackHidden
+                ? "bg-amber-500/20 border-amber-500/50 text-amber-300"
+                : "bg-[#25262c] hover:bg-[#30323a] border-white/10 text-slate-400"
+            }`}
+          >
+            {props.trackHidden ? <EyeOff size={12} /> : <Eye size={12} />}
+          </button>
+        )}
+      </div>
+
       <div
         ref={scroll}
-        className="cut-precision-scroll"
+        className={`cut-precision-scroll ${props.cursorMode === "split" ? "cursor-crosshair" : ""}`}
         onScroll={onScroll}
+        onPointerLeave={() => setHoverTime(null)}
         onPointerDown={(e) => {
           if ((e.target as HTMLElement).closest("[data-trim]")) return;
           props.pause();
@@ -495,9 +600,43 @@ export default function CutTimeline(props: Props) {
                 );
               },
             )}
+
+            {/* CapCut Timeline Markers (M) */}
+            {(props.markers || []).map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                title={`${m.label} (${formatClock(m.time)}) — Click to jump, Double-click to remove`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  props.onSelectMarker?.(m.time);
+                }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  props.onRemoveMarker?.(m.id);
+                }}
+                style={{ left: m.time * scale }}
+                className="absolute top-0 -translate-x-1/2 z-10 flex flex-col items-center text-cyan-400 hover:text-cyan-200"
+              >
+                <Bookmark size={12} className="fill-cyan-400" />
+              </button>
+            ))}
           </div>
+
+          {/* CapCut Preview Axis Hover Line */}
+          {props.previewAxisEnabled && hoverTime !== null && (
+            <div
+              className="pointer-events-none absolute top-0 bottom-0 z-20 border-l border-dashed border-amber-400/80"
+              style={{ left: width / 2 + hoverTime * scale }}
+            >
+              <span className="bg-amber-400 text-black text-[9px] font-mono font-bold px-1 py-0.2 rounded-sm">
+                {formatClock(hoverTime)}
+              </span>
+            </div>
+          )}
+
           <div
-            className="cut-precision-video"
+            className={`cut-precision-video ${props.trackHidden ? "opacity-30" : ""} ${props.trackLocked ? "pointer-events-none opacity-75" : ""}`}
             style={{ width: mediaEnd * scale }}
           >
             {clips.map(({ clip, start, end }) => {
@@ -518,7 +657,21 @@ export default function CutTimeline(props: Props) {
                   <button
                     aria-label={"Select video clip " + a.name}
                     onClick={() => {
-                      if (!lastMoved.current) props.select(clip.id, "video");
+                      if (lastMoved.current) return;
+                      if (props.cursorMode === "split" && !props.trackLocked) {
+                        const at = locateClip(project, time);
+                        if (at && at.clip.id === clip.id) {
+                          const source = frameTime(at.source);
+                          props.change({
+                            ...project,
+                            clips: project.clips.flatMap((c) =>
+                              c.id === at.clip.id ? splitClip(c, source) : [c],
+                            ),
+                          });
+                          return;
+                        }
+                      }
+                      props.select(clip.id, "video");
                     }}
                   >
                     <CutFilmstrip
@@ -537,7 +690,7 @@ export default function CutTimeline(props: Props) {
                     <span>{a.name}</span>
                     <small>{(end - start).toFixed(3)}s</small>
                   </button>
-                  {selected === clip.id && (
+                  {selected === clip.id && !props.trackLocked && (
                     <>
                       {handle("video", clip.id, "in", clip.in)}
                       {handle("video", clip.id, "out", clip.out)}
@@ -599,7 +752,7 @@ export default function CutTimeline(props: Props) {
                     </span>
                     <Waveform layer={layer} />
                   </button>
-                  {selected === sound.id && (
+                  {selected === sound.id && !props.trackLocked && (
                     <>
                       {handle("audio", sound.id, "in", sound.in)}
                       {handle("audio", sound.id, "out", sound.out)}
@@ -642,7 +795,7 @@ export default function CutTimeline(props: Props) {
                   <Type size={11} />
                   {title.text}
                 </button>
-                {selected === title.id && (
+                {selected === title.id && !props.trackLocked && (
                   <>
                     {handle("text", title.id, "in", title.start)}
                     {handle("text", title.id, "out", title.end)}
