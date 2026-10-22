@@ -6,19 +6,27 @@
   color: inherit;
   font: inherit;
 }
+
 .cut-precision-timeline {
   position: relative;
-  min-height: 200px;
+  height: 100%;
+  min-height: 168px;
   padding: 0 !important;
-  background: #1b1b20;
+  background: #14151b;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+  flex-shrink: 0;
 }
+
 .cut-timeline-controls {
-  height: 40px;
+  height: 36px;
   display: flex;
   align-items: center;
   gap: 4px;
   padding: 0 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 .cut-timeline-controls > span {
   margin-right: auto;
@@ -34,49 +42,208 @@
   align-items: center;
   gap: 3px;
   min-width: 32px;
-  height: 36px;
+  height: 32px;
   border: 0;
   background: transparent;
   color: #ddd;
 }
+
+/* Main workspace row: Fixed Left Track Sidebar + Right Scrollable Tracks */
+.cut-timeline-body {
+  position: relative;
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.cut-track-sidebar {
+  width: 96px;
+  flex-shrink: 0;
+  background: #121318;
+  border-right: 1px solid rgba(255, 255, 255, 0.07);
+  display: flex;
+  flex-direction: column;
+  z-index: 12;
+}
+
+.cut-track-sidebar-ruler-spacer {
+  height: 26px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  font-size: 9px;
+  color: #64748b;
+  letter-spacing: 0.04em;
+}
+
+.cut-track-sidebar-lane {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.cut-track-sidebar-lane.video-lane {
+  height: 68px;
+}
+
+.cut-track-sidebar-lane.sub-lane {
+  height: 36px;
+}
+
+.cut-cover-btn {
+  width: 34px;
+  height: 44px;
+  border-radius: 5px;
+  background: #1e2029;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #cbd5e1;
+  font-size: 9px;
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  transition: all 0.15s ease;
+}
+
+.cut-cover-btn:hover {
+  background: #282b36;
+  color: #fff;
+  border-color: rgba(34, 211, 238, 0.45);
+}
+
+.cut-track-ctrl-icons {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-left: auto;
+}
+
+.cut-track-icon-btn {
+  width: 22px;
+  height: 20px;
+  border-radius: 4px;
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  transition: all 0.12s ease;
+}
+
+.cut-track-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.cut-track-icon-btn.active {
+  color: #22d3ee;
+  background: rgba(34, 211, 238, 0.12);
+}
+
 .cut-precision-scroll {
-  height: 170px;
-  overflow: auto;
+  flex: 1;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: auto;
   touch-action: pan-x;
   overscroll-behavior: contain;
   scrollbar-width: thin;
-  cursor: grab;
+  scrollbar-color: rgba(255, 255, 255, 0.18) #101116;
+  position: relative;
+  scroll-behavior: auto;
 }
-.cut-precision-scroll:active {
-  cursor: grabbing;
-}
+
 .cut-precision-content {
   position: relative;
-  min-height: 160px;
+  min-height: 100%;
   box-sizing: border-box;
+  padding-bottom: 12px;
 }
+
+/* CapCut Top Time Ruler (00:00 at left edge) */
 .cut-precision-ruler {
-  position: relative;
+  position: sticky;
+  top: 0;
   height: 26px;
-  color: #aaa;
+  background: #14151b;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  color: #8b93a6;
   font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  z-index: 8;
+  cursor: pointer;
 }
-.cut-precision-ruler > span {
+
+.cut-ruler-major-tick {
   position: absolute;
-  white-space: nowrap;
-  transform: translateX(-50%);
+  top: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
 }
+
+.cut-ruler-major-tick > span {
+  padding-top: 3px;
+  font-size: 10px;
+  color: #94a3b8;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.cut-ruler-major-tick:first-child > span {
+  transform: translateX(0);
+}
+
+.cut-ruler-major-tick::after {
+  content: "";
+  display: block;
+  width: 1px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.cut-ruler-minor-tick {
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.14);
+  pointer-events: none;
+}
+
+/* Video Track Lane */
 .cut-precision-video {
   position: relative;
-  height: 64px;
+  height: 68px;
+  margin-top: 4px;
+  background: rgba(255, 255, 255, 0.015);
+  border-top: 1px solid rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
 }
+
 .cut-precision-clip {
   position: absolute;
-  height: 60px;
-  border: 2px solid transparent;
-  border-bottom-color: #21c9ce;
-  border-radius: 5px;
+  top: 3px;
+  height: 62px;
+  border: 1.5px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: #1f242d;
+  box-sizing: border-box;
+  transition: border-color 0.1s ease, box-shadow 0.1s ease;
 }
+
+.cut-precision-clip.selected {
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7), 0 4px 14px rgba(0, 0, 0, 0.45);
+  z-index: 4;
+}
+
 .cut-precision-clip > button:not(.cut-trim-handle) {
   position: relative;
   width: 100%;
@@ -84,196 +251,228 @@
   overflow: hidden;
   padding: 0;
   border: 0;
-  background: #303039;
+  border-radius: 4px;
+  background: #232730;
   color: white;
   text-align: left;
+  display: block;
 }
-.cut-precision-clip > button:not(.cut-trim-handle) > span,
-.cut-precision-clip small {
+
+/* CapCut Teal/Cyan Top Header Strip on Video Clip (e.g. "1008.mp4  00:02:17:21") */
+.cut-clip-header-strip {
   position: absolute;
-  left: 5px;
-  top: 3px;
-  font-size: 9px;
-  text-shadow: 0 1px 3px black;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 16px;
+  background: linear-gradient(90deg, rgba(13, 110, 128, 0.92), rgba(15, 92, 110, 0.88));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 7px;
+  z-index: 3;
   pointer-events: none;
-}
-.cut-precision-clip small {
-  top: auto;
-  bottom: 3px;
-}
-.cut-filmstrip {
-  position: absolute;
-  inset: 0;
   overflow: hidden;
 }
+
+.cut-clip-header-strip .clip-title {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: #f1f5f9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+
+.cut-clip-header-strip .clip-dur {
+  font-size: 9px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: rgba(226, 232, 240, 0.9);
+  white-space: nowrap;
+}
+
+.cut-filmstrip {
+  position: absolute;
+  top: 16px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  background: #1b1e26;
+}
+
 .cut-filmstrip img {
   position: absolute;
   height: 100%;
   object-fit: cover;
   pointer-events: none;
 }
+
+/* Sub-tracks: Text & Audio Lanes */
 .cut-precision-row {
   position: relative;
-  height: 39px;
-  margin: 5px 0;
-  background: #25252b;
+  height: 36px;
+  margin: 4px 0;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 3px;
 }
+
 .cut-precision-sound,
 .cut-precision-title {
   position: absolute;
-  height: 36px;
-  background: #075765;
-  border: 2px solid transparent;
-  border-radius: 4px;
+  top: 1px;
+  height: 34px;
+  background: #0d5868;
+  border: 1.5px solid rgba(34, 211, 238, 0.35);
+  border-radius: 5px;
+  box-sizing: border-box;
 }
+
 .cut-precision-title {
-  background: #ad7200;
+  background: #8f4f12;
+  border-color: rgba(251, 146, 60, 0.45);
 }
+
 .cut-precision-sound > button:not(.cut-trim-handle),
 .cut-precision-title > button:not(.cut-trim-handle) {
   width: 100%;
   height: 100%;
   overflow: hidden;
   border: 0;
-  padding: 0;
+  padding: 0 6px;
   background: transparent;
   color: white;
   text-align: left;
+  touch-action: none;
+  cursor: move;
 }
+
 .cut-precision-sound > button:not(.cut-trim-handle) > span {
   position: absolute;
-  left: 4px;
-  top: 1px;
+  left: 6px;
+  top: 2px;
   font-size: 9px;
+  font-weight: 600;
   z-index: 1;
   white-space: nowrap;
 }
+
 .cut-precision-sound svg {
   height: 100%;
   width: 100%;
 }
+
 .cut-precision-sound > button:not(.cut-trim-handle) > span svg {
   width: 10px;
   height: 10px;
 }
+
 .cut-precision-title > button:not(.cut-trim-handle) {
   white-space: nowrap;
-  font-size: 11px;
+  font-size: 10.5px;
+  font-weight: 600;
 }
+
 .cut-precision-title svg {
   display: inline;
 }
-.cut-precision-clip.selected,
+
 .cut-precision-sound.selected,
 .cut-precision-title.selected {
-  border-color: white;
+  border: 2px solid #ffffff;
+  z-index: 4;
 }
+
+/* CapCut White Bracket Trim Handles [ ] */
 .cut-trim-handle {
   position: absolute;
   top: -2px;
   bottom: -2px;
-  width: 20px;
+  width: 12px;
   border: 0;
-  background: white;
-  color: #222;
+  background: #ffffff;
+  color: #111827;
   touch-action: none;
-  z-index: 5;
+  z-index: 6;
   cursor: ew-resize;
   padding: 0;
-}
-.cut-trim-handle.left {
-  left: -10px;
-  border-radius: 5px 0 0 5px;
-}
-.cut-trim-handle.right {
-  right: -10px;
-  border-radius: 0 5px 5px 0;
-}
-.cut-trim-handle span {
-  display: block;
-  width: 3px;
-  height: 18px;
-  margin: auto;
-  background: #9a9a9a;
-  border-radius: 3px;
-}
-.cut-center-playhead {
-  position: absolute;
-  left: 50%;
-  top: 61px;
-  bottom: 24px;
-  width: 2px;
-  background: white;
-  pointer-events: none;
-  z-index: 6;
-  box-shadow: 0 0 3px #000;
-}
-.cut-source-mute {
-  position: absolute;
-  left: 5px;
-  top: 71px;
-  z-index: 7;
-  width: 36px;
-  height: 44px;
-  background: #25252bea;
-  color: white;
-  border: 1px solid #555;
-  border-radius: 5px;
-}
-.cut-timeline-hint {
-  height: 24px;
-  padding: 4px 8px;
-  font-size: 9px;
-  color: #aaa;
-}
-.cut-precision-sound > button:not(.cut-trim-handle)[data-trim],
-.cut-precision-title > button:not(.cut-trim-handle)[data-trim] {
-  touch-action: none;
-  cursor: move;
-}
-@media (max-width: 700px) {
-  .cut-precision-scroll {
-    height: 175px;
-  }
-  .cut-timeline-controls button {
-    min-width: 34px;
-  }
-  .cut-timeline-controls > span {
-    font-size: 10px;
-  }
-  .cut-timeline-controls small {
-    display: none;
-  }
-  .cut-trim-handle {
-    width: 24px;
-  }
-  .cut-trim-handle.left {
-    left: -12px;
-  }
-  .cut-trim-handle.right {
-    right: -12px;
-  }
-}
-.cut-precision-timeline {
-  max-height: none !important;
-  flex-shrink: 0;
-}
-.cut-trim-handle {
   transition: none !important;
-}
-.cut-precision-title,
-.cut-precision-sound {
-  transition: none;
-}
-.cut-precision-scroll {
-  scroll-behavior: auto;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
 }
 
-@media (max-width: 767px) {
-  .cut-precision-timeline {
-    height: 249px;
-  }
-  .cut-precision-scroll {
-    height: 185px;
-  }
+.cut-trim-handle.left {
+  left: -2px;
+  border-radius: 5px 0 0 5px;
+}
+
+.cut-trim-handle.right {
+  right: -2px;
+  border-radius: 0 5px 5px 0;
+}
+
+.cut-trim-handle span {
+  display: block;
+  width: 2px;
+  height: 16px;
+  margin: auto;
+  background: #475569;
+  border-radius: 2px;
+}
+
+/* Moving White Playhead (CapCut Desktop) */
+.cut-moving-playhead {
+  position: absolute;
+  top: 2px;
+  bottom: 0;
+  width: 1.5px;
+  background: #ffffff;
+  pointer-events: none;
+  z-index: 15;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.85);
+}
+
+.cut-moving-playhead-head {
+  position: absolute;
+  top: 0;
+  left: -6px;
+  width: 13px;
+  height: 15px;
+  background: #ffffff;
+  clip-path: polygon(0% 0%, 100% 0%, 100% 62%, 50% 100%, 0% 62%);
+  cursor: ew-resize;
+  pointer-events: auto;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+/* Live Trim & Blade Floating Tooltip */
+.cut-timecode-tooltip {
+  position: absolute;
+  top: -22px;
+  transform: translateX(-50%);
+  background: #0f172a;
+  color: #22d3ee;
+  border: 1px solid rgba(34, 211, 238, 0.45);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 20;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
+.cut-timeline-hint {
+  height: 22px;
+  padding: 2px 10px;
+  font-size: 9.5px;
+  color: #64748b;
+  background: #101116;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }

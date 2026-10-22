@@ -5,9 +5,20 @@ import { Metadata, Viewport } from "next";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Fahi Vids — Professional Video Studio",
-  description: "Download, edit, and create videos with AI — free, in your browser. No signup. No watermarks.",
+  title: "FahiVids — Professional Video Studio",
+  description:
+    "Download, edit, and create videos — free, in your browser. No signup. No watermarks.",
   manifest: "/manifest.json",
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+      { url: "/favicon.ico", sizes: "64x64" },
+    ],
+    shortcut: "/app-icon.png",
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -16,7 +27,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#6366f1",
+  themeColor: "#00c8ff",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -57,6 +68,16 @@ export default function RootLayout({
                     if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
                   }
                 }, true);
+                window.addEventListener('beforeinstallprompt', function(e) {
+                  e.preventDefault();
+                  window.__fahiDeferredPrompt = e;
+                  window.dispatchEvent(new CustomEvent('fahi-pwa-ready'));
+                });
+                if ('serviceWorker' in navigator) {
+                  window.addEventListener('load', function() {
+                    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function() {});
+                  });
+                }
               })();
             `,
           }}

@@ -47,6 +47,7 @@ type Props = {
   coverImage?: string;
   externalScale?: number;
   onScaleChange?: (scale: number) => void;
+  onDropAssetId?: (assetId: string) => void;
 };
 
 export default function StudioTimeline(props: Props) {
@@ -184,6 +185,7 @@ export default function StudioTimeline(props: Props) {
         coverImage={props.coverImage}
         externalScale={props.externalScale}
         onScaleChange={props.onScaleChange}
+        onDropAssetId={props.onDropAssetId}
       />
     </div>
   );

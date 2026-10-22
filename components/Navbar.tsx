@@ -2,7 +2,9 @@
 
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { House, Download, Video, ImageIcon, Sparkles, Mic, Zap, Settings, Key, ShieldCheck } from 'lucide-react';
+import { House, Download, Video, ImageIcon, Sparkles, Mic, Settings, Key, ShieldCheck } from 'lucide-react';
+import FahiVidsLogo from './FahiVidsLogo';
+import PwaInstallButton from './PwaInstallButton';
 import GeminiApiBox from './GeminiApiBox';
 import UserSettingsModal from './UserSettingsModal';
 import AdminLoginModal from './AdminLoginModal';
@@ -32,12 +34,9 @@ export default function Navbar({ activeTab, setActiveTab }: NavbarProps) {
       <header className="sticky top-0 z-50 hidden md:block bg-[#050810]/85 backdrop-blur-xl border-b border-white/5 h-16">
         <div className="max-w-7xl mx-auto px-4 h-full flex items-center justify-between">
           
-          {/* Logo */}
+          {/* Official FahiVids SVG Logo & Wordmark */}
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => setActiveTab('home')}>
-            <Zap className="w-6 h-6 text-violet-400 drop-shadow-[0_0_8px_rgba(124,58,237,0.5)]" />
-            <span className="font-bold text-lg bg-gradient-to-r from-violet-400 to-blue-400 bg-clip-text text-transparent">
-              FahiVids
-            </span>
+            <FahiVidsLogo size={32} showSubtitle />
           </div>
 
           {/* Navigation Tabs */}
@@ -69,6 +68,7 @@ export default function Navbar({ activeTab, setActiveTab }: NavbarProps) {
 
           {/* Right Actions */}
           <div className="flex items-center gap-2">
+            <PwaInstallButton />
             <button
               onClick={() => setAdminModalOpen(true)}
               className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30 transition-all shadow-sm"
@@ -99,12 +99,10 @@ export default function Navbar({ activeTab, setActiveTab }: NavbarProps) {
       {activeTab !== 'editor' && (
         <header className="sticky top-0 z-50 md:hidden bg-[#050810]/95 backdrop-blur-xl border-b border-white/5 h-14 flex items-center justify-between px-4">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => setActiveTab('home')}>
-            <Zap className="w-5 h-5 text-violet-400 drop-shadow-[0_0_8px_rgba(124,58,237,0.5)]" />
-            <span className="font-bold text-base bg-gradient-to-r from-violet-400 to-blue-400 bg-clip-text text-transparent">
-              FahiVids
-            </span>
+            <FahiVidsLogo size={26} />
           </div>
           <div className="flex items-center gap-1.5">
+            <PwaInstallButton compact />
             <button
               onClick={() => setAdminModalOpen(true)}
               className="p-1.5 bg-violet-600/20 border border-violet-500/30 text-violet-300 rounded-lg text-xs font-bold flex items-center space-x-1"
@@ -166,9 +164,6 @@ export default function Navbar({ activeTab, setActiveTab }: NavbarProps) {
           </div>
         </nav>
       )}
-
-      {apiBoxOpen && <GeminiApiBox isOpen={apiBoxOpen} onClose={() => setApiBoxOpen(false)} />}
-      {settingsOpen && <UserSettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />}
     </>
   );
 }
