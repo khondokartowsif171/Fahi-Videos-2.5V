@@ -12,6 +12,7 @@ import {
   Smartphone,
   Copy,
   Sparkles,
+  AlertTriangle,
 } from "lucide-react";
 
 interface BeforeInstallPromptEvent extends Event {
@@ -44,9 +45,12 @@ export default function PwaInstallButton({
     "pc",
   );
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [isSecure, setIsSecure] = useState(true);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+
+    setIsSecure(window.isSecureContext !== false);
 
     // Register Service Worker if not already active
     if ("serviceWorker" in navigator) {
@@ -264,6 +268,21 @@ export default function PwaInstallButton({
 
             {/* Platform Instructions Body */}
             <div className="p-5 space-y-4 text-xs">
+              {!isSecure && (
+                <div className="p-3.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-200 text-xs space-y-2">
+                  <div className="font-bold flex items-center gap-1.5 text-amber-100">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>Secure Context (HTTPS / Localhost) Required</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-amber-200/90">
+                    Android Chrome বা ব্রাউজারে সরাসরি 1-ক্লিক WebApp (WebAPK) হিসেবে ইনস্টল হতে HTTPS বা localhost প্রয়োজন। লোকাল Wi-Fi আইপি (HTTP)-তে ব্রাউজার সিকিউরিটি পলিসি ইনস্টলেশন ব্লক রাখে।
+                  </p>
+                  <p className="text-[11px] text-cyan-300 font-mono bg-black/40 p-2 rounded-lg border border-cyan-500/20">
+                    পিসিতে টার্মিনালে <strong>npm run dev:https</strong> চালিয়ে HTTPS লিংক ব্যবহার করুন, অথবা লাইভ HTTPS ডোমেইন থেকে ভিজিট করলে সাথে সাথে WebApp ডাউনলোড হবে!
+                  </p>
+                </div>
+              )}
+
               {hasNativePrompt && (
                 <div className="p-3.5 rounded-xl bg-gradient-to-r from-cyan-500/15 to-indigo-500/20 border border-cyan-400/35 space-y-2.5">
                   <div className="flex items-center justify-between">

@@ -74,9 +74,14 @@ export default function RootLayout({
                   window.dispatchEvent(new CustomEvent('fahi-pwa-ready'));
                 });
                 if ('serviceWorker' in navigator) {
-                  window.addEventListener('load', function() {
+                  var registerSW = function() {
                     navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function() {});
-                  });
+                  };
+                  if (document.readyState === 'complete') {
+                    registerSW();
+                  } else {
+                    window.addEventListener('load', registerSW);
+                  }
                 }
               })();
             `,

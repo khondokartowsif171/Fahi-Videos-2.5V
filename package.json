@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbo",
+    "dev:https": "next dev --experimental-https",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -11,7 +12,7 @@
     "test:aura": "node tests/aura-server.cjs",
     "test:kotha": "node tests/kotha-studio.cjs",
     "test:capcut": "node tests/capcut-studio.cjs",
-    "test:editor": "node tests/timeline-export.cjs && node tests/editor-motion.cjs && node tests/capcut-studio.cjs"
+    "test:editor": "node tests/timeline-export.cjs && node tests/export-audio.cjs && node tests/editor-motion.cjs && node tests/capcut-studio.cjs"
   },
   "dependencies": {
     "@distube/ytdl-core": "^4.16.12",
