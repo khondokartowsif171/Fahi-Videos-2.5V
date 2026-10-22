@@ -44,6 +44,7 @@ async function upload(blob:Blob,name:string,cacheKey?:string) {
   const response=await bridge('assets?name='+encodeURIComponent(name),{method:'POST',headers:{'Content-Type':blob.type||'application/octet-stream','x-file-size':String(blob.size)},body:blob});
   const asset=await response.json();if(cacheKey)uploads.set(cacheKey,asset.id);blobUploads.set(blob,asset.id);return asset.id as string;
 }
+export async function saveStudioExport(blob:Blob,name:string){return '/api/fahi/assets/'+await upload(blob,name);}
 async function pack(value:any):Promise<any>{
   if(value instanceof Date)return {__studioDate:value.toISOString()};
   if(value instanceof Uint8Array)return {__studioAsset:await upload(new Blob([new Uint8Array(value)],{type:'audio/wav'}),'audio-buffer'),bytes:true};

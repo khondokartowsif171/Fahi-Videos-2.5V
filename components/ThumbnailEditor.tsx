@@ -1,5 +1,6 @@
 "use client";
 import { useStudioProject } from '@/lib/studio-client';
+import CloudExport from './CloudExport';
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Undo2, Redo2 } from "lucide-react";
@@ -355,6 +356,7 @@ export default function ThumbnailEditor() {
                     </button>
                     {exportError&&<p role="alert" className="mt-2 text-xs text-red-300">{exportError}</p>}
                     {exportDownload&&<a href={exportDownload} download="thumbnail-export.jpg" className="mt-2 block text-xs text-cyan-300 underline">Download exported JPG</a>}
+                    {exportDownload&&<CloudExport key={exportDownload} source={exportDownload} name="thumbnail-export.jpg"/>}
                     <p className="text-[9px] text-center text-slate-500 mt-3 font-mono">Outputs 1280x720 HD Thumbnail</p>
                </div>
             </div>

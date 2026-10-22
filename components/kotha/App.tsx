@@ -1,6 +1,7 @@
 import { kothaFetch as fetch } from './api-client';
 import { isEmbedded, useStudioProject } from '@/lib/studio-client';
 import { spokenWav } from '@/lib/spoken-wav';
+import CloudExport from '../CloudExport';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Play,
@@ -1259,6 +1260,7 @@ export default function App() {
               <span>{bannerMessage}</span>
               {isEmbedded && scenes.find(s=>s.id===selectedSceneId)?.sourceEngine && <span className="block text-xs">Speech engine: {scenes.find(s=>s.id===selectedSceneId)?.sourceEngine==='neural-bangla-stream'?'Google Translate Bengali TTS (default voice)':scenes.find(s=>s.id===selectedSceneId)?.sourceEngine}</span>}
               {exportDownload && <a href={exportDownload.url} download={exportDownload.name} className="block text-xs underline">Download {exportDownload.name}</a>}
+              {exportDownload && <CloudExport key={exportDownload.url} source={exportDownload.url} name={exportDownload.name}/>}
             </div>
             <span className="font-bangla text-slate-400 shrink-0">
               {isEn ? 'Voice Artist: ' : 'কণ্ঠশিল্পী: '}
