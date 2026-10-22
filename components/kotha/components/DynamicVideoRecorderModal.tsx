@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { isEmbedded } from '@/lib/studio-client';
+import CloudExport from '../../CloudExport';
 import {
   Video,
   Download,
@@ -689,6 +690,9 @@ export const DynamicVideoRecorderModal: React.FC<DynamicVideoRecorderModalProps>
               }`}
             />
 
+            {recordedVideoUrl && !isRecording && (
+              <CloudExport key={recordedVideoUrl} source={recordedVideoUrl} name="KothaStudio_Bangla_Dub.webm"/>
+            )}
             {recordedVideoUrl && !isRecording && (
               <div className="w-full mt-3 pt-3 border-t border-slate-800 space-y-1.5">
                 <span className="text-[11px] text-teal-300 font-bangla block">
