@@ -1,3 +1,4 @@
+import { isEmbedded } from './studio-client';
 /**
  * lib/ai-client.ts
  * 
@@ -29,6 +30,7 @@ export interface AiResponse {
  * Get configured headers for API calls (includes Gemini key and n8n webhook/key headers)
  */
 export function getAiHeaders(): Record<string, string> {
+  if (isEmbedded) return {"Content-Type":"application/json"};
   const geminiKey =
     typeof window !== "undefined"
       ? localStorage.getItem("fahi_gemini_api_key") || ""

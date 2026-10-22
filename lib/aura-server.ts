@@ -1,3 +1,5 @@
+import { embedded, studioContext } from './studio-context';
+import { studioProviderRequest, saveStudioJob, getStudioJob, idempotentGeneration } from './studio-server';
 import { GoogleGenAI, GenerateVideosOperation } from '@google/genai';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
@@ -29,23 +31,26 @@ function media(value: unknown, mimeType: unknown, kind: 'image' | 'video' = 'ima
   return kind === 'image' ? { imageBytes: bytes, mimeType: mime } : { videoBytes: bytes, mimeType: mime };
 }
 function owner(req: Request, key: string) {
+  if (embedded()) return studioContext(req).tenant;
   const id = req.headers.get('x-aura-client-id');
   if (!id || !/^[a-zA-Z0-9-]{16,64}$/.test(id)) throw new ApiError(400, 'Missing studio session. Refresh and try again.');
   return createHash('sha256').update(id + ':' + key).digest('hex');
 }
-function keyFor(req: Request) { return req.headers.get('x-gemini-api-key') || process.env.GEMINI_API_KEY || ''; }
+function keyFor(req: Request) { return req.headers.get('x-gemini-api-key') || (embedded() ? '' : process.env.GEMINI_API_KEY) || ''; }
 function aiFor(key: string) {
   if (!key) throw new ApiError(503, 'Add a Gemini API key in Fahi Videos API Settings, or set GEMINI_API_KEY on the server. Video generation requires a billing-enabled key.');
   return new GoogleGenAI({ apiKey: key, httpOptions: { timeout: 120000 } });
 }
-function getJob(id: string, own: string) {
+async function getJob(id: string, own: string, req: Request) {
+  if (embedded()) return getStudioJob(req,id);
   if (!/^[a-f0-9-]{36}$/.test(id)) throw new ApiError(404, 'Unknown render job.');
   const job = read<Job>(`job-${id}.json`);
   if (job.owner !== own) throw new ApiError(404, 'Unknown render job.');
   if (Date.now() - job.createdAt > 48 * 3600_000) throw new ApiError(410, 'Render job expired. Generate a new video.');
   return job;
 }
-function saveJob(operationName: string | undefined, own: string) {
+async function saveJob(operationName: string | undefined, own: string, req: Request) {
+  if (embedded()) {if(!operationName) throw new ApiError(502,"Provider returned no render operation.");const id=randomUUID();await saveStudioJob(req,id,operationName);return id;}
   if (!operationName) throw new ApiError(502, 'Video provider did not return a render operation.');
   const id = randomUUID(); write(`job-${id}.json`, { owner: own, operationName, createdAt: Date.now() }); return id;
 }
@@ -73,7 +78,10 @@ function wav(pcm: Buffer) {
   header.writeUInt32LE(24000,24); header.writeUInt32LE(48000,28); header.writeUInt16LE(2,32); header.writeUInt16LE(16,34);
   header.write('data',36); header.writeUInt32LE(pcm.length,40); return Buffer.concat([header,pcm]);
 }
+let encoding = false;
 async function encode(video: string, audio?: string, upscale?: string) {
+  if (embedded() && encoding) throw new ApiError(429,"Another video export is processing. Try again shortly.");
+  encoding = true;
   fs.mkdirSync(dataDir(), { recursive:true });
   const folder = fs.mkdtempSync(path.join(dataDir(), 'export-'));
   try {
@@ -91,11 +99,16 @@ async function encode(video: string, audio?: string, upscale?: string) {
       proc.on('close',code=> {clearTimeout(timer); code === 0 ? resolve() : reject(new ApiError(422,'Unable to process this video or audio.')); });
     });
     return new Response(fs.readFileSync(output), { headers: { 'Content-Type':'video/mp4','Content-Disposition':'attachment; filename="aura-studio.mp4"' } });
-  } finally { fs.rmSync(folder,{recursive:true,force:true}); }
+  } finally { encoding = false; fs.rmSync(folder,{recursive:true,force:true}); }
 }
 type Lead = { id:string; customerName:string; phone:string; product:string; notes:string; status:string; timestamp:string };
 const limits = new Map<string, { count:number; since:number }>();
 export async function handleAura(req: Request, parts: string[]) {
+  const normalized=await studioProviderRequest(req);
+  if (req.method==='POST' && /^(veo\/generate|omni|image\/(generate|edit)|ugc\/generate-(script|voiceover)|director\/chat|flow\/enhance-prompt)$/.test(parts.join('/'))) return idempotentGeneration(normalized, r=>handleAuraCore(r,parts));
+  return handleAuraCore(normalized,parts);
+}
+async function handleAuraCore(req: Request, parts: string[]) {
   try {
     const route = parts.join('/'), key = keyFor(req);
     if (route === 'health') return Response.json({ status:'ok', geminiConfigured: !!key, timestamp:new Date().toISOString() });
@@ -125,14 +138,14 @@ export async function handleAura(req: Request, parts: string[]) {
     if (route.startsWith('care/') && req.method === 'POST') return await care(body,route,own);
     const ai = aiFor(key);
     if (route.startsWith('job/') && req.method === 'GET') {
-      const job = getJob(parts[1],own);
+      const job = await getJob(parts[1],own,req);
       if (parts[2] === 'result') return await download(ai,job,key);
       const op = await operation(ai,job);
       return Response.json({status:op.error ? 'error' : op.done ? 'done' : 'pending',error:op.error?.message});
     }
     if (req.method !== 'POST') throw new ApiError(405,'Method not allowed.');
     if (route === 'veo/status' || route === 'veo/download') {
-      const job = getJob(required(body.operationName,'Render ID'),own);
+      const job = await getJob(required(body.operationName,'Render ID'),own,req);
       if (route === 'veo/download') return await download(ai,job,key);
       const op = await operation(ai,job); return Response.json({done:op.done,error:op.error});
     }
@@ -150,7 +163,7 @@ export async function handleAura(req: Request, parts: string[]) {
           payload.prompt += '\nStyle guidance: ' + response.text;
         }
       }
-      const op = await ai.models.generateVideos(payload); const jobId = saveJob(op.name,own);
+      const op = await ai.models.generateVideos(payload); const jobId = await saveJob(op.name,own,req);
       return Response.json(route === 'veo/generate' ? {operationName:jobId} : {jobId});
     }
     if (['image/generate','generate-image','image/edit'].includes(route)) {

@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   title: "FahiVids — Professional Video Studio",
   description:
     "Download, edit, and create videos — free, in your browser. No signup. No watermarks.",
-  manifest: "/manifest.json",
+  manifest: process.env.FAHI_EMBEDDED === "1" ? undefined : "/manifest.json",
   icons: {
     icon: [
       { url: "/icon.svg", type: "image/svg+xml" },
@@ -73,7 +73,7 @@ export default function RootLayout({
                   window.__fahiDeferredPrompt = e;
                   window.dispatchEvent(new CustomEvent('fahi-pwa-ready'));
                 });
-                if ('serviceWorker' in navigator) {
+                if ('${process.env.FAHI_EMBEDDED || '0'}' !== '1' && 'serviceWorker' in navigator) {
                   var registerSW = function() {
                     navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function() {});
                   };

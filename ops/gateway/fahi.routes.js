@@ -1,0 +1,50 @@
+const http = require('http');
+const https = require('https');
+const crypto = require('crypto');
+const { gate } = require('../middleware/gate');
+
+function installFahi(app) {
+  // This route is intentionally mounted BEFORE body parsers: media stays streamed.
+  app.use(['/fahi-studio', '/api/fahi', '/fahi-preview'], (req, res, next) => {
+    if (process.env.FAHI_PREVIEW_ENABLED !== '1') return res.status(404).json({error:'Studio preview is not enabled.'});
+    const savedUrl = req.url;
+    // Reuse the established actor/workspace resolver without its legacy static-file exceptions.
+    req.url = '/api/fahi/context';
+    gate(req, res, () => {
+      req.url = savedUrl;
+      if (!req.clientId || !req.tenant || req.tenant.startsWith('__')) return res.status(403).json({error:'A verified workspace is required.'});
+      if (req.headers['x-fahi-workspace'] && req.headers['x-fahi-workspace'] !== req.tenant) return res.status(409).set('x-fahi-workspace-changed','1').json({error:'Workspace changed. Reopen the studio.'});
+      if (process.env.FAHI_RELEASE_MODE !== 'live' && !['owner','admin'].includes(req.user.role)) return res.status(403).json({error:'Studio preview is currently available to platform owners and admins.'});
+      const secret = process.env.FAHI_BRIDGE_SECRET;
+      if (!secret || secret.length < 32 || !process.env.FAHI_INTERNAL_URL) return res.status(503).json({error:'Studio gateway is not configured.'});
+      if (req.originalUrl.split('?')[0] === '/fahi-preview') return res.type('html').send('<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>FahiVids · Aura Preview</title></head><body style="margin:0;background:#020617;color:#fff;font:14px system-ui"><header style="height:44px;display:flex;align-items:center;gap:20px;padding:0 16px"><a href="/" style="color:#67e8f9">← Aura Dashboard</a><b>FahiVids Studio · Owner preview</b><span>Live Veo menu is unchanged</span></header><iframe title="FahiVids Studio" src="/fahi-studio/" style="border:0;width:100%;height:calc(100dvh - 44px)" allow="microphone;camera;clipboard-write;autoplay;display-capture;fullscreen" allowfullscreen></iframe></body></html>');
+      if (!['GET','HEAD','OPTIONS'].includes(req.method)) {
+        const origin = req.headers.origin;
+        const expected = new URL(process.env.SELF_URL || 'https://client.auraajenticai.cloud').origin;
+        if (origin !== expected) return res.status(403).json({error:'Open this action from your Aura dashboard.'});
+      }
+      const raw = req.originalUrl;
+      const prefix = raw.startsWith('/api/fahi') ? '/fahi-studio/api/bridge' : '/fahi-studio';
+      const suffix = raw.startsWith('/api/fahi') ? raw.slice('/api/fahi'.length) : raw.slice('/fahi-studio'.length);
+      const target = new URL(prefix + (suffix || '/'), process.env.FAHI_INTERNAL_URL);
+      const platformAdmin = ['owner','admin'].includes(req.user.role);
+      const payload = Buffer.from(JSON.stringify({aud:'fahi-studio',tenant:req.tenant,actor:String(req.user.sub || req.user.email),role:platformAdmin?'admin':req.teamRole,name:req.clientName,exp:Math.floor(Date.now()/1000)+60})).toString('base64url');
+      const signature = crypto.createHmac('sha256',secret).update(payload).digest('base64url');
+      const headers = {...req.headers,host:target.host,'x-fahi-context':payload+'.'+signature};
+      for (const name of Object.keys(headers)) if (/^x-(?:aura|gemini|n8n|fahi)-/.test(name) && name !== 'x-fahi-context') delete headers[name];
+      delete headers.cookie; delete headers.authorization; delete headers.connection;
+      const upstream = (target.protocol==='https:'?https:http).request(target,{method:req.method,headers,timeout:300000},reply=>{
+        res.status(reply.statusCode || 502);
+        for (const [key,value] of Object.entries(reply.headers)) if(value!==undefined&&!['connection','transfer-encoding','set-cookie'].includes(key)) res.setHeader(key,value);
+        res.setHeader('Cache-Control','private, no-store');
+        res.setHeader('Content-Security-Policy',"frame-ancestors 'self'");
+        reply.pipe(res);
+      });
+      upstream.on('timeout',()=>upstream.destroy(new Error('Studio timeout')));
+      upstream.on('error',()=>{if(!res.headersSent)res.status(502).json({error:'Studio is temporarily unavailable.'});else res.destroy();});
+      req.on('aborted',()=>upstream.destroy());
+      req.pipe(upstream);
+    }).catch(next);
+  });
+}
+module.exports={installFahi};

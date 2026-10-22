@@ -1,3 +1,4 @@
+require('./register-typescript.cjs');
 const fs=require('fs'),path=require('path'),Module=require('module'),assert=require('node:assert/strict');
 const ts=require('typescript');
 process.env.AURA_DATA_DIR=path.join(require('os').tmpdir(), 'fahi-aura-test-' + process.pid);
@@ -16,7 +17,7 @@ class MockAI {
 const source=fs.readFileSync(path.join(__dirname,'../lib/aura-server.ts'),'utf8');
 const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
 const mod=new Module(path.join(__dirname,'aura-server-test.cjs'),module);mod.filename=mod.id;mod.paths=module.paths;
-const nativeRequire=mod.require.bind(mod);mod.require=id=>id==='@google/genai'?{GoogleGenAI:MockAI,GenerateVideosOperation:class{}}:nativeRequire(id);
+const nativeRequire=mod.require.bind(mod);mod.require=id=>id==='@google/genai'?{GoogleGenAI:MockAI,GenerateVideosOperation:class{}}:id.startsWith('./studio-')?require('../lib/'+id.slice(2)+'.ts'):nativeRequire(id);
 mod._compile(code,mod.filename); const {handleAura}=mod.exports;
 const own='11111111-1111-4111-8111-111111111111';
 const headers={'x-aura-client-id':own,'x-gemini-api-key':'test-key','Content-Type':'application/json'};

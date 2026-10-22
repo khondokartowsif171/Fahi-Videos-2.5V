@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { embedded } from '@/lib/studio-context';
 export const dynamic = "force-dynamic";
 const btch = require("btch-downloader");
 
@@ -39,6 +40,14 @@ export async function GET(req: NextRequest) {
     }
 
     try {
+        const source=new URL(url);
+        const allowed=(host:string,base:string)=>host===base||host.endsWith('.'+base);
+        if(source.protocol!=='https:'||source.username||source.password) return NextResponse.json({error:'Use a public HTTPS media URL.'},{status:400});
+        const sourceHost=source.hostname.toLowerCase();
+        if(embedded()&&sourceHost==='storage.googleapis.com'&&source.pathname.startsWith('/gtv-videos-bucket/sample/')&&source.pathname.endsWith('.mp4')) {
+            return NextResponse.json({title:source.pathname.split('/').pop(),author:'Public sample media',thumbnail:'',formats:[{quality:'Original MP4',url:source.href,type:'video'}]});
+        }
+        if(!allowed(sourceHost,'youtube.com')&&!allowed(sourceHost,'youtu.be')&&!allowed(sourceHost,'facebook.com')&&!allowed(sourceHost,'fb.watch')) return NextResponse.json({error:'This downloader supports YouTube and Facebook links.'},{status:400});
         let isFacebook = url.includes("facebook.com") || url.includes("fb.watch");
         let isYoutube = url.includes("youtube.com") || url.includes("youtu.be");
 
@@ -95,6 +104,7 @@ export async function GET(req: NextRequest) {
         }
         
         // Final ultimate fallback if both fail (always for YouTube now as secure widget)
+        if(embedded()) return NextResponse.json({error:'The source did not provide a downloadable media stream. Try another public video.'},{status:502});
         const fallbackFormats = [
             { quality: "1080p (Full HD MP4)", url: `https://loader.to/api/button/?url=${encodeURIComponent(url)}&f=1080`, type: "video", isFallback: true },
             { quality: "720p (HD MP4)", url: `https://loader.to/api/button/?url=${encodeURIComponent(url)}&f=720`, type: "video", isFallback: true },
