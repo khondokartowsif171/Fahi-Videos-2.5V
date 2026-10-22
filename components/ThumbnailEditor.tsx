@@ -110,7 +110,7 @@ export default function ThumbnailEditor() {
         setIsExporting(true);
         setExportError("");
         try {
-            const dataUrl = await Promise.race([htmlToImage.toJpeg(canvasRef.current, { quality: 0.95, width: 1280, height: 720, pixelRatio: 1, skipFonts: true }), new Promise<never>((_,reject)=>setTimeout(()=>reject(new Error("Image export timed out. Try a locally uploaded background.")),30000))]);
+            const dataUrl = await Promise.race([htmlToImage.toJpeg(canvasRef.current, { quality: 0.95, canvasWidth: 1280, canvasHeight: 720, pixelRatio: 1, skipFonts: true }), new Promise<never>((_,reject)=>setTimeout(()=>reject(new Error("Image export timed out. Try a locally uploaded background.")),30000))]);
             const link = document.createElement("a");
             link.download = "thumbnail-export.jpg";
             link.href = dataUrl;
