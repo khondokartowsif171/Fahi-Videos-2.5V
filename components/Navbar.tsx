@@ -97,28 +97,29 @@ export default function Navbar({ activeTab, setActiveTab }: NavbarProps) {
       </header>
 
       {/* Mobile Top Bar (Hidden in Editor mode for full screen studio) */}
-      {activeTab !== 'editor' && (
+      {(isEmbedded || activeTab !== 'editor') && (
         <header className="sticky top-0 z-50 md:hidden bg-[#050810]/95 backdrop-blur-xl border-b border-white/5 h-14 flex items-center justify-between px-4">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => setActiveTab('home')}>
             <FahiVidsLogo size={26} />
           </div>
           <div className="flex items-center gap-1.5">
+            {isEmbedded && <select aria-label="Studio tool" value={activeTab} onChange={e=>setActiveTab(e.target.value)} className="max-w-44 rounded-lg border border-white/20 bg-slate-900 px-2 py-2 text-xs text-white">{tabs.map(tab=><option key={tab.id} value={tab.id}>{tab.label}</option>)}</select>}
             {!isEmbedded && <PwaInstallButton compact />}
             <button
-              onClick={() => setAdminModalOpen(true)}
+              style={isEmbedded ? {display:'none'} : undefined} onClick={() => setAdminModalOpen(true)}
               className="p-1.5 bg-violet-600/20 border border-violet-500/30 text-violet-300 rounded-lg text-xs font-bold flex items-center space-x-1"
             >
               <ShieldCheck className="w-4 h-4 text-violet-400" />
               <span>Admin</span>
             </button>
             <button
-              onClick={() => setApiBoxOpen(true)}
+              style={isEmbedded ? {display:'none'} : undefined} onClick={() => setApiBoxOpen(true)}
               className="p-2 text-slate-400 hover:text-white rounded-full"
             >
               <Key className="w-5 h-5" />
             </button>
             <button
-              onClick={() => setSettingsOpen(true)}
+              style={isEmbedded ? {display:'none'} : undefined} onClick={() => setSettingsOpen(true)}
               className="p-2 text-slate-400 hover:text-white rounded-full"
             >
               <Settings className="w-5 h-5" />
@@ -133,7 +134,7 @@ export default function Navbar({ activeTab, setActiveTab }: NavbarProps) {
       <AdminLoginModal isOpen={adminModalOpen} onClose={() => setAdminModalOpen(false)} />
 
       {/* Mobile Bottom Navigation (Hidden in Editor mode to allow full timeline interactions) */}
-      {activeTab !== 'editor' && activeTab !== 'ai' && (
+      {!isEmbedded && activeTab !== 'editor' && activeTab !== 'ai' && (
         <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-[#050810]/95 backdrop-blur-xl border-t border-white/5 pb-[env(safe-area-inset-bottom)]">
           <div className="flex items-center justify-around h-16 px-2">
             {tabs.map((tab) => {
