@@ -124,9 +124,9 @@ export async function studioBridge(req:Request,parts:string[]) {
       return Response.json({id:projectId,revision:rows[0].revision});
     }
     if(route==='assets'&&req.method==='POST'&&!id) {
-      const bytes=Number(req.headers.get('x-file-size')),mime=req.headers.get('content-type')||'',name=(url.searchParams.get('name')||'media').slice(0,200);
+      const bytes=Number(req.headers.get('x-file-size')),mime=(req.headers.get('content-type')||'').split(';')[0].trim().toLowerCase(),name=(url.searchParams.get('name')||'media').slice(0,200);
       if(!req.body||!Number.isSafeInteger(bytes)||bytes<=0||bytes>FILE_LIMIT) throw new StudioError(413,'File limit is 250 MB.');
-      if(!/^(video\/(mp4|webm|quicktime)|audio\/(mpeg|mp4|wav|x-wav|webm|ogg)|image\/(png|jpeg|webp))$/.test(mime)) throw new StudioError(400,'Unsupported media format.');
+      if(!/^(video\/(mp4|webm|quicktime)|audio\/(mpeg|mp4|wav|x-wav|webm|ogg)|image\/(png|jpeg|webp)|text\/(plain|srt)|application\/(json|x-subrip))$/.test(mime)) throw new StudioError(400,'Unsupported media format.');
       await fsp.mkdir(root(),{recursive:true});
       const disk=await fsp.statfs(root());if(disk.bavail*disk.bsize-bytes<10*1024**3) throw new StudioError(507,'Studio disk reserve reached.');
       const assetId=randomUUID(),file=assetPath(ctx.tenant,assetId);await fsp.mkdir(path.dirname(file),{recursive:true});
