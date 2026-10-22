@@ -521,6 +521,9 @@ export default function VideoEditor() {
   }, []);
 
   const [isExporting, setIsExporting] = useState(false);
+  const [exportDownload, setExportDownload] = useState<{url:string;name:string}|null>(null);
+  const [exportError, setExportError] = useState("");
+  useEffect(() => () => { if (exportDownload) URL.revokeObjectURL(exportDownload.url); }, [exportDownload]);
   const [exportProgress, setExportProgress] = useState(0);
   const [showExportModal, setShowExportModal] = useState(false);
 
@@ -2268,14 +2271,15 @@ export default function VideoEditor() {
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      setExportDownload({url,name:anchor.download});
+      setExportError("");
       logActivity({
         type: "video_edit",
         title: videoClips[0].name,
         metadata: { format: blob.type, clips: videoClips.length },
       });
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Video export failed");
+      setExportError(error instanceof Error ? error.message : "Video export failed");
     } finally {
       setIsExporting(false);
     }
@@ -2457,6 +2461,9 @@ export default function VideoEditor() {
           />
         </div>
 
+        {/* Export stays available for browsers that block automatic downloads. */}
+        {exportError && <p role="alert" className="text-xs text-red-300">{exportError}</p>}
+        {exportDownload && <a href={exportDownload.url} download={exportDownload.name} className="text-xs text-cyan-300 underline">Download exported video</a>}
         {/* Right: Admin + Share + Cyan Export Button */}
         <div className="flex items-center space-x-2">
           <button

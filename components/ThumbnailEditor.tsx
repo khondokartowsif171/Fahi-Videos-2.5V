@@ -59,6 +59,7 @@ export default function ThumbnailEditor() {
     
     const [isExporting, setIsExporting] = useState(false);
     const [exportError,setExportError]=useState("");
+    const [exportDownload,setExportDownload]=useState("");
     const [activeTab, setActiveTab] = useState<"background" | "typography">("background");
 
     useEffect(() => {
@@ -112,6 +113,7 @@ export default function ThumbnailEditor() {
             const link = document.createElement("a");
             link.download = "thumbnail-export.jpg";
             link.href = dataUrl;
+            setExportDownload(dataUrl);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -352,6 +354,7 @@ export default function ThumbnailEditor() {
                         {isExporting ? "Processing Image..." : "Export Standard JPG"}
                     </button>
                     {exportError&&<p role="alert" className="mt-2 text-xs text-red-300">{exportError}</p>}
+                    {exportDownload&&<a href={exportDownload} download="thumbnail-export.jpg" className="mt-2 block text-xs text-cyan-300 underline">Download exported JPG</a>}
                     <p className="text-[9px] text-center text-slate-500 mt-3 font-mono">Outputs 1280x720 HD Thumbnail</p>
                </div>
             </div>
