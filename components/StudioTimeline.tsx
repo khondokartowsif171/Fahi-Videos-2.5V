@@ -126,17 +126,23 @@ export default function StudioTimeline(props: Props) {
       startOffset: c.in,
       duration: c.out - c.in,
     }));
-    const audio = next.sounds.map((s) => ({
-      ...props.audio.find((a) => a.id === s.assetId)!,
-      id: s.id,
-      start: s.start,
-      trimStart: s.in,
-      trimEnd: s.out,
-      volume: s.volume,
-      fadeIn: s.fadeIn,
-      fadeOut: s.fadeOut,
-      muted: s.muted,
-    }));
+    const audio = next.sounds.map((s) => {
+      const base =
+        props.audio.find((a) => a.id === s.assetId) ||
+        props.audio.find((a) => a.id === s.id) ||
+        props.audio[0]!;
+      return {
+        ...base,
+        id: s.id,
+        start: s.start,
+        trimStart: s.in,
+        trimEnd: s.out,
+        volume: s.volume,
+        fadeIn: s.fadeIn,
+        fadeOut: s.fadeOut,
+        muted: s.muted,
+      };
+    });
     const titles = next.titles.map((t) => ({
       ...props.titles.find((old) => old.id === t.id)!,
       start: t.start,
