@@ -2,6 +2,7 @@ const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
 const { gate } = require('../middleware/gate');
+const { getClientServices } = require('../config/pgstore');
 
 function installFahi(app) {
   // This route is intentionally mounted BEFORE body parsers: media stays streamed.
@@ -10,11 +11,17 @@ function installFahi(app) {
     const savedUrl = req.url;
     // Reuse the established actor/workspace resolver without its legacy static-file exceptions.
     req.url = '/api/fahi/context';
-    gate(req, res, () => {
+    gate(req, res, async () => {
+      try {
       req.url = savedUrl;
       if (!req.clientId || !req.tenant || req.tenant.startsWith('__')) return res.status(403).json({error:'A verified workspace is required.'});
       if (req.headers['x-fahi-workspace'] && req.headers['x-fahi-workspace'] !== req.tenant) return res.status(409).set('x-fahi-workspace-changed','1').json({error:'Workspace changed. Reopen the studio.'});
       if (process.env.FAHI_RELEASE_MODE !== 'live' && !['owner','admin'].includes(req.user.role)) return res.status(403).json({error:'Studio preview is currently available to platform owners and admins.'});
+      const cfg=req.clientConfig||{},services=await getClientServices(req.clientId);
+      const active=services.some(s=>s.slug==='video-ad-studio'&&['active','trial'].includes(s.status));
+      const paused=!active&&services.some(s=>s.slug==='video-ad-studio'&&['paused','cancelled'].includes(s.status));
+      const allowed=(Array.isArray(cfg.enabledFeatures)&&cfg.enabledFeatures.includes('veo'))||(!paused&&(['owner','admin'].includes(req.user.role)||active));
+      if(!allowed||(Array.isArray(cfg.disabledFeatures)&&cfg.disabledFeatures.includes('veo'))) return res.status(403).json({error:'Fahi vids is not enabled for this workspace. Ask your Aura administrator to enable Video Studio.'});
       const secret = process.env.FAHI_BRIDGE_SECRET;
       if (!secret || secret.length < 32 || !process.env.FAHI_INTERNAL_URL) return res.status(503).json({error:'Studio gateway is not configured.'});
       if (req.originalUrl.split('?')[0] === '/fahi-preview') return res.type('html').send('<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>FahiVids · Aura Preview</title></head><body style="margin:0;background:#020617;color:#fff;font:14px system-ui"><header style="height:44px;display:flex;align-items:center;gap:20px;padding:0 16px"><a href="/" style="color:#67e8f9">← Aura Dashboard</a><b>FahiVids Studio · Owner preview</b><span>Live Veo menu is unchanged</span></header><iframe title="FahiVids Studio" src="/fahi-studio/" style="border:0;width:100%;height:calc(100dvh - 44px)" allow="microphone;camera;clipboard-write;autoplay;display-capture;fullscreen" allowfullscreen></iframe></body></html>');
@@ -44,6 +51,7 @@ function installFahi(app) {
       upstream.on('error',()=>{if(!res.headersSent)res.status(502).json({error:'Studio is temporarily unavailable.'});else res.destroy();});
       req.on('aborted',()=>upstream.destroy());
       req.pipe(upstream);
+      } catch(err) { next(err); }
     }).catch(next);
   });
 }

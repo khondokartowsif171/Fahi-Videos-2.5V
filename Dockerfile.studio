@@ -12,7 +12,8 @@ FROM base
 WORKDIR /app
 COPY --from=build /app ./
 ENV NODE_ENV=production FAHI_EMBEDDED=1 PORT=3000 NEXT_TELEMETRY_DISABLED=1 STUDIO_MEDIA_DIR=/media
-RUN mkdir /media && chown node:node /media
+RUN mkdir -p /media && chown node:node /media
 USER node
 EXPOSE 3000
 CMD ["npm","start"]
+
