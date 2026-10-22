@@ -1,21 +1,20 @@
-// FahiVids — Professional Video Studio Service Worker (v3.0)
-// Enables 1-Click PWA Installation on PC (Windows/macOS/Linux), Android, and iOS/iPadOS
-const CACHE_NAME = "fahivids-pwa-v3";
-const PRECACHE_ASSETS = [
+const CACHE_NAME = "fahivids-pwa-v4";
+const PRECACHE_URLS = [
   "/",
   "/manifest.json",
-  "/app-icon.png",
+  "/icon.svg",
   "/icon-192.png",
   "/icon-512.png",
   "/apple-touch-icon.png",
-  "/icon.svg",
-  "/logo.svg",
 ];
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_ASSETS).catch(() => {}))
+    caches
+      .open(CACHE_NAME)
+      .then((cache) => cache.addAll(PRECACHE_URLS))
+      .catch(() => undefined),
   );
 });
 
@@ -24,35 +23,37 @@ self.addEventListener("activate", (event) => {
     caches
       .keys()
       .then((keys) =>
-        Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+        Promise.all(
+          keys
+            .filter((key) => key !== CACHE_NAME)
+            .map((key) => caches.delete(key)),
+        ),
       )
-      .then(() => self.clients.claim())
+      .then(() => self.clients.claim()),
   );
 });
 
 self.addEventListener("fetch", (event) => {
-  const req = event.request;
-  if (req.method !== "GET") return;
-  const url = new URL(req.url);
+  if (event.request.method !== "GET") return;
+  const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
-  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/_next/webpack-hmr")) return;
+  if (url.pathname.startsWith("/api/")) return;
 
+  // Network-first with cache fallback so Chrome/Edge/Android always recognize an active offline-capable PWA
   event.respondWith(
-    fetch(req)
-      .then((res) => {
-        if (
-          res &&
-          res.status === 200 &&
-          (url.pathname.endsWith(".png") ||
-            url.pathname.endsWith(".svg") ||
-            url.pathname.endsWith(".ico") ||
-            url.pathname === "/manifest.json")
-        ) {
-          const copy = res.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(() => {});
+    fetch(event.request)
+      .then((response) => {
+        if (response && response.status === 200 && response.type === "basic") {
+          const clone = response.clone();
+          caches
+            .open(CACHE_NAME)
+            .then((cache) => cache.put(event.request, clone))
+            .catch(() => undefined);
         }
-        return res;
+        return response;
       })
-      .catch(() => caches.match(req).then((cached) => cached || caches.match("/")))
+      .catch(() =>
+        caches.match(event.request).then((cached) => cached || caches.match("/")),
+      ),
   );
 });

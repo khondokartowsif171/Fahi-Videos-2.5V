@@ -162,6 +162,7 @@ export async function recordTimeline(options: {
     }
     let offset = 0;
     let loadedUrl = "";
+    let maxTimelineTime = options.start;
     for (const clip of options.clips) {
       const localStart = Math.max(0, options.start - offset);
       const localEnd = Math.min(clip.duration, end - offset);
@@ -189,7 +190,8 @@ export async function recordTimeline(options: {
         ? (clip.startOffset || 0) + (clip.duration - localStart)
         : (clip.startOffset || 0) + (clip.isFreezeFrame ? 0 : localStart);
 
-      if (Math.abs(video.currentTime - sourceStart) > 0.04) {
+      const seekThreshold = clip.isFreezeFrame || clip.reversed ? 0.04 : 0.25;
+      if (Math.abs(video.currentTime - sourceStart) > seekThreshold) {
         video.pause();
         await waitFor(video, "seeked", () => {
           video.currentTime = sourceStart;
@@ -203,18 +205,26 @@ export async function recordTimeline(options: {
         ]);
       }
 
-      video.playbackRate =
-        options.rateAt?.(offset + localStart) || options.speed;
+      const initialTimelineTime = Math.max(
+        maxTimelineTime,
+        offset + localStart,
+      );
+      maxTimelineTime = initialTimelineTime;
+      const initialRate =
+        options.rateAt?.(initialTimelineTime) || options.speed;
+      if (Math.abs(video.playbackRate - initialRate) > 0.01) {
+        video.playbackRate = initialRate;
+      }
       gain.gain.value =
         clip.isFreezeFrame
           ? 0
-          : options.volume * (options.gainAt?.(offset + localStart) ?? 1);
-      options.draw(video, offset + localStart);
+          : options.volume * (options.gainAt?.(initialTimelineTime) ?? 1);
+      options.draw(video, initialTimelineTime);
       canvasVideoTrack?.requestFrame?.();
       mixer.sync(
-        options.audioTimeAt?.(offset + localStart) ?? offset + localStart,
+        options.audioTimeAt?.(initialTimelineTime) ?? initialTimelineTime,
         true,
-        options.audioRateAt?.(offset + localStart) ?? video.playbackRate,
+        options.audioRateAt?.(initialTimelineTime) ?? initialRate,
       );
 
       if (!clip.isFreezeFrame && !clip.reversed) {
@@ -241,9 +251,8 @@ export async function recordTimeline(options: {
         );
         let frame = 0;
         const wallStart = performance.now();
-        let lastTotalFrames =
-          video.getVideoPlaybackQuality?.().totalVideoFrames ?? 0;
-        let lastFrameAdvanceAt = wallStart;
+        let lastMediaTime = video.currentTime;
+        let lastTimeAdvanceAt = wallStart;
         let lastRenderAt = 0;
 
         const done = (error?: Error) => {
@@ -310,13 +319,11 @@ export async function recordTimeline(options: {
               }
             }
           } else {
-            const currentDecoded =
-              video.getVideoPlaybackQuality?.().totalVideoFrames ?? 0;
-            if (currentDecoded > lastTotalFrames) {
-              lastTotalFrames = currentDecoded;
-              lastFrameAdvanceAt = now;
-            } else if (now - lastFrameAdvanceAt > 200) {
-              lastFrameAdvanceAt = now;
+            if (Math.abs(video.currentTime - lastMediaTime) > 0.001) {
+              lastMediaTime = video.currentTime;
+              lastTimeAdvanceAt = now;
+            } else if (now - lastTimeAdvanceAt > 2500) {
+              lastTimeAdvanceAt = now;
               const rate =
                 options.rateAt?.(offset + localStart) || options.speed;
               const expectedMediaTime = Math.min(
@@ -325,15 +332,15 @@ export async function recordTimeline(options: {
                   localStart +
                   ((now - wallStart) / 1000) * rate,
               );
-              if (!video.seeking) {
-                video.currentTime =
-                  Math.abs(video.currentTime - expectedMediaTime) > 0.12
-                    ? expectedMediaTime
-                    : video.currentTime + 0.001;
+              if (
+                !video.seeking &&
+                Math.abs(video.currentTime - expectedMediaTime) > 0.5
+              ) {
+                video.currentTime = expectedMediaTime;
               }
-              if (video.paused && !video.ended) {
-                void video.play().catch(() => {});
-              }
+            }
+            if (video.paused && !video.ended && !video.seeking) {
+              void video.play().catch(() => {});
             }
             localTime = Math.max(
               localStart,
@@ -341,23 +348,28 @@ export async function recordTimeline(options: {
             );
           }
 
-          video.playbackRate =
-            options.rateAt?.(offset + localTime) || options.speed;
+          const timelineTime = Math.max(maxTimelineTime, offset + localTime);
+          maxTimelineTime = timelineTime;
+
+          const targetRate = options.rateAt?.(timelineTime) || options.speed;
+          if (Math.abs(video.playbackRate - targetRate) > 0.01) {
+            video.playbackRate = targetRate;
+          }
           gain.gain.value =
             clip.isFreezeFrame
               ? 0
-              : options.volume * (options.gainAt?.(offset + localTime) ?? 1);
+              : options.volume * (options.gainAt?.(timelineTime) ?? 1);
           mixer.sync(
-            options.audioTimeAt?.(offset + localTime) ?? offset + localTime,
+            options.audioTimeAt?.(timelineTime) ?? timelineTime,
             true,
-            options.audioRateAt?.(offset + localTime) ?? video.playbackRate,
+            options.audioRateAt?.(timelineTime) ?? targetRate,
           );
-          options.draw(video, offset + localTime);
+          options.draw(video, timelineTime);
           canvasVideoTrack?.requestFrame?.();
           options.progress(
             Math.min(
               99,
-              (100 * (offset + localTime - options.start)) /
+              (100 * (timelineTime - options.start)) /
                 Math.max(0.01, end - options.start),
             ),
           );
