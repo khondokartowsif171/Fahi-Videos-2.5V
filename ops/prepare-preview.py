@@ -7,8 +7,6 @@ def run(args,**kw):
     return subprocess.run(args,check=True,text=True,**kw)
 def output(args):
     return subprocess.check_output(args,text=True).strip()
-source='rdqk1mqe0k8fifs64d7jrzfi-20261021T145556'
-client_env=dict(item.split('=',1) for item in json.loads(output(['docker','inspect',source,'--format','{{json .Config.Env}}'])))
 auth=json.load(sys.stdin)
 ask=ROOT/'askpass.sh'
 ask.write_text('#!/bin/sh\ncase "$1" in *Username*) printf "%s" "$GITEA_USERNAME";; *) printf "%s" "$GITEA_PASSWORD";; esac\n')
@@ -23,6 +21,9 @@ else:
 ask.unlink()
 private=ROOT/'studio.env'
 if not private.exists():
+    sources=output(['docker','ps','--filter','name=rdqk1mqe0k8fifs64d7jrzfi-','--format','{{.Names}}']).splitlines()
+    if len(sources)!=1: raise RuntimeError('Expected exactly one running Client Dashboard container.')
+    client_env=dict(item.split('=',1) for item in json.loads(output(['docker','inspect',sources[0],'--format','{{json .Config.Env}}'])))
     bridge=secrets.token_hex(32);vault=secrets.token_hex(32);password=secrets.token_urlsafe(40)
     pg='ernix50nvuq9ur9jy8na8tgr'
     def psql(db,query): return output(['docker','exec',pg,'psql','-U','postgres','-d',db,'-v','ON_ERROR_STOP=1','-Atc',query])
@@ -41,4 +42,4 @@ if not private.exists():
 media=ROOT/'media';media.mkdir(exist_ok=True);os.chown(media,1000,1000)
 revision=output(['git','-C',str(repo),'rev-parse','HEAD'])
 (ROOT/'release.env').write_text('FAHI_REVISION='+revision+'\n')
-print(json.dumps({'source':str(repo),'revision':revision,'database':'aura_fahi_studio','mode':'preview','credentials':'private server environment only'}))
+print(json.dumps({'source':str(repo),'revision':revision,'database':'aura_fahi_studio','credentials':'private server environment only'}))
