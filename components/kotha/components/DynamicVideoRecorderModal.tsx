@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { isEmbedded } from '@/lib/studio-client';
 import {
   Video,
   Download,
@@ -262,6 +263,7 @@ export const DynamicVideoRecorderModal: React.FC<DynamicVideoRecorderModalProps>
             audioBytesToDecode = generated.rawBytes || generated.wavBytes;
             durationSec = generated.durationSec;
           } else {
+            if(isEmbedded) throw new Error('Spoken audio is unavailable for this scene. Generate its voice before recording.');
             audioBytesToDecode = createSynthesizedSpeechWav(
               scene.banglaScript,
               durationSec,
@@ -297,7 +299,9 @@ export const DynamicVideoRecorderModal: React.FC<DynamicVideoRecorderModalProps>
               Math.round((decodedBuffer.duration / speechSpeed) * 1000)
             )
           );
+          if(isEmbedded) playDurationMs=Math.ceil((decodedBuffer.duration/speechSpeed)*1000);
         } catch {
+          if(isEmbedded) throw new Error('Scene speech could not be decoded. Recording stopped to preserve the spoken narration.');
           // Continue canvas recording even if audio decode is skipped in headless mode
         }
 
