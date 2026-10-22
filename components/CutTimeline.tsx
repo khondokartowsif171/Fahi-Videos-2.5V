@@ -161,16 +161,6 @@ export default function CutTimeline({
   const [width, setWidth] = useState(960);
   const [scrollLeft, setScrollLeft] = useState(0);
   const [hoverAxisX, setHoverAxisX] = useState<number | null>(null);
-  const [hoverCut, setHoverCut] = useState<{
-    clipId: string;
-    timelineTime: number;
-    sourceTime: number;
-  } | null>(null);
-  const [hoverSoundCut, setHoverSoundCut] = useState<{
-    soundId: string;
-    timelineTime: number;
-    sourceTime: number;
-  } | null>(null);
   const [trimBadge, setTrimBadge] = useState<{
     x: number;
     label: string;
@@ -376,38 +366,6 @@ export default function CutTimeline({
 
       if ((kind === "move-audio" || kind === "move-text") && maxMovedPx <= 3) {
         const clickTimelineTime = clientXToTimelineTime(ev.clientX || startX);
-        if (kind === "move-audio" && cursorMode === "split") {
-          const targetSound = snapshot.sounds.find((snd) => snd.id === id);
-          if (targetSound) {
-            const rel = frameTime(clickTimelineTime - targetSound.start);
-            const len = targetSound.out - targetSound.in;
-            if (rel > 0.08 && rel < len - 0.08) {
-              const splitSource = frameTime(targetSound.in + rel);
-              const nextId = `aud_${Date.now()}_b`;
-              const part1: CutSound = {
-                ...targetSound,
-                out: splitSource,
-                fadeOut: 0,
-              };
-              const part2: CutSound = {
-                ...targetSound,
-                id: nextId,
-                start: frameTime(targetSound.start + rel),
-                in: splitSource,
-                fadeIn: 0,
-              };
-              seek(clickTimelineTime);
-              change({
-                ...snapshot,
-                sounds: snapshot.sounds.flatMap((snd) =>
-                  snd.id === id ? [part1, part2] : [snd],
-                ),
-              });
-              select(nextId, "audio");
-              return;
-            }
-          }
-        }
         seek(clickTimelineTime);
       }
     };
@@ -700,8 +658,6 @@ export default function CutTimeline({
                 const first = Math.floor(viewLeft / 60) - 1;
                 const last = Math.ceil((viewLeft + width) / 60) + 1;
                 const active = selected === clip.id;
-                const isHoveringThis =
-                  hoverCut && hoverCut.clipId === clip.id;
                 const cleanName = (asset?.name || "Clip").replace(
                   /_part[12]/g,
                   "",
@@ -713,58 +669,13 @@ export default function CutTimeline({
                     key={clip.id}
                     className={`cut-precision-clip group ${active ? "selected" : ""}`}
                     style={{ left, width: w }}
-                    onMouseMove={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const relX = Math.max(
-                        0,
-                        Math.min(rect.width, e.clientX - rect.left),
-                      );
-                      const offsetTimeline = relX / scale;
-                      const timelineTime = frameTime(start + offsetTimeline);
-                      const sourceTime = frameTime(
-                        clip.in + offsetTimeline * clip.speed,
-                      );
-                      if (
-                        sourceTime > clip.in + 0.08 &&
-                        sourceTime < clip.out - 0.08
-                      ) {
-                        setHoverCut({
-                          clipId: clip.id,
-                          timelineTime,
-                          sourceTime,
-                        });
-                      } else {
-                        setHoverCut(null);
-                      }
-                    }}
-                    onMouseLeave={() => setHoverCut(null)}
                   >
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         select(clip.id, "video");
-                        const clickTimelineTime = clientXToTimelineTime(
-                          e.clientX,
-                        );
-                        const sourceCut = frameTime(
-                          clip.in + (clickTimelineTime - start) * clip.speed,
-                        );
-                        if (
-                          cursorMode === "split" &&
-                          sourceCut > clip.in + 0.08 &&
-                          sourceCut < clip.out - 0.08
-                        ) {
-                          seek(clickTimelineTime);
-                          change({
-                            ...project,
-                            clips: project.clips.flatMap((c) =>
-                              c.id === clip.id ? splitClip(c, sourceCut) : [c],
-                            ),
-                          });
-                          return;
-                        }
-                        seek(clickTimelineTime);
+                        seek(clientXToTimelineTime(e.clientX));
                       }}
                     >
                       {/* CapCut Teal Header Bar: Filename + HH:MM:SS:FF */}
@@ -783,53 +694,6 @@ export default function CutTimeline({
                         />
                       )}
                     </button>
-
-                    {/* Hover / Blade Split Line & Badge */}
-                    {isHoveringThis && !trackLocked && (
-                      <button
-                        type="button"
-                        aria-label={`Cut ${cleanName} at ${formatCapCutTimecode(hoverCut.timelineTime, OUTPUT_FPS)}`}
-                        title={`Split at ${formatCapCutTimecode(hoverCut.timelineTime, OUTPUT_FPS)}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          select(clip.id, "video");
-                          seek(hoverCut.timelineTime);
-                          change({
-                            ...project,
-                            clips: project.clips.flatMap((c) =>
-                              c.id === clip.id
-                                ? splitClip(c, hoverCut.sourceTime)
-                                : [c],
-                            ),
-                          });
-                          setHoverCut(null);
-                        }}
-                        style={{
-                          left: Math.max(
-                            8,
-                            Math.min(
-                              w - 8,
-                              (hoverCut.timelineTime - start) * scale,
-                            ),
-                          ),
-                        }}
-                        className={`
-                          absolute top-0 bottom-0 -translate-x-1/2 z-20
-                          w-4 flex flex-col items-center justify-start
-                          transition-opacity cursor-pointer bg-transparent border-0 p-0
-                          ${cursorMode === "split" ? "opacity-100" : "opacity-0 group-hover:opacity-100"}
-                        `}
-                      >
-                        <span className="mt-0.5 px-1.5 py-0.5 rounded bg-rose-600 text-white text-[9px] font-bold shadow flex items-center gap-0.5 whitespace-nowrap">
-                          <Scissors size={9} />
-                          {formatCapCutTimecode(
-                            hoverCut.timelineTime,
-                            OUTPUT_FPS,
-                          )}
-                        </span>
-                        <span className="flex-1 w-[1.5px] border-l border-dashed border-rose-400 shadow-[0_0_4px_rgba(244,63,94,0.9)]" />
-                      </button>
-                    )}
 
                     {/* CapCut White [ ] Trim Handles */}
                     {active && !trackLocked && (
@@ -923,8 +787,6 @@ export default function CutTimeline({
                 const len = Math.max(0.05, s.out - s.in);
                 const w = Math.max(24, len * scale);
                 const active = selected === s.id;
-                const isHoveringSound =
-                  hoverSoundCut && hoverSoundCut.soundId === s.id;
                 const totalPeaks = asset?.peaks || [];
                 const assetDur = Math.max(0.01, asset?.duration || s.out || len);
                 const startPeakIdx = Math.max(
@@ -951,29 +813,6 @@ export default function CutTimeline({
                       left: s.start * scale,
                       width: w,
                     }}
-                    onMouseMove={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const relX = Math.max(
-                        0,
-                        Math.min(rect.width, e.clientX - rect.left),
-                      );
-                      const offsetTimeline = relX / scale;
-                      const timelineTime = frameTime(s.start + offsetTimeline);
-                      const sourceTime = frameTime(s.in + offsetTimeline);
-                      if (
-                        sourceTime > s.in + 0.08 &&
-                        sourceTime < s.out - 0.08
-                      ) {
-                        setHoverSoundCut({
-                          soundId: s.id,
-                          timelineTime,
-                          sourceTime,
-                        });
-                      } else {
-                        setHoverSoundCut(null);
-                      }
-                    }}
-                    onMouseLeave={() => setHoverSoundCut(null)}
                   >
                     <button
                       type="button"
@@ -991,64 +830,6 @@ export default function CutTimeline({
                       </span>
                       <Wave peaks={slicedPeaks} id={`w-${s.id}`} />
                     </button>
-
-                    {/* Hover / Blade Split Line & Badge on Audio Clip */}
-                    {isHoveringSound && !trackLocked && (
-                      <button
-                        type="button"
-                        aria-label={`Split audio ${asset?.name || "Audio"} at ${formatCapCutTimecode(hoverSoundCut.timelineTime, OUTPUT_FPS)}`}
-                        title={`Split Audio at ${formatCapCutTimecode(hoverSoundCut.timelineTime, OUTPUT_FPS)}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const nextId = `aud_${Date.now()}_b`;
-                          const part1: CutSound = {
-                            ...s,
-                            out: hoverSoundCut.sourceTime,
-                            fadeOut: 0,
-                          };
-                          const part2: CutSound = {
-                            ...s,
-                            id: nextId,
-                            start: hoverSoundCut.timelineTime,
-                            in: hoverSoundCut.sourceTime,
-                            fadeIn: 0,
-                          };
-                          seek(hoverSoundCut.timelineTime);
-                          change({
-                            ...project,
-                            sounds: project.sounds.flatMap((snd) =>
-                              snd.id === s.id ? [part1, part2] : [snd],
-                            ),
-                          });
-                          select(nextId, "audio");
-                          setHoverSoundCut(null);
-                        }}
-                        style={{
-                          left: Math.max(
-                            8,
-                            Math.min(
-                              w - 8,
-                              (hoverSoundCut.timelineTime - s.start) * scale,
-                            ),
-                          ),
-                        }}
-                        className={`
-                          absolute top-0 bottom-0 -translate-x-1/2 z-20
-                          w-4 flex flex-col items-center justify-start
-                          transition-opacity cursor-pointer bg-transparent border-0 p-0
-                          ${cursorMode === "split" ? "opacity-100" : "opacity-0 group-hover:opacity-100"}
-                        `}
-                      >
-                        <span className="mt-0.5 px-1.5 py-0.5 rounded bg-rose-600 text-white text-[9px] font-bold shadow flex items-center gap-0.5 whitespace-nowrap">
-                          <Scissors size={9} />
-                          {formatCapCutTimecode(
-                            hoverSoundCut.timelineTime,
-                            OUTPUT_FPS,
-                          )}
-                        </span>
-                        <span className="flex-1 w-[1.5px] border-l border-dashed border-rose-400 shadow-[0_0_4px_rgba(244,63,94,0.9)]" />
-                      </button>
-                    )}
 
                     {active && (
                       <>
