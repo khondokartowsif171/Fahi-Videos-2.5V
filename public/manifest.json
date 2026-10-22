@@ -1,5 +1,5 @@
 {
-  "id": "fahivids-studio-pwa",
+  "id": "/",
   "name": "FahiVids - Video Editor & Screen Recorder",
   "short_name": "FahiVids",
   "description": "Record your screen, edit timeline clips, add AI voiceovers, captions, and export HD videos directly from your browser.",
@@ -9,7 +9,7 @@
   "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
   "orientation": "any",
   "background_color": "#020817",
-  "theme_color": "#0284c7",
+  "theme_color": "#00c8ff",
   "prefer_related_applications": false,
   "categories": ["video", "photo", "productivity", "utilities"],
   "icons": [
