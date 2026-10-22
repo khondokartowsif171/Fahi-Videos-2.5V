@@ -1201,29 +1201,29 @@ export default function VideoEditor() {
   );
 
   // CapCut Timeline Tools: Split (Ctrl+B), Delete Left (Q), Delete Right (W), Freeze, Reverse, Extract Audio, Marker (M), Cover
+  const lastSplitSignatureRef = useRef<string | null>(null);
+
   const handleSplitClip = () => {
     if (trackLocked) return;
 
-    // 1. If an Audio clip is selected (or no video clips exist), split the Audio clip at playhead
-    if (selectedAudioId || (videoClips.length === 0 && audioLayers.length > 0)) {
-      const targetAudio =
-        audioLayers.find(
-          a =>
-            a.id === selectedAudioId &&
-            currentTime > a.start + 0.05 &&
-            currentTime < a.start + audioLength(a) - 0.05
-        ) ||
-        audioLayers.find(
-          a => currentTime > a.start + 0.05 && currentTime < a.start + audioLength(a) - 0.05
-        );
+    // 1. If an Audio clip is selected, split that selected Audio clip 1 time at playhead
+    if (selectedAudioId) {
+      const splitSig = `audio:${currentTime.toFixed(2)}`;
+      if (lastSplitSignatureRef.current === splitSig) return;
+
+      const targetAudio = audioLayers.find(
+        a =>
+          a.id === selectedAudioId &&
+          currentTime > a.start + 0.08 &&
+          currentTime < a.start + audioLength(a) - 0.08
+      );
 
       if (targetAudio) {
-        const rawRel = currentTime - targetAudio.start;
-        const relTime = Math.round(rawRel * 30) / 30;
+        const relTime = Number((currentTime - targetAudio.start).toFixed(3));
         const len = audioLength(targetAudio);
-        if (relTime > 0.05 && relTime < len - 0.05) {
+        if (relTime > 0.08 && relTime < len - 0.08) {
           const splitSourceTime = Number((targetAudio.trimStart + relTime).toFixed(3));
-          const splitTimelineTime = Number((targetAudio.start + relTime).toFixed(3));
+          const splitTimelineTime = Number(currentTime.toFixed(3));
           const part1: AudioLayer = {
             ...targetAudio,
             id: "aud_" + Date.now() + "_a",
@@ -1244,15 +1244,18 @@ export default function VideoEditor() {
             setAudioLayers(nextLayers);
             setSelectedClipId(null);
             setSelectedAudioId(part2.id);
+            lastSplitSignatureRef.current = splitSig;
           }
         }
-        return;
       }
-      if (selectedAudioId) return;
+      return;
     }
 
-    // 2. If a Text overlay clip is selected, split the Text clip at playhead
+    // 2. If a Text overlay clip is selected, split that Text clip 1 time at playhead
     if (editingTextId) {
+      const splitSig = `text:${currentTime.toFixed(2)}`;
+      if (lastSplitSignatureRef.current === splitSig) return;
+
       const targetText = textOverlays.find((t: TextOverlay) => {
         const tStart = t.start ?? 0;
         const tEnd = t.end ?? totalTimelineDuration;
@@ -1261,7 +1264,7 @@ export default function VideoEditor() {
       if (targetText) {
         const tStart = targetText.start ?? 0;
         const tEnd = targetText.end ?? totalTimelineDuration;
-        const splitAt = Number((Math.round(currentTime * 30) / 30).toFixed(3));
+        const splitAt = Number(currentTime.toFixed(3));
         const part1: TextOverlay = {
           ...targetText,
           id: "txt_" + Date.now() + "_a",
@@ -1279,19 +1282,26 @@ export default function VideoEditor() {
         );
         setSelectedClipId(null);
         setEditingTextId(part2.id);
+        lastSplitSignatureRef.current = splitSig;
       }
       return;
     }
 
-    // 3. Default: Split the active Video clip at playhead
+    // 3. Default: Split the active Video clip 1 time at playhead
     if (videoClips.length === 0) return;
-    const targetOffset = clipOffsets.find(c => currentTime >= c.start && currentTime < c.end) || clipOffsets[0];
+    const splitSig = `video:${currentTime.toFixed(2)}`;
+    if (lastSplitSignatureRef.current === splitSig) return;
+
+    const targetOffset = clipOffsets.find(
+      c =>
+        (selectedClipId ? c.clip.id === selectedClipId : true) &&
+        currentTime > c.start + 0.1 &&
+        currentTime < c.end - 0.1
+    );
     if (!targetOffset) return;
 
     const clipToSplit = targetOffset.clip;
-    const rawRelTime = currentTime - targetOffset.start;
-    // Frame-accurate 30fps quantization
-    const relTime = Math.round(rawRelTime * 30) / 30;
+    const relTime = Number((currentTime - targetOffset.start).toFixed(3));
     const initialStartOffset = clipToSplit.startOffset || 0;
 
     if (relTime > 0.1 && relTime < targetOffset.duration - 0.1) {
@@ -1318,6 +1328,7 @@ export default function VideoEditor() {
           return updated;
         });
         setSelectedClipId(part2.id);
+        lastSplitSignatureRef.current = splitSig;
       }
     }
   };
