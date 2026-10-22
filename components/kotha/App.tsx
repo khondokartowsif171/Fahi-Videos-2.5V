@@ -1,5 +1,6 @@
 import { kothaFetch as fetch } from './api-client';
 import { isEmbedded, useStudioProject } from '@/lib/studio-client';
+import { spokenWav } from '@/lib/spoken-wav';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Play,
@@ -102,7 +103,7 @@ export default function App() {
   // 100% Mock-Free: Starts empty unless the user previously saved their own scenes
   const [scenes, setScenes] = useState<SceneItem[]>(() => {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = isEmbedded ? null : localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed.scenes)) {
@@ -134,6 +135,8 @@ export default function App() {
   );
   const [bilingualSubtitles, setBilingualSubtitles] = useState<boolean>(true);
   const [showSrtPreview, setShowSrtPreview] = useState<boolean>(false);
+  const [exportDownload,setExportDownload]=useState<{url:string;name:string}|null>(null);
+  useEffect(()=>()=>{if(exportDownload)URL.revokeObjectURL(exportDownload.url);},[exportDownload]);
   const [isBatchGenerating, setIsBatchGenerating] = useState<boolean>(false);
   const [batchProgress, setBatchProgress] = useState<{
     current: number;
@@ -306,6 +309,7 @@ export default function App() {
           engineUsed = data.engine || 'gemini-tts';
           finalDuration = Number(data.durationSec) || estDuration;
         } else {
+          if (isEmbedded) { const data=await res.json().catch(()=>({})); throw new Error(data.error || 'Speech provider failed.'); }
           audioBytes = createSynthesizedSpeechWav(
             targetScene.banglaScript,
             estDuration,
@@ -320,7 +324,9 @@ export default function App() {
         });
         const audioUrl = URL.createObjectURL(blob);
 
-        const wavForExport =
+        const decodedSpeech = isEmbedded ? await spokenWav(audioBytes) : null;
+        if (decodedSpeech) finalDuration=decodedSpeech.duration;
+        const wavForExport = decodedSpeech ? decodedSpeech.bytes :
           mimeType === 'audio/wav'
             ? audioBytes
             : createSynthesizedSpeechWav(
@@ -355,7 +361,12 @@ export default function App() {
           mimeType,
           durationSec: finalDuration,
         };
-      } catch {
+      } catch (error) {
+        if (isEmbedded) {
+          setScenes(prev=>prev.map(s=>s.id===sceneId?{...s,status:'error',audioUrl:undefined,audioRawBytes:undefined,audioWavBytes:undefined}:s));
+          setBannerMessage(error instanceof Error ? error.message : 'Speech generation failed.');
+          return null;
+        }
         const wavBytes = createSynthesizedSpeechWav(
           targetScene.banglaScript,
           estDuration,
@@ -443,16 +454,18 @@ export default function App() {
         : `সবগুলো দৃশ্যের (${scenesWithScript.length}টি) বাংলা ভয়েস এক এক করে তৈরি হচ্ছে...`
     );
 
+    let failedScenes=0;
     for (let i = 0; i < currentList.length; i++) {
       const item = currentList[i];
       setBatchProgress({ current: i + 1, total: currentList.length });
       if (!item.banglaScript.trim()) continue;
       setSelectedSceneId(item.id);
-      await generateVoiceForScene(item.id);
+      if (!await generateVoiceForScene(item.id)) failedScenes++;
     }
 
     setIsBatchGenerating(false);
     setBatchProgress(null);
+    if (failedScenes) { setBannerMessage(`${failedScenes} scene(s) failed speech generation. Retry the failed scenes before exporting.`); return; }
     setBannerMessage(
       isEn
         ? `All ${scenesWithScript.length} scenes are ready (${activePersona.nameEn})! Click "Play All" or "Record Dynamic Video".`
@@ -809,6 +822,7 @@ export default function App() {
 
   const handleDownloadMergedMasterWav = () => {
     if (scenes.length === 0) return;
+    if (isEmbedded && scenes.some(s=>s.status!=='ready'||!s.audioWavBytes||s.sourceEngine==='synthesized-wav')) { setBannerMessage('Generate spoken audio for every scene before exporting Master WAV.'); return; }
     const buffers = scenes.map(
       (s) =>
         s.audioWavBytes ||
@@ -826,10 +840,11 @@ export default function App() {
     const a = document.createElement('a');
     a.href = url;
     a.download = 'KothaStudio_Master_Bangla_Voice_Cover.wav';
+    setExportDownload({url,name:a.download});
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    // The download link remains available until it is replaced or the studio closes.
     setBannerMessage(
       isEn
         ? `Downloaded merged Master WAV audio (${scenes.length} scenes combined).`
@@ -847,10 +862,11 @@ export default function App() {
     a.download = bilingual
       ? 'KothaStudio_Bilingual_Subtitles.srt'
       : 'KothaStudio_Bangla_Subtitles.srt';
+    setExportDownload({url,name:a.download});
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    // Keep the completed export available for an explicit download gesture.
     setBannerMessage(
       isEn
         ? `Downloaded ${bilingual ? 'Bilingual (Bangla + English)' : 'Bangla'} .SRT subtitle file.`
@@ -1241,6 +1257,8 @@ export default function App() {
             <div className="flex items-center gap-2 text-slate-200 font-bangla">
               <Sparkles className="w-4 h-4 text-teal-400 shrink-0" />
               <span>{bannerMessage}</span>
+              {isEmbedded && scenes.find(s=>s.id===selectedSceneId)?.sourceEngine && <span className="block text-xs">Speech engine: {scenes.find(s=>s.id===selectedSceneId)?.sourceEngine==='neural-bangla-stream'?'Google Translate Bengali TTS (default voice)':scenes.find(s=>s.id===selectedSceneId)?.sourceEngine}</span>}
+              {exportDownload && <a href={exportDownload.url} download={exportDownload.name} className="block text-xs underline">Download {exportDownload.name}</a>}
             </div>
             <span className="font-bangla text-slate-400 shrink-0">
               {isEn ? 'Voice Artist: ' : 'কণ্ঠশিল্পী: '}
