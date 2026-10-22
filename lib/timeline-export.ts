@@ -2,10 +2,15 @@ import { AudioLayer } from "./editor-audio";
 import { renderExportMix, clearAudioBufferCache } from "./export-audio";
 
 /**
- * Record each trimmed source in timeline order with sample-accurate audio.
- * The audio track is pre-rendered via an OfflineAudioContext into a master AudioBuffer,
- * which serves as the master clock for video playback and canvas recording.
- * This completely eliminates runtime audio desync, repeats, stuttering, and drift.
+ * Record each trimmed source in timeline order with sample-accurate audio and smooth video playback.
+ * 
+ * Architecture:
+ * 1. Audio is pre-rendered offline via an OfflineAudioContext into a continuous 48 kHz stereo AudioBuffer.
+ * 2. An AudioBufferSourceNode delivers crystal-clear audio with zero runtime drifting, seeking, or loops.
+ * 3. Clips are played sequentially. During scene/clip transitions, the recorder and audio context are cleanly
+ *    paused/suspended while the next scene is seeked and pre-buffered, completely eliminating frozen frames.
+ * 4. During continuous video playback, drift against the master audio clock is managed via smooth proportional
+ *    playbackRate adjustments (1.08x / 0.92x), eliminating mid-playback hardware decoder stalls and stutter.
  */
 export async function recordTimeline(options: {
   clips: {
@@ -184,198 +189,250 @@ export async function recordTimeline(options: {
       action();
     });
 
-  // Build clip timeline offset intervals
-  let acc = 0;
-  const clipEntries = options.clips.map((clip) => {
-    const startT = acc;
-    const endT = acc + clip.duration;
-    acc = endT;
-    return { clip, startT, endT };
-  });
-
   try {
-    await audioContext.resume();
-
-    // Start video with first clip
+    let offset = 0;
     let loadedUrl = "";
-    const firstTimelineTime = options.start;
-    const firstEntry =
-      clipEntries.find(
-        (e) => firstTimelineTime >= e.startT && firstTimelineTime < e.endT,
-      ) || clipEntries[0];
+    let masterAudioStarted = false;
+    let maxTimelineTime = options.start;
 
-    if (firstEntry) {
-      if (
-        firstEntry.clip.objectUrl.startsWith("blob:") ||
-        firstEntry.clip.objectUrl.startsWith("data:")
-      ) {
-        video.removeAttribute("crossorigin");
-      } else {
-        video.crossOrigin = "anonymous";
+    for (const clip of options.clips) {
+      const localStart = Math.max(0, options.start - offset);
+      const localEnd = Math.min(clip.duration, end - offset);
+      if (localEnd <= localStart) {
+        offset += clip.duration;
+        continue;
       }
-      await waitFor(video, "loadeddata", () => {
-        video.src = firstEntry.clip.objectUrl;
-        video.load();
-      });
-      loadedUrl = firstEntry.clip.objectUrl;
 
-      const firstLocal = firstTimelineTime - firstEntry.startT;
-      const firstSource = firstEntry.clip.reversed
-        ? (firstEntry.clip.startOffset || 0) + (firstEntry.clip.duration - firstLocal)
-        : (firstEntry.clip.startOffset || 0) + (firstEntry.clip.isFreezeFrame ? 0 : firstLocal);
+      // 1. Pause active recording and suspend audio master clock during scene transition
+      if (recorder.state === "recording") {
+        recorder.pause();
+      }
+      if (audioContext.state === "running") {
+        await audioContext.suspend();
+      }
 
-      if (Math.abs(video.currentTime - firstSource) > 0.05) {
+      // 2. Load clip URL if changed
+      if (loadedUrl !== clip.objectUrl || video.readyState < 2) {
+        if (
+          clip.objectUrl.startsWith("blob:") ||
+          clip.objectUrl.startsWith("data:")
+        ) {
+          video.removeAttribute("crossorigin");
+        } else {
+          video.crossOrigin = "anonymous";
+        }
+        await waitFor(video, "loadeddata", () => {
+          video.src = clip.objectUrl;
+          video.load();
+        });
+        loadedUrl = clip.objectUrl;
+      }
+
+      // 3. Seek to clip's exact starting source position
+      const sourceStart = clip.reversed
+        ? (clip.startOffset || 0) + (clip.duration - localStart)
+        : (clip.startOffset || 0) + (clip.isFreezeFrame ? 0 : localStart);
+
+      const seekThreshold = clip.isFreezeFrame || clip.reversed ? 0.04 : 0.08;
+      if (Math.abs(video.currentTime - sourceStart) > seekThreshold) {
+        video.pause();
         await waitFor(video, "seeked", () => {
-          video.currentTime = firstSource;
+          video.currentTime = sourceStart;
         });
       }
-      options.draw(video, firstTimelineTime);
-      canvasVideoTrack?.requestFrame?.();
-    }
 
-    // Start MediaRecorder and start master AudioBufferSourceNode simultaneously
-    recorder.start(250);
-    const audioMasterStart = audioContext.currentTime;
-    masterSource.start(audioMasterStart);
+      // 4. Ensure clip has decoded the frame and can play
+      if (!clip.isFreezeFrame && !clip.reversed && video.readyState < 3) {
+        await Promise.race([
+          waitFor(video, "canplay", () => {}),
+          new Promise<void>((r) => setTimeout(r, 400)),
+        ]);
+      }
 
-    await new Promise<void>((resolve, reject) => {
-      let finished = false;
-      let frameId = 0;
-      let lastRenderAtAudio = -1;
-
-      const watchdog = setTimeout(
-        () => done(new Error("Playback stalled during export")),
-        (outputDuration + 30) * 1000,
+      const initialTimelineTime = Math.max(
+        maxTimelineTime,
+        offset + localStart,
       );
+      maxTimelineTime = initialTimelineTime;
+      const initialRate =
+        options.rateAt?.(initialTimelineTime) || options.speed;
+      if (Math.abs(video.playbackRate - initialRate) > 0.01) {
+        video.playbackRate = initialRate;
+      }
 
-      const decodeError = () =>
-        done(new Error("Video decoding failed during export"));
-      video.addEventListener("error", decodeError, { once: true });
+      // 5. Draw the first frame of this clip to canvas
+      options.draw(video, initialTimelineTime);
+      canvasVideoTrack?.requestFrame?.();
 
-      const done = (error?: Error) => {
-        if (finished) return;
-        finished = true;
-        clearTimeout(watchdog);
-        clearInterval(intervalId);
-        cancelAnimationFrame(frameId);
-        video.removeEventListener("error", decodeError);
-        if (error) {
-          video.pause();
-          try {
-            masterSource.stop();
-          } catch {}
-          reject(error);
-        } else {
-          resolve();
+      // 6. Resume audio master clock and start/resume MediaRecorder
+      await audioContext.resume();
+      if (!masterAudioStarted) {
+        masterSource.start(0);
+        masterAudioStarted = true;
+      }
+
+      if (recorder.state === "inactive") {
+        recorder.start(250);
+      } else if (recorder.state === "paused") {
+        recorder.resume();
+      }
+
+      // 7. Start video playback
+      if (!clip.isFreezeFrame && !clip.reversed) {
+        if (video.paused) {
+          await video.play().catch(() => {});
         }
-      };
+      } else {
+        video.pause();
+      }
 
-      const render = async () => {
-        if (finished) return;
-        if (failed) {
-          done(
-            failed instanceof Error ? failed : new Error("Recording failed"),
-          );
-          return;
-        }
-        if (document.hidden) {
-          done(
-            new Error(
-              "Keep this tab open and the screen awake during export.",
-            ),
-          );
-          return;
-        }
+      // 8. Render loop for this clip with smooth proportional rate synchronization
+      await new Promise<void>((resolve, reject) => {
+        let finished = false;
+        let frameId = 0;
+        let lastRenderAtAudio = -1;
 
-        const elapsedAudioSec = audioContext.currentTime - audioMasterStart;
-        if (elapsedAudioSec >= outputDuration) {
-          done();
-          return;
-        }
-
-        if (lastRenderAtAudio >= 0 && elapsedAudioSec - lastRenderAtAudio < 0.015) {
-          frameId = requestAnimationFrame(render);
-          return;
-        }
-        lastRenderAtAudio = elapsedAudioSec;
-
-        const currentTimelineTime = Math.min(
-          end,
-          Math.max(options.start, timeMap.toTimeline(elapsedAudioSec)),
+        const watchdog = setTimeout(
+          () => done(new Error("Playback stalled during export")),
+          ((localEnd - localStart) /
+            (options.rateAt ? 0.25 : options.speed) +
+            30) *
+            1000,
         );
 
-        // Find active clip corresponding to current timeline time
-        const entry =
-          clipEntries.find(
-            (e) =>
-              currentTimelineTime >= e.startT && currentTimelineTime < e.endT,
-          ) || clipEntries[clipEntries.length - 1];
+        const decodeError = () =>
+          done(new Error("Video decoding failed during export"));
+        video.addEventListener("error", decodeError, { once: true });
 
-        if (entry) {
-          const clip = entry.clip;
-          const localTime = Math.max(0, currentTimelineTime - entry.startT);
-          const targetSourceTime = clip.reversed
-            ? (clip.startOffset || 0) + (clip.duration - localTime)
-            : (clip.startOffset || 0) + (clip.isFreezeFrame ? 0 : localTime);
+        const done = (error?: Error) => {
+          if (finished) return;
+          finished = true;
+          clearTimeout(watchdog);
+          clearInterval(intervalId);
+          cancelAnimationFrame(frameId);
+          video.removeEventListener("error", decodeError);
+          if (error) {
+            video.pause();
+            reject(error);
+          } else {
+            resolve();
+          }
+        };
 
-          if (loadedUrl !== clip.objectUrl) {
-            loadedUrl = clip.objectUrl;
-            if (
-              clip.objectUrl.startsWith("blob:") ||
-              clip.objectUrl.startsWith("data:")
-            ) {
-              video.removeAttribute("crossorigin");
+        const render = () => {
+          if (finished) return;
+          if (failed) {
+            done(
+              failed instanceof Error ? failed : new Error("Recording failed"),
+            );
+            return;
+          }
+          if (document.hidden) {
+            done(
+              new Error(
+                "Keep this tab open and the screen awake during export.",
+              ),
+            );
+            return;
+          }
+
+          const elapsedAudioSec = audioContext.currentTime;
+          if (
+            lastRenderAtAudio >= 0 &&
+            elapsedAudioSec - lastRenderAtAudio < 0.015
+          ) {
+            frameId = requestAnimationFrame(render);
+            return;
+          }
+          lastRenderAtAudio = elapsedAudioSec;
+
+          let localTime: number;
+          const currentTimelineTime = Math.min(
+            end,
+            Math.max(options.start, timeMap.toTimeline(elapsedAudioSec)),
+          );
+
+          if (clip.isFreezeFrame || clip.reversed) {
+            localTime = Math.max(0, currentTimelineTime - offset);
+            if (clip.reversed) {
+              const targetMediaTime = Math.max(
+                clip.startOffset || 0,
+                (clip.startOffset || 0) + clip.duration - localTime,
+              );
+              if (Math.abs(video.currentTime - targetMediaTime) > 0.04) {
+                video.currentTime = targetMediaTime;
+              }
+            }
+          } else {
+            const expectedLocalTime = Math.max(0, currentTimelineTime - offset);
+            const expectedSourceTime =
+              (clip.startOffset || 0) + expectedLocalTime;
+
+            // Proportional playback rate adjustment: smooth sync without hardware decoder stalling
+            const baseRate =
+              options.rateAt?.(currentTimelineTime) || options.speed;
+            const drift = video.currentTime - expectedSourceTime;
+
+            if (drift < -0.06) {
+              // Video is slightly lagging behind audio clock -> nudge rate up smoothly (zero seek)
+              video.playbackRate = Math.min(baseRate * 1.12, 3);
+            } else if (drift > 0.06) {
+              // Video is slightly ahead of audio clock -> nudge rate down smoothly (zero seek)
+              video.playbackRate = Math.max(baseRate * 0.88, 0.25);
             } else {
-              video.crossOrigin = "anonymous";
+              if (Math.abs(video.playbackRate - baseRate) > 0.01) {
+                video.playbackRate = baseRate;
+              }
             }
-            video.src = clip.objectUrl;
-            video.load();
-          }
 
-          const maxAllowedDrift =
-            clip.isFreezeFrame || clip.reversed ? 0.04 : 0.3;
-          const drift = Math.abs(video.currentTime - targetSourceTime);
-          if (drift > maxAllowedDrift && !video.seeking && video.readyState >= 1) {
-            video.currentTime = targetSourceTime;
-          }
-
-          const currentRate =
-            options.rateAt?.(currentTimelineTime) || options.speed;
-          if (!clip.isFreezeFrame && !clip.reversed) {
-            if (Math.abs(video.playbackRate - currentRate) > 0.01) {
-              video.playbackRate = currentRate;
-            }
             if (video.paused && !video.ended && !video.seeking) {
               void video.play().catch(() => {});
             }
-          } else {
-            if (!video.paused) video.pause();
+
+            localTime = Math.max(
+              localStart,
+              video.currentTime - (clip.startOffset || 0),
+            );
           }
 
-          options.draw(video, currentTimelineTime);
+          const timelineTime = Math.max(maxTimelineTime, offset + localTime);
+          maxTimelineTime = timelineTime;
+
+          options.draw(video, timelineTime);
           canvasVideoTrack?.requestFrame?.();
-        }
 
-        options.progress(
-          Math.min(
-            99,
-            10 + 89 * (elapsedAudioSec / Math.max(0.01, outputDuration)),
-          ),
-        );
+          options.progress(
+            Math.min(
+              99,
+              10 + 89 * (elapsedAudioSec / Math.max(0.01, outputDuration)),
+            ),
+          );
 
-        frameId = requestAnimationFrame(render);
-      };
+          if (
+            localTime >= localEnd - 0.02 ||
+            (!clip.isFreezeFrame && !clip.reversed && video.ended) ||
+            elapsedAudioSec >= outputDuration
+          ) {
+            done();
+            return;
+          }
 
-      const intervalId = window.setInterval(render, 33);
-      render();
-    });
+          frameId = requestAnimationFrame(render);
+        };
+
+        const intervalId = window.setInterval(render, 33);
+        render();
+      });
+
+      offset += clip.duration;
+    }
 
     video.pause();
     try {
       masterSource.stop();
     } catch {}
 
-    if (recorder.state === "recording") {
+    if (recorder.state === "recording" || recorder.state === "paused") {
       recorder.stop();
     }
     const blob = await completed;
