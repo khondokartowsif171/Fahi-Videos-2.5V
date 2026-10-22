@@ -1,10 +1,11 @@
 "use client";
-import { useMemo, useState } from "react";
-import CutTimeline from "./CutTimeline";
-import type { CutAsset, CutProject, CutClip } from "@/lib/cut-model";
+import { useMemo } from "react";
+import CutTimeline, { TimelineMarkerItem } from "./CutTimeline";
+import type { CutAsset, CutProject } from "@/lib/cut-model";
 import type { VideoClipItem } from "./VideoEditor";
 import type { AudioLayer } from "@/lib/editor-audio";
 import "./studio-timeline.css";
+
 type Title = {
   id: string;
   text: string;
@@ -13,6 +14,7 @@ type Title = {
   color: string;
   fontSize: number;
 };
+
 type Props = {
   clips: VideoClipItem[];
   audio: AudioLayer[];
@@ -32,7 +34,21 @@ type Props = {
     muted: boolean,
   ) => void;
   preview: (clip: VideoClipItem | null, source?: number) => void;
+  markers?: TimelineMarkerItem[];
+  onSelectMarker?: (time: number) => void;
+  onRemoveMarker?: (id: string) => void;
+  previewAxisEnabled?: boolean;
+  cursorMode?: "select" | "split";
+  trackLocked?: boolean;
+  trackHidden?: boolean;
+  onToggleTrackLock?: () => void;
+  onToggleTrackHide?: () => void;
+  onCaptureCover?: () => void;
+  coverImage?: string;
+  externalScale?: number;
+  onScaleChange?: (scale: number) => void;
 };
+
 export default function StudioTimeline(props: Props) {
   const assets = useMemo<CutAsset[]>(
     () => [
@@ -155,6 +171,19 @@ export default function StudioTimeline(props: Props) {
             source,
           )
         }
+        markers={props.markers}
+        onSelectMarker={props.onSelectMarker}
+        onRemoveMarker={props.onRemoveMarker}
+        previewAxisEnabled={props.previewAxisEnabled}
+        cursorMode={props.cursorMode}
+        trackLocked={props.trackLocked}
+        trackHidden={props.trackHidden}
+        onToggleTrackLock={props.onToggleTrackLock}
+        onToggleTrackHide={props.onToggleTrackHide}
+        onCaptureCover={props.onCaptureCover}
+        coverImage={props.coverImage}
+        externalScale={props.externalScale}
+        onScaleChange={props.onScaleChange}
       />
     </div>
   );
