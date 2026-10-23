@@ -6,7 +6,7 @@ const MAX_DOWNLOAD_BYTES = 250 * 1024 ** 2;
 const RESPONSE_HEADER_TIMEOUT_MS = 20_000;
 const STREAM_IDLE_TIMEOUT_MS = 45_000;
 
-async function fetchHeaders(target: URL) {
+async function fetchHeaders(target: URL, range: string | null) {
   const controller = new AbortController();
   const timeout = setTimeout(
     () => controller.abort(new Error('The media source did not respond in time.')),
@@ -17,6 +17,7 @@ async function fetchHeaders(target: URL) {
     const response = await fetch(target, {
       redirect: 'manual',
       signal: controller.signal,
+      headers: range ? { Range: range } : undefined,
     });
     return { response, controller };
   } finally {
@@ -82,7 +83,7 @@ export async function GET(req: Request) {
     let responseController: AbortController | undefined;
     for (let redirects = 0; redirects < 5; redirects++) {
       const target = await validatePublicMediaUrl(raw);
-      const result = await fetchHeaders(target);
+      const result = await fetchHeaders(target, req.headers.get('range'));
       response = result.response;
       responseController = result.controller;
 
@@ -102,8 +103,12 @@ export async function GET(req: Request) {
       return Response.json({
         error: status === 403
           ? 'The source denied this download (403). The link may be private or expired.'
-          : `Media source is unavailable (${status}).`,
-      }, { status: 502 });
+          : status === 416
+            ? 'The requested resume range is no longer available. Extract the link again and retry.'
+            : status === 429
+              ? 'The media provider is temporarily rate limiting downloads. Try again later.'
+              : `Media source is unavailable (${status}).`,
+      }, { status: status === 416 || status === 429 ? status : 502 });
     }
 
     const mime = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
@@ -111,6 +116,15 @@ export async function GET(req: Request) {
       await response.body.cancel();
       responseController.abort();
       return Response.json({ error: 'The source returned a page instead of downloadable media.' }, { status: 422 });
+    }
+
+    const contentRange = response.headers.get('content-range');
+    const rangeTotal = contentRange?.match(/^bytes\s+\d+-\d+\/(\d+)$/i);
+    const totalLength = rangeTotal ? Number(rangeTotal[1]) : Number.NaN;
+    if (Number.isFinite(totalLength) && totalLength > MAX_DOWNLOAD_BYTES) {
+      await response.body.cancel();
+      responseController.abort();
+      return Response.json({ error: 'Media exceeds the 250 MB download limit.' }, { status: 413 });
     }
 
     const lengthHeader = response.headers.get('content-length');
@@ -136,11 +150,20 @@ export async function GET(req: Request) {
       'Cache-Control': 'private, no-store',
       'X-Content-Type-Options': 'nosniff',
     });
+    if (response.status === 206 && contentRange) {
+      headers.set('Content-Range', contentRange);
+      headers.set('Accept-Ranges', 'bytes');
+    } else if (!req.headers.get('range')) {
+      headers.set('Accept-Ranges', 'bytes');
+    }
     if (Number.isFinite(declaredLength) && declaredLength >= 0) {
       headers.set('Content-Length', String(declaredLength));
     }
 
-    return new Response(streamWithLimits(response, responseController), { headers });
+    return new Response(streamWithLimits(response, responseController), {
+      status: response.status === 206 ? 206 : 200,
+      headers,
+    });
   } catch (error) {
     return Response.json({
       error: error instanceof Error ? error.message : 'Media download failed.',

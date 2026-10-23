@@ -12,6 +12,7 @@
     "test:aura": "node tests/aura-server.cjs",
     "test:kotha": "node tests/kotha-studio.cjs",
     "test:capcut": "node tests/capcut-studio.cjs",
+    "test:downloader": "node tests/video-download-route.cjs",
     "test:editor": "node tests/timeline-export.cjs && node tests/export-audio.cjs && node tests/editor-motion.cjs && node tests/capcut-studio.cjs"
   },
   "dependencies": {
