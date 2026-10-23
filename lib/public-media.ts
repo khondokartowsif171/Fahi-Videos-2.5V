@@ -7,6 +7,9 @@ const allowed = [
   "storage.googleapis.com",
   "loader.to",
 ];
+// btch-downloader currently serves its YouTube MP4/MP3 streams from this
+// exact host. Keep it exact (rather than allowing every *.vidsnap.app host).
+const exactAllowed = new Set(["api.vidsnap.app"]);
 export async function validatePublicMediaUrl(raw: string) {
   const u = new URL(raw);
   if (
@@ -15,7 +18,7 @@ export async function validatePublicMediaUrl(raw: string) {
     u.password ||
     u.port ||
     isIP(u.hostname) ||
-    !allowed.some((h) => u.hostname === h || u.hostname.endsWith("." + h))
+    (!exactAllowed.has(u.hostname) && !allowed.some((h) => u.hostname === h || u.hostname.endsWith("." + h)))
   )
     throw Error("Unsupported public media host.");
   const addresses = await lookup(u.hostname, { all: true });
