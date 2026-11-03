@@ -3,8 +3,6 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-
-
 const FALLBACK_VIDEOS: Record<string, string> = {
   "fallback-op-nebula": "https://assets.mixkit.co/videos/preview/mixkit-nebula-in-outer-space-with-stars-and-glowing-light-41718-large.mp4",
   "fallback-op-forest": "https://assets.mixkit.co/videos/preview/mixkit-forest-stream-in-the-sunlight-529-large.mp4",
@@ -14,6 +12,13 @@ const FALLBACK_VIDEOS: Record<string, string> = {
 
 export async function POST(req: NextRequest) {
   const apiKey = req.headers.get("x-gemini-api-key") || process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return NextResponse.json(
+      { error: "Missing Gemini API key. Configure a key in API Settings or on the server." },
+      { status: 401 }
+    );
+  }
+
   const ai = new GoogleGenAI({
     apiKey: apiKey as string,
     httpOptions: {
@@ -27,7 +32,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { operationName } = body;
 
-    if (!operationName) {
+    if (!operationName || typeof operationName !== "string") {
       return NextResponse.json({ error: "operationName is required" }, { status: 400 });
     }
 
@@ -47,15 +52,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No video URI found in completed operation" }, { status: 404 });
     }
 
-    // Fetch the video file (could be standard external assets or Google Cloud storage URI)
+    let parsedUri: URL;
+    try {
+      parsedUri = new URL(uri);
+    } catch {
+      return NextResponse.json({ error: "Invalid video URI returned by provider" }, { status: 502 });
+    }
+    if (parsedUri.protocol !== "https:") {
+      return NextResponse.json({ error: "Insecure video URI blocked" }, { status: 502 });
+    }
+
+    // Fetch the video file using the same resolved apiKey (not just process.env.GEMINI_API_KEY)
     const headers: Record<string, string> = {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     };
     if (!operationName.startsWith("fallback-op-")) {
-      headers["x-goog-api-key"] = process.env.GEMINI_API_KEY || "";
+      headers["x-goog-api-key"] = apiKey;
     }
 
-    const videoRes = await fetch(uri, { headers });
+    const videoRes = await fetch(parsedUri.toString(), { headers });
 
     if (!videoRes.ok) {
       return NextResponse.json({ error: "Failed to fetch video content" }, { status: 502 });

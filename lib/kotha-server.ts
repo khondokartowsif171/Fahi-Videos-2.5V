@@ -14,10 +14,24 @@ import {
 // Per-model cooldown and sliding-window rate limiter to prevent 429 RESOURCE_EXHAUSTED errors
 const modelCooldownUntil = new Map<string, number>();
 const modelRecentTimestamps = new Map<string, number[]>();
+const MAX_TTS_CACHE_ENTRIES = 64;
 const ttsAudioCache = new Map<
   string,
   { audioBase64: string; mimeType: string; durationSec: number; engine: string }
 >();
+
+function setTtsCache(
+  key: string,
+  val: { audioBase64: string; mimeType: string; durationSec: number; engine: string }
+): void {
+  if (ttsAudioCache.size >= MAX_TTS_CACHE_ENTRIES && !ttsAudioCache.has(key)) {
+    const oldestKey = ttsAudioCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      ttsAudioCache.delete(oldestKey);
+    }
+  }
+  ttsAudioCache.set(key, val);
+}
 
 function keyFor(req: Request): string {
   const headerKey = req.headers.get('x-gemini-api-key')?.trim();
@@ -221,7 +235,7 @@ export async function handleKothaTtsGenerate(
         const base64Audio = inlinePart?.data;
         if (base64Audio) {
           const wavBase64 = ensureWavHeader(base64Audio, inlinePart?.mimeType);
-          ttsAudioCache.set(cacheKey, {
+          setTtsCache(cacheKey, {
             audioBase64: wavBase64,
             mimeType: 'audio/wav',
             durationSec: estimatedSec,
@@ -244,7 +258,7 @@ export async function handleKothaTtsGenerate(
   const banglaMp3Buffer = await fetchNaturalBanglaStreamAudio(cleanText);
   if (banglaMp3Buffer && banglaMp3Buffer.byteLength > 0) {
     const audioBase64 = banglaMp3Buffer.toString('base64');
-    ttsAudioCache.set(cacheKey, {
+    setTtsCache(cacheKey, {
       audioBase64,
       mimeType: 'audio/mpeg',
       durationSec: estimatedSec,
@@ -267,7 +281,7 @@ export async function handleKothaTtsGenerate(
   );
   const audioBase64 = Buffer.from(wavBytes).toString('base64');
 
-  ttsAudioCache.set(cacheKey, {
+  setTtsCache(cacheKey, {
     audioBase64,
     mimeType: 'audio/wav',
     durationSec: estimatedSec,

@@ -14,11 +14,14 @@ CREATE TABLE IF NOT EXISTS managed_grants (
 );
 CREATE TABLE IF NOT EXISTS managed_jobs (
  id uuid PRIMARY KEY, tenant text NOT NULL, actor text NOT NULL, cycle text NOT NULL, request_id uuid NOT NULL, request_hash text NOT NULL,
- state text NOT NULL DEFAULT 'queued', input jsonb NOT NULL, policy jsonb NOT NULL, credential_id uuid NOT NULL REFERENCES managed_credentials(id),
+ state text NOT NULL DEFAULT 'queued', input jsonb NOT NULL, policy jsonb NOT NULL, credential_id uuid REFERENCES managed_credentials(id),
  reserve_usd numeric NOT NULL, cost_usd numeric NOT NULL DEFAULT 0, usage jsonb NOT NULL DEFAULT '[]', reserved_bytes bigint NOT NULL,
  asset_id uuid, error text, cancel_requested boolean NOT NULL DEFAULT false, lease_until timestamptz, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
  UNIQUE(tenant,request_id)
 );
+-- New Vertex jobs use the Coolify workload identity, while existing in-flight
+-- Gemini API jobs retain their credential reference for backwards processing.
+ALTER TABLE managed_jobs ALTER COLUMN credential_id DROP NOT NULL;
 CREATE INDEX IF NOT EXISTS managed_jobs_queue ON managed_jobs(state,created_at);
 CREATE TABLE IF NOT EXISTS managed_attempts (
  job_id uuid NOT NULL REFERENCES managed_jobs(id), shot integer NOT NULL, state text NOT NULL DEFAULT 'prepared', interaction_id text,

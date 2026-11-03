@@ -118,9 +118,15 @@ async function handleAuraCore(req: Request, parts: string[]) {
     if (route === 'health') return Response.json({ status:'ok', geminiConfigured: !!key, timestamp:new Date().toISOString() });
     const own = owner(req,key);
     if (req.method === 'POST') {
-      const bucket = limits.get(own); const now = Date.now();
-      if (!bucket || now-bucket.since > 60000) limits.set(own,{count:1,since:now});
-      else if (++bucket.count > 20) throw new ApiError(429,'Too many studio requests. Try again in a minute.');
+      const now = Date.now();
+      if (limits.size > 500) {
+        for (const [k, v] of limits.entries()) {
+          if (now - v.since > 60000) limits.delete(k);
+        }
+      }
+      const bucket = limits.get(own);
+      if (!bucket || now - bucket.since > 60000) limits.set(own, { count: 1, since: now });
+      else if (++bucket.count > 20) throw new ApiError(429, 'Too many studio requests. Try again in a minute.');
     }
     const raw = req.method === 'POST' ? await req.text() : '{}';
     if (raw.length > 110_000_000) throw new ApiError(413,'Upload is too large.');

@@ -40,3 +40,8 @@ next-env.d.ts
 .next-mobile-preview/
 .fahicut-data/
 .next-before-dynamic-build/
+
+# Local archives and raw secrets
+*.zip
+*.f32le
+*Supabase*.txt

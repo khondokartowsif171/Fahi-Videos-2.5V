@@ -4,6 +4,12 @@ const allowed = [
   "googlevideo.com",
   "fbcdn.net",
   "cdninstagram.com",
+  "instagram.com",
+  "tiktokcdn.com",
+  "tiktokcdn-eu.com",
+  "byteoversea.com",
+  "ibytedtos.com",
+  "tiktok.com",
   "storage.googleapis.com",
   "loader.to",
 ];
