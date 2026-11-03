@@ -12,6 +12,7 @@ import {
   Image as ImageIcon,
   Lock,
   Music,
+  Plus,
   Scissors,
   Sparkles,
   Type,
@@ -649,7 +650,7 @@ export default function CutTimeline({
                 }
               }}
             >
-              {clips.map(({ clip, start, end }) => {
+              {clips.map(({ clip, start, end }, idx) => {
                 const asset = assets.find((a) => a.id === clip.assetId);
                 const len = end - start;
                 const w = Math.max(18, len * scale);
@@ -665,8 +666,8 @@ export default function CutTimeline({
                 const durationTimecode = formatCapCutTimecode(len, OUTPUT_FPS);
 
                 return (
+                  <React.Fragment key={clip.id}>
                   <div
-                    key={clip.id}
                     className={`cut-precision-clip group ${active ? "selected" : ""}`}
                     style={{ left, width: w }}
                   >
@@ -721,8 +722,51 @@ export default function CutTimeline({
                       </>
                     )}
                   </div>
+                  {idx < clips.length - 1 && (
+                    <button
+                      type="button"
+                      title="Add Transition between clips"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        select(clip.id, "video");
+                        window.dispatchEvent(new CustomEvent("open-capcut-tool", { detail: "transitions" }));
+                      }}
+                      style={{
+                        position: "absolute",
+                        left: end * scale,
+                        top: "50%",
+                        transform: "translate(-50%, -50%)",
+                        zIndex: 22,
+                      }}
+                      className="w-5 h-5 rounded bg-white hover:bg-[#00E5FF] text-black font-bold flex items-center justify-center shadow-lg border border-black/40 transition-all hover:scale-110"
+                    >
+                      <span className="text-[10px] leading-none select-none">|</span>
+                    </button>
+                  )}
+                  </React.Fragment>
                 );
               })}
+              {clips.length > 0 && (
+                <button
+                  type="button"
+                  title="Add Video Clip (+)"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    (document.getElementById("studio-video-import") as HTMLInputElement | null)?.click();
+                  }}
+                  style={{
+                    position: "absolute",
+                    left: (clips[clips.length - 1].end * scale) + 12,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    zIndex: 20,
+                  }}
+                  className="h-8 px-2.5 rounded-lg bg-white/10 hover:bg-[#00E5FF] hover:text-black text-white text-[11px] font-bold border border-white/20 flex items-center gap-1 transition-all shadow-md shrink-0 whitespace-nowrap"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Clip</span>
+                </button>
+              )}
             </div>
 
             {/* Text Overlay Track Lane */}

@@ -113,6 +113,12 @@ export interface VideoClipItem {
   isFreezeFrame?: boolean;
   freezeFrameUrl?: string;
   thumbnails?: string[];
+  // CapCut Per-Clip Framing & Transforms
+  cropBox?: { left: number; top: number; width: number; height: number };
+  rotate?: number;
+  aspectRatio?: "original" | "9:16" | "16:9" | "1:1" | "4:3" | "4:5" | "21:9";
+  volume?: number;
+  isMuted?: boolean;
 }
 
 export type HslColorChannel = "red" | "orange" | "yellow" | "green" | "cyan" | "blue" | "purple" | "magenta";
@@ -403,12 +409,27 @@ export default function VideoEditor() {
     overlayMedia, coverImage, projectTitle
   } = editorState;
 
+  const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const setBrightness = (v: any) => updateState("brightness", v);
   const setContrast = (v: any) => updateState("contrast", v);
   const setSaturation = (v: any) => updateState("saturation", v);
   const setSepia = (v: any) => updateState("sepia", v);
   const setBlur = (v: any) => updateState("blur", v);
-  const setRotate = (v: any) => updateState("rotate", v);
+  const setRotate = useCallback((v: any) => {
+    setEditorState(prev => {
+      const nextRotate = typeof v === "function" ? v(prev.rotate) : v;
+      const targetClipId = selectedClipId || (activeClipInfo ? activeClipInfo.clip.id : null);
+      let nextClips = prev.videoClips;
+      if (targetClipId && nextClips.length > 0) {
+        nextClips = nextClips.map(clip => clip.id === targetClipId ? { ...clip, rotate: nextRotate } : clip);
+      }
+      return {
+        ...prev,
+        rotate: nextRotate,
+        videoClips: nextClips,
+      };
+    });
+  }, [selectedClipId, activeClipInfo, setEditorState]);
   const setFlipH = (v: any) => updateState("flipH", v);
   const setFlipV = (v: any) => updateState("flipV", v);
   const setZoom = (v: any) => updateState("zoom", v);
@@ -538,7 +559,6 @@ export default function VideoEditor() {
   // Active Mobile / Context Tool Panel
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const [timelineScale, setTimelineScale] = useState(40);
-  const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
 
   const autoFitTimelineZoom = useCallback((totalSec: number) => {
     if (totalSec <= 0) return;
@@ -569,10 +589,50 @@ export default function VideoEditor() {
   const isSwitchingSourceRef = useRef(false);
   const pendingSeekTimeRef = useRef<number | null>(null);
 
-  const cropBox = editorState.cropBox;
-  const setCropBox = (value: React.SetStateAction<typeof cropBox>) => updateState("cropBox", value);
+  const selectedClip = useMemo(() => {
+    if (selectedClipId) {
+      const found = videoClips.find(c => c.id === selectedClipId);
+      if (found) return found;
+    }
+    return activeClipInfo ? activeClipInfo.clip : null;
+  }, [selectedClipId, videoClips, activeClipInfo]);
 
-  const isDraggingCropBoxRef = useRef<"move" | "top-left" | "top-right" | "bottom-left" | "bottom-right" | null>(null);
+  const cropBox = (selectedClip && selectedClip.cropBox) || editorState.cropBox;
+
+  const setCropBox = useCallback((value: React.SetStateAction<{ left: number; top: number; width: number; height: number }>) => {
+    setEditorState(prev => {
+      const nextBox = typeof value === "function" ? value(prev.cropBox) : value;
+      const targetClipId = selectedClipId || (activeClipInfo ? activeClipInfo.clip.id : null);
+      let nextClips = prev.videoClips;
+      if (targetClipId && nextClips.length > 0) {
+        nextClips = nextClips.map(clip => clip.id === targetClipId ? { ...clip, cropBox: nextBox } : clip);
+      }
+      return {
+        ...prev,
+        cropBox: nextBox,
+        videoClips: nextClips,
+      };
+    });
+  }, [selectedClipId, activeClipInfo, setEditorState]);
+
+  const [cropModalTime, setCropModalTime] = useState(0);
+  const cropModalVideoRef = useRef<HTMLVideoElement>(null);
+  const targetClipDuration = useMemo(() => {
+    return selectedClip ? selectedClip.duration : (duration || 10);
+  }, [selectedClip, duration]);
+
+  const cropModalVideoSrc = useMemo(() => {
+    return selectedClip?.objectUrl || objectUrl || undefined;
+  }, [selectedClip, objectUrl]);
+
+  const handleCropModalScrub = (time: number) => {
+    setCropModalTime(time);
+    if (cropModalVideoRef.current) {
+      cropModalVideoRef.current.currentTime = time;
+    }
+  };
+
+  const isDraggingCropBoxRef = useRef<"move" | "top-left" | "top-right" | "bottom-left" | "bottom-right" | "top" | "bottom" | "left" | "right" | null>(null);
   const cropBoxStartRef = useRef<{
     clientX: number;
     clientY: number;
@@ -584,7 +644,7 @@ export default function VideoEditor() {
   });
 
   const handleCropBoxStart = (
-    type: "move" | "top-left" | "top-right" | "bottom-left" | "bottom-right",
+    type: "move" | "top-left" | "top-right" | "bottom-left" | "bottom-right" | "top" | "bottom" | "left" | "right",
     e: React.MouseEvent | React.TouchEvent
   ) => {
     e.stopPropagation();
@@ -633,6 +693,16 @@ export default function VideoEditor() {
           left = Math.max(0, Math.min(initial.left + initial.width - 15, initial.left + deltaXPercent));
           width = initial.width - (left - initial.left);
           height = Math.max(15, Math.min(100 - initial.top, initial.height + deltaYPercent));
+        } else if (type === "top") {
+          top = Math.max(0, Math.min(initial.top + initial.height - 10, initial.top + deltaYPercent));
+          height = initial.height - (top - initial.top);
+        } else if (type === "bottom") {
+          height = Math.max(10, Math.min(100 - initial.top, initial.height + deltaYPercent));
+        } else if (type === "left") {
+          left = Math.max(0, Math.min(initial.left + initial.width - 10, initial.left + deltaXPercent));
+          width = initial.width - (left - initial.left);
+        } else if (type === "right") {
+          width = Math.max(10, Math.min(100 - initial.left, initial.width + deltaXPercent));
         }
 
         return {
@@ -2170,11 +2240,12 @@ export default function VideoEditor() {
           const sx = (uniformScale ? animated.zoom : scaleX / 100) * anim.scale * stabilizeZoom;
           const sy = (uniformScale ? animated.zoom : scaleY / 100) * anim.scale * stabilizeZoom;
           ctx.scale(flipSignX * sx, flipSignY * sy);
-          const cropScale = Math.min(100 / cropBox.width, 100 / cropBox.height);
+          const activeClipCrop = clipInfoAtTime?.clip?.cropBox || cropBox;
+          const cropScale = Math.min(100 / activeClipCrop.width, 100 / activeClipCrop.height);
           ctx.scale(cropScale, cropScale);
           ctx.translate(
-            (50 - cropBox.left - cropBox.width / 2) * 3 * previewScale,
-            (50 - cropBox.top - cropBox.height / 2) * 3 * previewScale
+            (50 - activeClipCrop.left - activeClipCrop.width / 2) * 3 * previewScale,
+            (50 - activeClipCrop.top - activeClipCrop.height / 2) * 3 * previewScale
           );
           const vw = videoElement.videoWidth || width;
           const vh = videoElement.videoHeight || height;
@@ -2318,6 +2389,13 @@ export default function VideoEditor() {
   // Helper to select a tool on mobile or desktop and switch the appropriate CapCut panel tab
   const openCapCutTool = (toolId: string) => {
     setActiveTool(prev => (prev === toolId ? null : toolId));
+    if (toolId === "crop") {
+      const localT = activeClipInfo ? Math.max(0, currentTime - activeClipInfo.start) : 0;
+      setCropModalTime(localT);
+      if (cropModalVideoRef.current) {
+        cropModalVideoRef.current.currentTime = localT;
+      }
+    }
     if (["media", "audio", "text", "stickers", "effects", "transitions", "captions", "filters"].includes(toolId)) {
       setLeftTab(toolId as any);
     } else if (toolId === "remove_bg" || toolId === "chroma") {
@@ -5716,10 +5794,10 @@ export default function VideoEditor() {
       <div
         className="md:hidden shrink-0 z-40 relative bg-[#121316] border-t border-white/10"
       >
-        {/* Fullscreen Interactive Crop Sheet (Opens when activeTool === 'crop') */}
+                {/* Fullscreen Interactive Crop Sheet (Opens when activeTool === 'crop') */}
         {activeTool === "crop" && (
           <div className="fixed inset-0 z-50 flex flex-col bg-[#0E0F12]">
-            <div className="flex items-center justify-between px-4 h-12 border-b border-white/10">
+            <div className="flex items-center justify-between px-4 h-12 border-b border-white/10 shrink-0">
               <button
                 type="button"
                 onClick={() => setActiveTool(null)}
@@ -5727,22 +5805,31 @@ export default function VideoEditor() {
               >
                 <X className="w-5 h-5" />
               </button>
-              <span className="text-sm font-bold text-white">Crop & Rotate</span>
+              <div className="flex flex-col items-center">
+                <span className="text-sm font-bold text-white">Crop & Resize</span>
+                {selectedClip && (
+                  <span className="text-[10px] font-mono text-[#00E5FF] max-w-[180px] truncate">
+                    {selectedClip.name}
+                  </span>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => setActiveTool(null)}
-                className="p-1.5 text-[#00E5FF]"
+                className="p-1.5 text-[#00E5FF] font-bold text-sm"
               >
                 <Check className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="flex-1 bg-black flex items-center justify-center relative overflow-hidden p-4">
-              <div className="relative max-w-full max-h-full" style={{ width: "280px", height: "360px" }}>
+            <div className="flex-1 bg-black flex flex-col items-center justify-center relative overflow-hidden p-3">
+              <div className="relative max-w-full" style={{ width: "290px", height: "340px" }}>
                 <video
-                  src={objectUrl || undefined}
+                  ref={cropModalVideoRef}
+                  src={cropModalVideoSrc}
                   className="w-full h-full object-contain bg-black"
                   muted
+                  playsInline
                   style={{ filter: filterStyle, transform: `rotate(${rotate}deg)` }}
                 />
                 <div
@@ -5756,6 +5843,7 @@ export default function VideoEditor() {
                   }}
                   className="absolute border-2 border-[#00E5FF] cursor-move select-none shadow-[0_0_0_9999px_rgba(0,0,0,0.65)]"
                 >
+                  {/* 3x3 Rule-of-Thirds Grid */}
                   <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none">
                     <div className="border-r border-b border-white/40" />
                     <div className="border-r border-b border-white/40" />
@@ -5763,10 +5851,11 @@ export default function VideoEditor() {
                     <div className="border-r border-b border-white/40" />
                     <div className="border-r border-b border-white/40" />
                     <div className="border-b border-white/40" />
-                    <div className="border-r border-white/40" />
-                    <div className="border-r border-white/40" />
+                    <div className="border-r border-b border-white/40" />
+                    <div className="border-r border-b border-white/40" />
                     <div />
                   </div>
+                  {/* 4 Corner Handles */}
                   <div
                     onMouseDown={e => handleCropBoxStart("top-left", e)}
                     onTouchStart={e => handleCropBoxStart("top-left", e)}
@@ -5787,14 +5876,68 @@ export default function VideoEditor() {
                     onTouchStart={e => handleCropBoxStart("bottom-right", e)}
                     className="absolute -bottom-2.5 -right-2.5 w-6 h-6 border-b-4 border-r-4 border-white cursor-nwse-resize pointer-events-auto"
                   />
+                  {/* 4 Middle Edge Handles */}
+                  <div
+                    onMouseDown={e => handleCropBoxStart("top", e)}
+                    onTouchStart={e => handleCropBoxStart("top", e)}
+                    className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-8 h-2.5 bg-white rounded-full cursor-ns-resize pointer-events-auto shadow-md border border-black/20"
+                  />
+                  <div
+                    onMouseDown={e => handleCropBoxStart("bottom", e)}
+                    onTouchStart={e => handleCropBoxStart("bottom", e)}
+                    className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-8 h-2.5 bg-white rounded-full cursor-ns-resize pointer-events-auto shadow-md border border-black/20"
+                  />
+                  <div
+                    onMouseDown={e => handleCropBoxStart("left", e)}
+                    onTouchStart={e => handleCropBoxStart("left", e)}
+                    className="absolute top-1/2 -left-1.5 -translate-y-1/2 w-2.5 h-8 bg-white rounded-full cursor-ew-resize pointer-events-auto shadow-md border border-black/20"
+                  />
+                  <div
+                    onMouseDown={e => handleCropBoxStart("right", e)}
+                    onTouchStart={e => handleCropBoxStart("right", e)}
+                    className="absolute top-1/2 -right-1.5 -translate-y-1/2 w-2.5 h-8 bg-white rounded-full cursor-ew-resize pointer-events-auto shadow-md border border-black/20"
+                  />
                 </div>
+              </div>
+
+              {/* In-Modal Timeline Scrubber */}
+              <div className="w-full max-w-[320px] px-3 py-1.5 flex items-center gap-2.5 bg-white/5 rounded-xl border border-white/10 mt-3 select-none">
+                <span className="text-[10px] font-mono font-semibold text-[#00E5FF] w-10 text-center">
+                  {formatTime(cropModalTime)}
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(0.1, targetClipDuration)}
+                  step={0.05}
+                  value={cropModalTime}
+                  onChange={e => handleCropModalScrub(parseFloat(e.target.value))}
+                  className="flex-1 accent-[#00E5FF] h-1.5 bg-white/20 rounded-lg cursor-pointer"
+                />
+                <span className="text-[10px] font-mono text-slate-400 w-10 text-center">
+                  {formatTime(targetClipDuration)}
+                </span>
               </div>
             </div>
 
-            <div className="px-4 py-3 space-y-2 border-t border-white/10">
+            <div className="px-4 py-3 space-y-2 border-t border-white/10 shrink-0 bg-[#121316]">
               <div className="flex justify-between items-center text-xs">
-                <span className="text-white font-medium">Rotate</span>
-                <span className="font-bold text-[#00E5FF]">{rotate}°</span>
+                <span className="text-white font-medium flex items-center gap-1.5">
+                  <RotateCw className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Rotate</span>
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-[#00E5FF]">{rotate}°</span>
+                  {rotate !== 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setRotate(0)}
+                      className="text-[10px] text-cyan-400 hover:text-white px-1.5 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/20"
+                    >
+                      0° Reset
+                    </button>
+                  )}
+                </div>
               </div>
               <input
                 type="range"
@@ -5805,13 +5948,27 @@ export default function VideoEditor() {
                 onChange={e => setRotate(parseInt(e.target.value))}
                 className="w-full capcut-slider"
               />
-              <div className="flex space-x-2 overflow-x-auto scrollbar-none pt-1">
+              <div className="flex items-center space-x-2 overflow-x-auto scrollbar-none pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCropBox({ left: 0, top: 0, width: 100, height: 100 });
+                    setRotate(0);
+                    setAspectRatio("original");
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-semibold text-slate-300 hover:text-white shrink-0 flex items-center gap-1"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reset</span>
+                </button>
                 {[
                   { r: "custom", label: "Custom", box: { left: 5, top: 5, width: 90, height: 90 } },
                   { r: "9:16", label: "9:16", box: { left: 20, top: 5, width: 60, height: 90 } },
                   { r: "16:9", label: "16:9", box: { left: 5, top: 25, width: 90, height: 50.6 } },
                   { r: "1:1", label: "1:1", box: { left: 15, top: 15, width: 70, height: 70 } },
                   { r: "4:3", label: "4:3", box: { left: 5, top: 18, width: 90, height: 64 } },
+                  { r: "4:5", label: "4:5", box: { left: 15, top: 5, width: 70, height: 87.5 } },
+                  { r: "21:9", label: "21:9", box: { left: 5, top: 30, width: 90, height: 38.5 } },
                 ].map((ar, idx) => (
                   <button
                     key={idx}
@@ -5820,7 +5977,11 @@ export default function VideoEditor() {
                       if (ar.r !== "custom") setAspectRatio(ar.r as any);
                       setCropBox(ar.box);
                     }}
-                    className="px-3 py-1.5 rounded bg-white/10 text-xs font-semibold text-white shrink-0"
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold shrink-0 transition-colors ${
+                      (aspectRatio === ar.r || (ar.r === "custom" && !aspectRatio))
+                        ? "bg-[#00E5FF]/20 text-[#00E5FF] border border-[#00E5FF]/40"
+                        : "bg-white/10 text-white hover:bg-white/20"
+                    }`}
                   >
                     {ar.label}
                   </button>
@@ -5868,23 +6029,35 @@ export default function VideoEditor() {
 
       {/* Desktop Crop Modal when triggered from Timeline Toolbar on Desktop */}
       {activeTool === "crop" && (
-        <div className="hidden md:flex fixed inset-0 z-50 items-center justify-center bg-black/75 backdrop-blur-sm p-6">
-          <div className="w-full max-w-lg rounded-2xl bg-[#18191D] border border-white/15 overflow-hidden shadow-2xl">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-              <span className="text-sm font-bold text-white">CapCut Freeform Crop & Aspect Ratio</span>
+        <div className="hidden md:flex fixed inset-0 z-50 items-center justify-center bg-black/80 backdrop-blur-md p-6">
+          <div className="w-full max-w-xl rounded-2xl bg-[#18191D] border border-white/15 overflow-hidden shadow-2xl flex flex-col">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <Crop className="w-4 h-4 text-[#00E5FF]" />
+                <span className="text-sm font-bold text-white">CapCut Freeform Crop & Framing</span>
+                {selectedClip && (
+                  <span className="text-[11px] font-mono text-cyan-400/80 bg-cyan-950/40 px-2 py-0.5 rounded border border-cyan-800/40">
+                    {selectedClip.name}
+                  </span>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => setActiveTool(null)}
-                className="text-slate-400 hover:text-white"
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/10"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="p-4 space-y-4">
-              <div className="relative mx-auto w-72 h-52 bg-black rounded-lg overflow-hidden">
+
+            <div className="p-5 space-y-4">
+              {/* Interactive Video Frame with 8-Handle Crop Box */}
+              <div className="relative mx-auto w-[380px] h-[260px] bg-black rounded-xl overflow-hidden flex items-center justify-center border border-white/10">
                 <video
-                  src={objectUrl || undefined}
+                  ref={cropModalVideoRef}
+                  src={cropModalVideoSrc}
                   muted
+                  playsInline
                   className="w-full h-full object-contain"
                   style={{ filter: filterStyle, transform: `rotate(${rotate}deg)` }}
                 />
@@ -5896,39 +6069,162 @@ export default function VideoEditor() {
                     width: `${cropBox.width}%`,
                     height: `${cropBox.height}%`,
                   }}
-                  className="absolute border-2 border-[#00E5FF] cursor-move bg-[#00E5FF]/10"
+                  className="absolute border-2 border-[#00E5FF] cursor-move select-none shadow-[0_0_0_9999px_rgba(0,0,0,0.65)]"
+                >
+                  {/* 3x3 Rule-of-Thirds Grid */}
+                  <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none">
+                    <div className="border-r border-b border-white/40" />
+                    <div className="border-r border-b border-white/40" />
+                    <div className="border-b border-white/40" />
+                    <div className="border-r border-b border-white/40" />
+                    <div className="border-r border-b border-white/40" />
+                    <div className="border-b border-white/40" />
+                    <div className="border-r border-b border-white/40" />
+                    <div className="border-r border-b border-white/40" />
+                    <div />
+                  </div>
+
+                  {/* 4 Corner Handles */}
+                  <div
+                    onMouseDown={e => handleCropBoxStart("top-left", e)}
+                    className="absolute -top-2.5 -left-2.5 w-5 h-5 border-t-4 border-l-4 border-white cursor-nwse-resize pointer-events-auto"
+                  />
+                  <div
+                    onMouseDown={e => handleCropBoxStart("top-right", e)}
+                    className="absolute -top-2.5 -right-2.5 w-5 h-5 border-t-4 border-r-4 border-white cursor-nesw-resize pointer-events-auto"
+                  />
+                  <div
+                    onMouseDown={e => handleCropBoxStart("bottom-left", e)}
+                    className="absolute -bottom-2.5 -left-2.5 w-5 h-5 border-b-4 border-l-4 border-white cursor-nesw-resize pointer-events-auto"
+                  />
+                  <div
+                    onMouseDown={e => handleCropBoxStart("bottom-right", e)}
+                    className="absolute -bottom-2.5 -right-2.5 w-5 h-5 border-b-4 border-r-4 border-white cursor-nwse-resize pointer-events-auto"
+                  />
+
+                  {/* 4 Middle Edge Handles */}
+                  <div
+                    onMouseDown={e => handleCropBoxStart("top", e)}
+                    className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-8 h-2.5 bg-white rounded-full cursor-ns-resize pointer-events-auto shadow-md border border-black/20"
+                  />
+                  <div
+                    onMouseDown={e => handleCropBoxStart("bottom", e)}
+                    className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-8 h-2.5 bg-white rounded-full cursor-ns-resize pointer-events-auto shadow-md border border-black/20"
+                  />
+                  <div
+                    onMouseDown={e => handleCropBoxStart("left", e)}
+                    className="absolute top-1/2 -left-1.5 -translate-y-1/2 w-2.5 h-8 bg-white rounded-full cursor-ew-resize pointer-events-auto shadow-md border border-black/20"
+                  />
+                  <div
+                    onMouseDown={e => handleCropBoxStart("right", e)}
+                    className="absolute top-1/2 -right-1.5 -translate-y-1/2 w-2.5 h-8 bg-white rounded-full cursor-ew-resize pointer-events-auto shadow-md border border-black/20"
+                  />
+                </div>
+              </div>
+
+              {/* In-Modal Timeline Scrubber */}
+              <div className="w-full px-3 py-2 flex items-center gap-3 bg-black/40 rounded-xl border border-white/10 select-none">
+                <span className="text-[11px] font-mono font-semibold text-[#00E5FF] w-12 text-center">
+                  {formatTime(cropModalTime)}
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(0.1, targetClipDuration)}
+                  step={0.05}
+                  value={cropModalTime}
+                  onChange={e => handleCropModalScrub(parseFloat(e.target.value))}
+                  className="flex-1 accent-[#00E5FF] h-1.5 bg-white/20 rounded-lg cursor-pointer"
+                />
+                <span className="text-[11px] font-mono text-slate-400 w-12 text-center">
+                  {formatTime(targetClipDuration)}
+                </span>
+              </div>
+
+              {/* Rotation Slider with 0° Reset */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-white font-medium flex items-center gap-1.5">
+                    <RotateCw className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Rotation Angle</span>
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-[#00E5FF]">{rotate}°</span>
+                    {rotate !== 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setRotate(0)}
+                        className="text-[10px] text-cyan-400 hover:text-white px-2 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/20"
+                      >
+                        0° Reset
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  value={rotate}
+                  onChange={e => setRotate(parseInt(e.target.value))}
+                  className="w-full capcut-slider"
                 />
               </div>
-              <div className="flex items-center justify-between gap-2">
-                {["16:9", "9:16", "1:1", "4:3", "4:5", "21:9"].map(r => (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => setAspectRatio(r as any)}
-                    className={`flex-1 py-1.5 rounded text-xs font-bold border ${
-                      aspectRatio === r
-                        ? "bg-cyan-500/20 border-[#00E5FF] text-[#00E5FF]"
-                        : "bg-[#121316] border-white/10 text-slate-300"
-                    }`}
-                  >
-                    {r}
-                  </button>
-                ))}
+
+              {/* Aspect Ratio Presets */}
+              <div className="space-y-1.5">
+                <div className="text-[11px] font-medium text-slate-400">Aspect Ratio Preset</div>
+                <div className="flex items-center gap-1.5">
+                  {[
+                    { r: "custom", label: "Custom", box: { left: 5, top: 5, width: 90, height: 90 } },
+                    { r: "9:16", label: "9:16", box: { left: 20, top: 5, width: 60, height: 90 } },
+                    { r: "16:9", label: "16:9", box: { left: 5, top: 25, width: 90, height: 50.6 } },
+                    { r: "1:1", label: "1:1", box: { left: 15, top: 15, width: 70, height: 70 } },
+                    { r: "4:3", label: "4:3", box: { left: 5, top: 18, width: 90, height: 64 } },
+                    { r: "4:5", label: "4:5", box: { left: 15, top: 5, width: 70, height: 87.5 } },
+                    { r: "21:9", label: "21:9", box: { left: 5, top: 30, width: 90, height: 38.5 } },
+                  ].map(ar => (
+                    <button
+                      key={ar.r}
+                      type="button"
+                      onClick={() => {
+                        if (ar.r !== "custom") setAspectRatio(ar.r as any);
+                        setCropBox(ar.box);
+                      }}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                        (aspectRatio === ar.r || (ar.r === "custom" && !aspectRatio))
+                          ? "bg-cyan-500/20 border-[#00E5FF] text-[#00E5FF]"
+                          : "bg-[#121316] border-white/10 text-slate-300 hover:border-white/20"
+                      }`}
+                    >
+                      {ar.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="flex justify-end gap-2">
+
+              {/* Footer Actions */}
+              <div className="flex justify-between items-center pt-2 border-t border-white/10">
                 <button
                   type="button"
-                  onClick={() => setCropBox({ left: 0, top: 0, width: 100, height: 100 })}
-                  className="px-3 py-1.5 rounded bg-white/10 text-xs text-slate-300"
+                  onClick={() => {
+                    setCropBox({ left: 0, top: 0, width: 100, height: 100 });
+                    setRotate(0);
+                    setAspectRatio("original");
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs text-slate-300 flex items-center gap-1.5"
                 >
-                  Reset Crop
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reset All</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveTool(null)}
-                  className="px-4 py-1.5 rounded bg-[#00E5FF] text-black text-xs font-bold"
+                  className="px-5 py-2 rounded-lg bg-[#00E5FF] hover:bg-cyan-300 text-black text-xs font-bold transition-all shadow-lg shadow-cyan-500/20 flex items-center gap-1.5"
                 >
-                  Apply
+                  <Check className="w-4 h-4" />
+                  <span>Apply Crop</span>
                 </button>
               </div>
             </div>
