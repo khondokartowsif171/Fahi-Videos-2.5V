@@ -45,3 +45,5 @@ next-env.d.ts
 *.zip
 *.f32le
 *Supabase*.txt
+
+mcp-publisher.exe
