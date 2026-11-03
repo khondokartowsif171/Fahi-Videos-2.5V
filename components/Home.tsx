@@ -50,23 +50,43 @@ export default function Home({ setActiveTab }: HomeProps) {
 
   const getActivityIcon = (type: string) => {
     switch (type) {
-      case 'download': return <Download className="w-4 h-4 text-blue-400" />;
-      case 'edit': return <Video className="w-4 h-4 text-violet-400" />;
-      case 'thumbnail': return <ImageIcon className="w-4 h-4 text-pink-400" />;
-      case 'ai': return <Sparkles className="w-4 h-4 text-indigo-400" />;
-      case 'kotha': return <Mic className="w-4 h-4 text-teal-400" />;
-      default: return <FileVideo className="w-4 h-4 text-slate-400" />;
+      case 'youtube_download':
+      case 'download':
+        return <Download className="w-4 h-4 text-blue-400" />;
+      case 'video_edit':
+      case 'edit':
+        return <Video className="w-4 h-4 text-violet-400" />;
+      case 'image_edit':
+      case 'thumbnail':
+        return <ImageIcon className="w-4 h-4 text-pink-400" />;
+      case 'ai_generate':
+      case 'ai':
+        return <Sparkles className="w-4 h-4 text-indigo-400" />;
+      case 'kotha':
+        return <Mic className="w-4 h-4 text-teal-400" />;
+      default:
+        return <FileVideo className="w-4 h-4 text-slate-400" />;
     }
   };
 
   const getActivityTab = (type: string) => {
     switch (type) {
-      case 'download': return 'downloader';
-      case 'edit': return 'editor';
-      case 'thumbnail': return 'thumbnail';
-      case 'ai': return 'ai';
-      case 'kotha': return 'kotha';
-      default: return 'home';
+      case 'youtube_download':
+      case 'download':
+        return 'downloader';
+      case 'video_edit':
+      case 'edit':
+        return 'editor';
+      case 'image_edit':
+      case 'thumbnail':
+        return 'thumbnail';
+      case 'ai_generate':
+      case 'ai':
+        return 'ai';
+      case 'kotha':
+        return 'kotha';
+      default:
+        return 'home';
     }
   };
 

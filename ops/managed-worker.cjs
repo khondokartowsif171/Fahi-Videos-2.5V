@@ -1,5 +1,6 @@
 "use strict";
 const { GoogleGenAI } = require("@google/genai");
+const { GoogleAuth } = require("google-auth-library");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs/promises"),
   path = require("node:path"),
@@ -50,20 +51,36 @@ async function probe(file) {
     ]),
   );
 }
-async function fetchVideo(uri, key, file) {
-  const u = new URL(uri);
-  if (
-    u.protocol !== "https:" ||
-    !["generativelanguage.googleapis.com", "storage.googleapis.com"].includes(
-      u.hostname,
-    )
-  )
+async function vertexAccessToken() {
+  const auth = new GoogleAuth({ scopes: ["https://www.googleapis.com/auth/cloud-platform"] });
+  const client = await auth.getClient();
+  const result = await client.getAccessToken();
+  const token = typeof result === "string" ? result : result?.token;
+  if (!token) throw Error("Vertex runtime identity is unavailable.");
+  return token;
+}
+function vertexOutputUrl(uri) {
+  if (uri.startsWith("gs://")) {
+    const key = uri.slice(5), slash = key.indexOf("/");
+    if (slash < 1 || slash === key.length - 1) throw Error("Provider returned an invalid Cloud Storage output URI.");
+    const bucket = key.slice(0, slash), object = key.slice(slash + 1);
+    return new URL(`https://storage.googleapis.com/${encodeURIComponent(bucket)}/${object.split("/").map(encodeURIComponent).join("/")}`);
+  }
+  const url = new URL(uri);
+  if (url.protocol !== "https:" || url.hostname !== "storage.googleapis.com")
+    throw Error("Vertex returned an unsupported output host.");
+  return url;
+}
+async function fetchVideo(uri, provider, key, file) {
+  const isVertex = provider === "vertex";
+  const u = isVertex ? vertexOutputUrl(uri) : new URL(uri);
+  if (!isVertex && (u.protocol !== "https:" || !["generativelanguage.googleapis.com", "storage.googleapis.com"].includes(u.hostname)))
     throw Error("Provider returned an unsupported output host.");
+  const headers = isVertex
+    ? { Authorization: `Bearer ${await vertexAccessToken()}` }
+    : u.hostname === "generativelanguage.googleapis.com" ? { "x-goog-api-key": key } : {};
   const r = await fetch(u, {
-    headers:
-      u.hostname === "generativelanguage.googleapis.com"
-        ? { "x-goog-api-key": key }
-        : {},
+    headers,
     redirect: "error",
     signal: AbortSignal.timeout(120000),
   });
@@ -82,15 +99,21 @@ async function fetchVideo(uri, key, file) {
   }
 }
 async function work(j) {
-  const sql = db(),
-    [credential] =
-      await sql`SELECT encrypted_key FROM managed_credentials WHERE id=${j.credential_id}`;
-  if (!credential) throw Error("Job credential is unavailable.");
-  const key = open(credential.encrypted_key),
-    ai = new GoogleGenAI({
-      apiKey: key,
-      httpOptions: { timeout: 180000, retryOptions: { attempts: 1 } },
-    });
+  const sql = db();
+  const provider = j.policy?.provider || (j.credential_id ? "gemini_api" : "vertex");
+  const model = j.policy?.model || MODEL;
+  let key, ai;
+  if (provider === "gemini_api" && j.credential_id) {
+    const [credential] = await sql`SELECT encrypted_key FROM managed_credentials WHERE id=${j.credential_id}`;
+    if (!credential) throw Error("Job credential is unavailable.");
+    key = open(credential.encrypted_key);
+    ai = new GoogleGenAI({ apiKey: key, httpOptions: { timeout: 180000, retryOptions: { attempts: 1 } } });
+  } else if (provider === "vertex") {
+    const project = j.policy?.vertexProject || process.env.GOOGLE_CLOUD_PROJECT;
+    const location = j.policy?.vertexLocation || process.env.GOOGLE_CLOUD_LOCATION || "global";
+    if (!project) throw Error("Vertex project is not configured in the worker runtime.");
+    ai = new GoogleGenAI({ vertexai: true, project, location, httpOptions: { timeout: 180000, retryOptions: { attempts: 1 } } });
+  } else throw Error("Job provider configuration is unavailable.");
   const folder = path.join(mediaRoot(), ".managed-work", j.id);
   await fs.mkdir(folder, { recursive: true });
   try {
@@ -140,7 +163,7 @@ async function work(j) {
         await sql`INSERT INTO managed_attempts(job_id,shot,state) VALUES(${j.id},${i},'sending') ON CONFLICT(job_id,shot) DO UPDATE SET state='sending',updated_at=now()`;
         try {
           interaction = await ai.interactions.create({
-            model: MODEL,
+            model,
             input,
             background: true,
             store: true,
@@ -203,7 +226,7 @@ async function work(j) {
       if (video.data)
         await fs.writeFile(file, Buffer.from(video.data, "base64"));
       else if (video.uri) {
-        const match = video.uri.match(/files\/([a-zA-Z0-9_-]+)/);
+        const match = provider === "gemini_api" ? video.uri.match(/files\/([a-zA-Z0-9_-]+)/) : null;
         if (match) {
           let info;
           for (let n = 0; n < 120; n++) {
@@ -216,7 +239,7 @@ async function work(j) {
           if (info?.state !== "ACTIVE")
             throw Error("Google output did not become ready.");
         }
-        await fetchVideo(video.uri, key, file);
+        await fetchVideo(video.uri, provider, key, file);
       } else throw Error("Provider returned no video data.");
       const info = await probe(file),
         v = info.streams.find((s) => s.codec_type === "video");
@@ -349,4 +372,4 @@ if (require.main === module)
     console.error("Managed worker could not start.");
     process.exitCode = 1;
   });
-module.exports = { work, probe };
+module.exports = { work, probe, fetchVideo, vertexOutputUrl };

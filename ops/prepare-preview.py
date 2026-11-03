@@ -30,7 +30,8 @@ if not private.exists():
     if psql('postgres',"SELECT count(*) FROM pg_roles WHERE rolname='aura_fahi_runtime'")!='0': raise RuntimeError('Studio role exists but environment is missing; manual reconciliation required.')
     psql('postgres',"CREATE ROLE aura_fahi_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '"+password+"'")
     psql('postgres','CREATE DATABASE aura_fahi_studio OWNER postgres')
-    run(['docker','exec','-i',pg,'psql','-U','postgres','-d','aura_fahi_studio','-v','ON_ERROR_STOP=1'],input=(repo/'ops/studio-schema.sql').read_text(),stdout=subprocess.DEVNULL)
+    for schema_name in ('studio-schema.sql','managed-video-schema.sql'):
+        run(['docker','exec','-i',pg,'psql','-U','postgres','-d','aura_fahi_studio','-v','ON_ERROR_STOP=1'],input=(repo/'ops'/schema_name).read_text(),stdout=subprocess.DEVNULL)
     psql('aura_fahi_studio','REVOKE CREATE ON SCHEMA public FROM PUBLIC; GRANT CONNECT ON DATABASE aura_fahi_studio TO aura_fahi_runtime; GRANT USAGE ON SCHEMA public TO aura_fahi_runtime; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO aura_fahi_runtime;')
     url='postgresql://aura_fahi_runtime:'+urllib.parse.quote(password,safe='')+'@'+pg+':5432/aura_fahi_studio'
     private.write_text('FAHI_EMBEDDED=1\nFAHI_BRIDGE_SECRET='+bridge+'\nSTUDIO_VAULT_KEY='+vault+'\nSTUDIO_DATABASE_URL='+url+'\nSTUDIO_MEDIA_DIR=/media\n')

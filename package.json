@@ -13,7 +13,10 @@
     "test:kotha": "node tests/kotha-studio.cjs",
     "test:capcut": "node tests/capcut-studio.cjs",
     "test:downloader": "node tests/video-download-route.cjs",
-    "test:editor": "node tests/timeline-export.cjs && node tests/export-audio.cjs && node tests/editor-motion.cjs && node tests/capcut-studio.cjs"
+    "test:editor": "node tests/timeline-export.cjs && node tests/export-audio.cjs && node tests/editor-motion.cjs && node tests/capcut-studio.cjs",
+    "mcp:stdio": "node mcp-stdio-bridge.mjs",
+    "test:mcp": "node tests/mcp-connector.cjs",
+    "test:managed-worker": "node tests/managed-worker-vertex.cjs && node tests/managed-video-policy.cjs"
   },
   "dependencies": {
     "@distube/ytdl-core": "^4.16.12",
@@ -24,6 +27,7 @@
     "fdown-downloader": "^1.0.0",
     "fluent-ffmpeg": "^2.1.3",
     "framer-motion": "^11.0.0",
+    "google-auth-library": "^10.9.1",
     "html-to-image": "^1.11.13",
     "lucide-react": "^0.460.0",
     "mediabunny": "^1.62.0",

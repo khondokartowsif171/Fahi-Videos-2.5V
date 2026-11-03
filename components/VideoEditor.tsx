@@ -104,6 +104,8 @@ export interface VideoClipItem {
   duration: number;
   startOffset?: number;
   sourceDuration?: number;
+  minIn?: number;
+  maxOut?: number;
   intrinsicWidth?: number;
   intrinsicHeight?: number;
   proxyEnabled?: boolean;
@@ -493,17 +495,17 @@ export default function VideoEditor() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  });
+  }, [canUndo, canRedo, undo, redo, currentTime, trackLocked, selectedAudioId, videoClips, audioLayers, textOverlays, markers, updateState]);
 
   useEffect(() => {
-    if (duration > 0) {
+    if (duration > 0 && editorState.trimEnd !== duration) {
       setEditorState(prev => ({
         ...prev,
         trimStart: 0,
         trimEnd: duration,
       }));
     }
-  }, [duration, videoFile, setEditorState]);
+  }, [duration, videoFile, editorState.trimEnd, setEditorState]);
 
   const [editorTheme, setEditorTheme] = useState<"dark" | "light">("dark");
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -724,11 +726,15 @@ export default function VideoEditor() {
   const handleAddAssetToTimeline = useCallback(
     (asset: VideoClipItem) => {
       if (trackLocked) return;
+      const fullDur = asset.sourceDuration || asset.duration;
       const clipInstance: VideoClipItem = {
         ...asset,
         id: "clip_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
         startOffset: 0,
-        duration: asset.sourceDuration || asset.duration,
+        duration: fullDur,
+        sourceDuration: fullDur,
+        minIn: 0,
+        maxOut: fullDur,
       };
       setPreviewAssetId(null);
       setVideoClips(prev => {
@@ -766,8 +772,11 @@ export default function VideoEditor() {
           file,
           name: file.name,
           objectUrl: url,
+          startOffset: 0,
           sourceDuration: meta.duration,
           duration: meta.duration,
+          minIn: 0,
+          maxOut: meta.duration,
           intrinsicWidth: meta.width,
           intrinsicHeight: meta.height,
           proxyEnabled: true,
@@ -1315,19 +1324,25 @@ export default function VideoEditor() {
       const idx = videoClips.findIndex(c => c.id === clipToSplit.id);
       if (idx !== -1) {
         const cleanClipName = clipToSplit.name.replace(/_part\d+$/, "");
+        const splitSourcePt = Number((initialStartOffset + relTime).toFixed(3));
+        const endSourcePt = Number((initialStartOffset + targetOffset.duration).toFixed(3));
         const part1: VideoClipItem = {
           ...clipToSplit,
           id: "clip_" + Date.now() + "_a",
           name: cleanClipName,
           startOffset: initialStartOffset,
           duration: Number(relTime.toFixed(3)),
+          minIn: clipToSplit.minIn ?? initialStartOffset,
+          maxOut: splitSourcePt,
         };
         const part2: VideoClipItem = {
           ...clipToSplit,
           id: "clip_" + Date.now() + "_b",
           name: cleanClipName,
-          startOffset: Number((initialStartOffset + relTime).toFixed(3)),
+          startOffset: splitSourcePt,
           duration: Number((targetOffset.duration - relTime).toFixed(3)),
+          minIn: splitSourcePt,
+          maxOut: clipToSplit.maxOut ?? endSourcePt,
         };
         setVideoClips(prev => {
           const updated = [...prev];
