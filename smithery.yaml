@@ -1,0 +1,20 @@
+# smithery.yaml - Fahi Videos MCP Registry Configuration
+startCommand:
+  type: "stdio"
+  config:
+    command: "node"
+    args:
+      - "mcp-stdio-bridge.mjs"
+    env:
+      NEXT_PUBLIC_SUPABASE_URL:
+        type: string
+        description: "Supabase project URL"
+        required: false
+      SUPABASE_SERVICE_ROLE_KEY:
+        type: string
+        description: "Supabase service role secret key"
+        required: false
+      GEMINI_API_KEY:
+        type: string
+        description: "Google Gemini API Key for AI video generation"
+        required: false

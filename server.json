@@ -1,0 +1,42 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.khondokartowsif171/fahi-videos-mcp",
+  "title": "Fahi-Videos MCP Server",
+  "description": "AI video generation, analytics, prompts, and database ops for Fahi-Videos platform.",
+  "version": "2.5.0",
+  "websiteUrl": "https://github.com/khondokartowsif171/Fahi-Videos-2.5V",
+  "repository": {
+    "url": "https://github.com/khondokartowsif171/Fahi-Videos-2.5V",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "fahi-videos-mcp",
+      "version": "2.5.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "NEXT_PUBLIC_SUPABASE_URL",
+          "description": "Supabase project URL",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "SUPABASE_SERVICE_ROLE_KEY",
+          "description": "Supabase service role secret key",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "GEMINI_API_KEY",
+          "description": "Google Gemini API Key for generation",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}
