@@ -135,23 +135,18 @@ export default function Navbar({
               </>
             )}
 
-            <button
-              style={isEmbedded ? { display: 'none' } : undefined}
-              onClick={() => setAdminModalOpen(true)}
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30 transition-all shadow-sm"
-              title="Admin Login Console"
-            >
-              <ShieldCheck className="w-4 h-4 text-violet-400" />
-              <span>Admin</span>
-            </button>
-            <button
-              style={isEmbedded ? { display: 'none' } : undefined}
-              onClick={() => setApiBoxOpen(true)}
-              className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-full transition-colors"
-              title="API Settings"
-            >
-              <Key className="w-5 h-5" />
-            </button>
+            {/* Admin Badge ONLY for authenticated Admin/CEO */}
+            {currentUser && (currentUser.provider === 'admin' || currentUser.email.toLowerCase() === 'ceo@auraajenticai.cloud') && (
+              <button
+                style={isEmbedded ? { display: 'none' } : undefined}
+                onClick={() => setAdminModalOpen(true)}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30 transition-all shadow-sm cursor-pointer"
+                title="Admin Dashboard"
+              >
+                <ShieldCheck className="w-4 h-4 text-violet-400" />
+                <span>Admin</span>
+              </button>
+            )}
             <button
               style={isEmbedded ? { display: 'none' } : undefined}
               onClick={() => setSettingsOpen(true)}
@@ -207,21 +202,18 @@ export default function Navbar({
                 <span>Login</span>
               </button>
             ) : null}
-            <button
-              style={isEmbedded ? { display: 'none' } : undefined}
-              onClick={() => setAdminModalOpen(true)}
-              className="p-1.5 bg-violet-600/20 border border-violet-500/30 text-violet-300 rounded-lg text-xs font-bold flex items-center space-x-1"
-            >
-              <ShieldCheck className="w-4 h-4 text-violet-400" />
-              <span>Admin</span>
-            </button>
-            <button
-              style={isEmbedded ? { display: 'none' } : undefined}
-              onClick={() => setApiBoxOpen(true)}
-              className="p-2 text-slate-400 hover:text-white rounded-full"
-            >
-              <Key className="w-5 h-5" />
-            </button>
+            {/* Admin Badge ONLY for authenticated Admin/CEO */}
+            {currentUser && (currentUser.provider === 'admin' || currentUser.email.toLowerCase() === 'ceo@auraajenticai.cloud') && (
+              <button
+                style={isEmbedded ? { display: 'none' } : undefined}
+                onClick={() => setAdminModalOpen(true)}
+                className="p-1.5 bg-violet-600/20 border border-violet-500/30 text-violet-300 rounded-lg text-xs font-bold flex items-center space-x-1"
+                title="Admin Dashboard"
+              >
+                <ShieldCheck className="w-4 h-4 text-violet-400" />
+                <span>Admin</span>
+              </button>
+            )}
             <button
               style={isEmbedded ? { display: 'none' } : undefined}
               onClick={() => setSettingsOpen(true)}

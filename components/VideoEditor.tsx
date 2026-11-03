@@ -2486,15 +2486,7 @@ export default function VideoEditor() {
         {exportDownload && <CloudExport key={exportDownload.url} source={exportDownload.url} name={exportDownload.name}/>}
         {/* Right: Admin + Share + Cyan Export Button */}
         <div className="flex items-center space-x-2">
-          <button
-            type="button"
-            style={isEmbedded ? {display:'none'} : undefined} onClick={() => setShowAdminModal(true)}
-            className="hidden lg:flex items-center space-x-1 px-2 py-1 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] text-slate-300"
-            title="Admin Console"
-          >
-            <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Admin</span>
-          </button>
+
 
           <button
             type="button"
