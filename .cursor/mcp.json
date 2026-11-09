@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "fahi-videos-mcp": {
+      "httpUrl": "https://fahi-videos.auraajenticai.cloud/mcp",
+      "url": "https://fahi-videos.auraajenticai.cloud/mcp"
+    }
+  }
+}

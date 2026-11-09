@@ -63,7 +63,7 @@ Add to your `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "fahi-videos": {
+    "fahi-videos-mcp": {
       "command": "node",
       "args": ["./mcp-stdio-bridge.mjs"],
       "env": {
@@ -81,8 +81,8 @@ Add to `.cursor/mcp.json`:
 ```json
 {
   "mcpServers": {
-    "fahi-videos": {
-      "url": "https://fahi-videos.auraajenticai.cloud/mcp"
+    "fahi-videos-mcp": {
+      "httpUrl": "https://fahi-videos.auraajenticai.cloud/mcp"
     }
   }
 }
