@@ -2,7 +2,7 @@
  * lib/mcp-server.ts
  *
  * World-Class 100% Free-First Model Context Protocol (MCP) Connector Engine for Fahi Videos 2.5V
- * Live Deployment Target: https://fahi-videos.auraajenticai.cloud/api/mcp
+ * Live Deployment Target: https://fahi-videos.auraajenticai.cloud/mcp (and /api/mcp)
  *
  * Designed so that ALL core tools (Kotha Studio Bangla Dubbing, YT/FB/Insta/TikTok Downloader,
  * CapCut Pro Video Editor, Storyboard/SRT Generator, and Studio SFX) work 100% FOR FREE
@@ -942,7 +942,7 @@ async function readMcpResource(
               {
                 platform: 'Fahi Videos 2.5V — 100% Free Video, Dubbing & Downloader OS',
                 productionUrl: 'https://fahi-videos.auraajenticai.cloud/',
-                mcpEndpoint: 'https://fahi-videos.auraajenticai.cloud/api/mcp',
+                mcpEndpoint: 'https://fahi-videos.auraajenticai.cloud/mcp',
                 freeCoreSuites: [
                   {
                     id: 'kotha',
@@ -1393,8 +1393,8 @@ export async function handleMcpHttp(req: Request): Promise<Response> {
         freeTierReady: true,
         mcpServer: MCP_SERVER_INFO,
         endpoints: {
-          streamableHttp: '/api/mcp',
-          sse: '/api/mcp (Accept: text/event-stream)',
+          streamableHttp: '/mcp',
+          sse: '/mcp (Accept: text/event-stream)',
         },
         counts: {
           tools: MCP_TOOLS.length,

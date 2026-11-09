@@ -5,10 +5,10 @@
  * Zero-dependency Stdio-to-Streamable-HTTP MCP Bridge for Fahi Videos 2.5V.
  * Connects Claude Desktop, Cursor, Windsurf, Cline, or any local MCP host
  * directly to your live deployment at:
- *   https://fahi-videos.auraajenticai.cloud/api/mcp
+ *   https://fahi-videos.auraajenticai.cloud/mcp
  *
  * Environment Variables:
- *   FAHI_MCP_URL       (default: "https://fahi-videos.auraajenticai.cloud/api/mcp")
+ *   FAHI_MCP_URL       (default: "https://fahi-videos.auraajenticai.cloud/mcp")
  *   GEMINI_API_KEY     (optional: forwarded as X-Gemini-API-Key)
  *   FAHI_MCP_TOKEN     (optional: forwarded as Authorization: Bearer <token>)
  *   FAHI_AURA_CLIENT_ID(optional: session isolation ID)
@@ -18,7 +18,7 @@ import readline from 'node:readline';
 
 const MCP_URL =
   process.env.FAHI_MCP_URL ||
-  'https://fahi-videos.auraajenticai.cloud/api/mcp';
+  'https://fahi-videos.auraajenticai.cloud/mcp';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const FAHI_MCP_TOKEN = process.env.FAHI_MCP_TOKEN || '';
 const AURA_CLIENT_ID =

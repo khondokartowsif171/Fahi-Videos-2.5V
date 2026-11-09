@@ -3,7 +3,7 @@
 > **All-in-one browser video creation, Bangladeshi Bengali voiceover dubbing, multi-platform media downloader, and 100% Free-First Model Context Protocol (MCP) server for AI agents.**
 
 Live Web App: **[https://fahi-videos.auraajenticai.cloud](https://fahi-videos.auraajenticai.cloud)**  
-Live MCP Endpoint: **`https://fahi-videos.auraajenticai.cloud/api/mcp`**
+Live MCP Endpoint: **`https://fahi-videos.auraajenticai.cloud/mcp`**
 
 ---
 
@@ -14,7 +14,7 @@ Live MCP Endpoint: **`https://fahi-videos.auraajenticai.cloud/api/mcp`**
 - **✂️ CapCut Pro Video Studio**: Browser-based NLE video editing with left-aligned `00:00:00:00` timeline, precision clip trimming (`minIn`/`maxOut`), keyframe easing, CSS mask shapes, HSL/Curves color grading, and `.SRT` subtitle rendering.
 - **☁️ Cloud Project Sync**: Cross-device project sync and Google / email authentication for creators, with automatic offline draft recovery.
 
-- **🤖 World-Class MCP Connector (`/api/mcp`)**: 10 free-first MCP tools, 4 studio resources, 3 prompts, and a zero-dependency stdio bridge for Claude Desktop, Cursor, Windsurf, Cline, and Antigravity.
+- **🤖 World-Class MCP Connector (`/mcp`)**: 10 free-first MCP tools, 4 studio resources, 3 prompts, and a zero-dependency stdio bridge for Claude Desktop, Cursor, Windsurf, Cline, and Antigravity.
 
 ---
 
@@ -65,7 +65,7 @@ Add to your `claude_desktop_config.json`:
       "command": "node",
       "args": ["./mcp-stdio-bridge.mjs"],
       "env": {
-        "FAHI_MCP_URL": "https://fahi-videos.auraajenticai.cloud/api/mcp"
+        "FAHI_MCP_URL": "https://fahi-videos.auraajenticai.cloud/mcp"
       }
     }
   }
@@ -80,7 +80,7 @@ Add to `.cursor/mcp.json`:
 {
   "mcpServers": {
     "fahi-videos": {
-      "url": "https://fahi-videos.auraajenticai.cloud/api/mcp"
+      "url": "https://fahi-videos.auraajenticai.cloud/mcp"
     }
   }
 }
