@@ -283,6 +283,33 @@ export async function GET(req: NextRequest) {
       const fbExecResult = await extractWithYoutubeDl(url, "facebook");
       if (fbExecResult) return NextResponse.json(fbExecResult);
 
+      // Tier 1: snapsave-media-downloader
+      try {
+        const { snapsave } = require("snapsave-media-downloader");
+        const snapRes: any = await withTimeout(snapsave(url), 7000, "snapsave.fb");
+        if (snapRes && snapRes.status && Array.isArray(snapRes.data) && snapRes.data.length > 0) {
+          const formats = snapRes.data
+            .filter((item: any) => item && item.url)
+            .map((item: any) => ({
+              quality: item.resolution ? `${item.resolution} (MP4)` : "Facebook Video (HD MP4)",
+              url: item.url,
+              type: "video" as const,
+            }));
+          if (formats.length > 0) {
+            return NextResponse.json({
+              platform: "facebook",
+              title: snapRes.data[0]?.description || "Facebook Video / Reel",
+              author: "Facebook Creator",
+              thumbnail: snapRes.data[0]?.thumbnail || "",
+              formats,
+            });
+          }
+        }
+      } catch (e: any) {
+        console.warn("snapsave.fb fallback:", e?.message || e);
+      }
+
+      // Tier 2: btch.fbdown
       try {
         const info: any = await withTimeout(btch.fbdown(url), 5000, "btch.fbdown");
         if (info && info.status) {
@@ -307,37 +334,62 @@ export async function GET(req: NextRequest) {
         console.warn("btch.fbdown fallback:", e?.message || e);
       }
 
+      // Tier 3: ruhend.fbdl
       try {
-        const { fbdown } = require("ruhend-scraper");
-        const rFb: any = await withTimeout(fbdown(url), 5000, "ruhend.fbdown");
-        const list = Array.isArray(rFb?.data) ? rFb.data : [];
-        if (list.length > 0) {
-          const formats = list
-            .filter((item: any) => item && item.url)
-            .map((item: any, idx: number) => ({
-              quality: item.resolution || (idx === 0 ? "HD Video (MP4)" : "SD Video (MP4)"),
-              url: item.url,
-              type: "video" as const,
-            }));
-          if (formats.length > 0) {
-            return NextResponse.json({
-              platform: "facebook",
-              title: "Facebook Video / Reel",
-              author: "Facebook Creator",
-              thumbnail: list[0]?.thumbnail || "",
-              formats,
-            });
+        const { fbdl } = require("ruhend-scraper");
+        if (typeof fbdl === "function") {
+          const rFb: any = await withTimeout(fbdl(url), 5000, "ruhend.fbdl");
+          const list = Array.isArray(rFb?.data) ? rFb.data : [];
+          if (list.length > 0) {
+            const formats = list
+              .filter((item: any) => item && item.url)
+              .map((item: any, idx: number) => ({
+                quality: item.resolution || (idx === 0 ? "HD Video (MP4)" : "SD Video (MP4)"),
+                url: item.url,
+                type: "video" as const,
+              }));
+            if (formats.length > 0) {
+              return NextResponse.json({
+                platform: "facebook",
+                title: "Facebook Video / Reel",
+                author: "Facebook Creator",
+                thumbnail: list[0]?.thumbnail || "",
+                formats,
+              });
+            }
           }
         }
       } catch {}
 
-      return NextResponse.json(
-        {
-          error:
-            "Could not extract Facebook media. The video may be private, group-restricted, or expired.",
-        },
-        { status: 422 }
-      );
+      // Facebook universal bypass fallback (never 422)
+      return NextResponse.json({
+        fallbackToIframe: true,
+        platform: "facebook",
+        title: "Facebook Video / Reel",
+        author: "Facebook Creator",
+        thumbnail: "",
+        url,
+        formats: [
+          {
+            quality: "HD Video (MP4)",
+            url: `https://loader.to/api/button/?url=${encodeURIComponent(url)}&f=1080`,
+            type: "video" as const,
+            isFallback: true,
+          },
+          {
+            quality: "SD Video (MP4)",
+            url: `https://loader.to/api/button/?url=${encodeURIComponent(url)}&f=720`,
+            type: "video" as const,
+            isFallback: true,
+          },
+          {
+            quality: "Audio (MP3)",
+            url: `https://loader.to/api/button/?url=${encodeURIComponent(url)}&f=mp3`,
+            type: "audio" as const,
+            isFallback: true,
+          },
+        ],
+      });
     }
 
     // ==========================================
@@ -360,7 +412,7 @@ export async function GET(req: NextRequest) {
               : [];
         if (igList.length > 0) {
           const formats = igList
-            .filter((item: any) => item && item.url)
+            .filter((item: any) => item && item.url && item.url.trim().length > 0)
             .map((item: any, idx: number) => ({
               quality: `Instagram Reel / Video (HD MP4 #${idx + 1})`,
               url: item.url,
@@ -383,24 +435,26 @@ export async function GET(req: NextRequest) {
       // Tier 3: ruhend-scraper with fast timeout
       try {
         const { igdl } = require("ruhend-scraper");
-        const rIg: any = await withTimeout(igdl(url), 5000, "ruhend.igdl");
-        const list = Array.isArray(rIg?.data) ? rIg.data : [];
-        if (list.length > 0) {
-          const formats = list
-            .filter((item: any) => item && item.url)
-            .map((item: any, idx: number) => ({
-              quality: `Instagram Reel / Video (HD MP4 #${idx + 1})`,
-              url: item.url,
-              type: "video" as const,
-            }));
-          if (formats.length > 0) {
-            return NextResponse.json({
-              platform: "instagram",
-              title: "Instagram Reel / Video",
-              author: "Instagram Creator",
-              thumbnail: list[0]?.thumbnail || "",
-              formats,
-            });
+        if (typeof igdl === "function") {
+          const rIg: any = await withTimeout(igdl(url), 5000, "ruhend.igdl");
+          const list = Array.isArray(rIg?.data) ? rIg.data : [];
+          if (list.length > 0) {
+            const formats = list
+              .filter((item: any) => item && item.url && item.url.trim().length > 0)
+              .map((item: any, idx: number) => ({
+                quality: `Instagram Reel / Video (HD MP4 #${idx + 1})`,
+                url: item.url,
+                type: "video" as const,
+              }));
+            if (formats.length > 0) {
+              return NextResponse.json({
+                platform: "instagram",
+                title: "Instagram Reel / Video",
+                author: "Instagram Creator",
+                thumbnail: list[0]?.thumbnail || "",
+                formats,
+              });
+            }
           }
         }
       } catch {}
@@ -411,7 +465,7 @@ export async function GET(req: NextRequest) {
         const snapRes: any = await withTimeout(snapsave(url), 5000, "snapsave");
         if (snapRes && snapRes.status && Array.isArray(snapRes.data) && snapRes.data.length > 0) {
           const formats = snapRes.data
-            .filter((item: any) => item && item.url)
+            .filter((item: any) => item && item.url && item.url.trim().length > 0)
             .map((item: any) => ({
               quality: item.resolution || "Instagram HD Video (MP4)",
               url: item.url,
@@ -429,13 +483,35 @@ export async function GET(req: NextRequest) {
         }
       } catch {}
 
-      return NextResponse.json(
-        {
-          error:
-            "Could not extract Instagram Reel. Please ensure the account or Reel is public and not removed.",
-        },
-        { status: 422 }
-      );
+      // Instagram universal bypass fallback (never 422)
+      return NextResponse.json({
+        fallbackToIframe: true,
+        platform: "instagram",
+        title: "Instagram Reel / Video",
+        author: "Instagram Creator",
+        thumbnail: "",
+        url,
+        formats: [
+          {
+            quality: "Instagram Reel (HD 1080p MP4)",
+            url: `https://loader.to/api/button/?url=${encodeURIComponent(url)}&f=1080`,
+            type: "video" as const,
+            isFallback: true,
+          },
+          {
+            quality: "Instagram Reel (720p MP4)",
+            url: `https://loader.to/api/button/?url=${encodeURIComponent(url)}&f=720`,
+            type: "video" as const,
+            isFallback: true,
+          },
+          {
+            quality: "Instagram Reel Audio (MP3)",
+            url: `https://loader.to/api/button/?url=${encodeURIComponent(url)}&f=mp3`,
+            type: "audio" as const,
+            isFallback: true,
+          },
+        ],
+      });
     }
 
     // ==========================================
@@ -445,6 +521,63 @@ export async function GET(req: NextRequest) {
       const ttExecResult = await extractWithYoutubeDl(url, "tiktok");
       if (ttExecResult) return NextResponse.json(ttExecResult);
 
+      // Tier 1: tikwm.com (100% Free, Zero Key, Ultra-fast No Watermark HD MP4 & MP3)
+      try {
+        const ttRes = await withTimeout(
+          fetch(`https://www.tikwm.com/api/?url=${encodeURIComponent(url)}&hd=1`, {
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+            },
+          }),
+          6000,
+          "tikwm"
+        );
+        if (ttRes.ok) {
+          const ttData = await ttRes.json();
+          if (ttData && ttData.code === 0 && ttData.data) {
+            const formats: Array<{ quality: string; url: string; type: "video" | "audio" }> = [];
+            const hdUrl = ttData.data.hdplay || ttData.data.play;
+            const playUrl = ttData.data.play;
+            const musicUrl = ttData.data.music;
+
+            if (hdUrl) {
+              formats.push({
+                quality: "TikTok HD Video (No Watermark MP4)",
+                url: hdUrl,
+                type: "video",
+              });
+            }
+            if (playUrl && playUrl !== hdUrl) {
+              formats.push({
+                quality: "TikTok SD Video (Fast MP4)",
+                url: playUrl,
+                type: "video",
+              });
+            }
+            if (musicUrl) {
+              formats.push({
+                quality: "TikTok Original Audio (MP3)",
+                url: musicUrl,
+                type: "audio",
+              });
+            }
+            if (formats.length > 0) {
+              return NextResponse.json({
+                platform: "tiktok",
+                title: ttData.data.title || "TikTok Video",
+                author: ttData.data.author?.nickname || ttData.data.author?.unique_id || "TikTok Creator",
+                thumbnail: ttData.data.cover || ttData.data.origin_cover || "",
+                formats,
+              });
+            }
+          }
+        }
+      } catch (e: any) {
+        console.warn("tikwm engine fallback:", e?.message || e);
+      }
+
+      // Tier 2: btch.ttdl
       try {
         const ttInfo: any = await withTimeout(btch.ttdl(url), 5000, "btch.ttdl");
         if (ttInfo && (ttInfo.video || ttInfo.audio)) {
@@ -477,44 +610,63 @@ export async function GET(req: NextRequest) {
         }
       } catch {}
 
+      // Tier 3: ruhend.ttdl
       try {
         const { ttdl } = require("ruhend-scraper");
-        const rTt: any = await withTimeout(ttdl(url), 5000, "ruhend.ttdl");
-        if (rTt && (rTt.video || rTt.audio)) {
-          const formats: Array<{ quality: string; url: string; type: "video" | "audio" }> = [];
-          if (rTt.video) {
-            formats.push({
-              quality: "TikTok HD Video (No Watermark)",
-              url: rTt.video,
-              type: "video",
-            });
-          }
-          if (rTt.audio) {
-            formats.push({
-              quality: "TikTok Original Audio (MP3)",
-              url: rTt.audio,
-              type: "audio",
-            });
-          }
-          if (formats.length > 0) {
-            return NextResponse.json({
-              platform: "tiktok",
-              title: rTt.title || "TikTok Video",
-              author: rTt.author || "TikTok Creator",
-              thumbnail: rTt.thumbnail || "",
-              formats,
-            });
+        if (typeof ttdl === "function") {
+          const rTt: any = await withTimeout(ttdl(url), 5000, "ruhend.ttdl");
+          if (rTt && (rTt.video || rTt.audio)) {
+            const formats: Array<{ quality: string; url: string; type: "video" | "audio" }> = [];
+            if (rTt.video) {
+              formats.push({
+                quality: "TikTok HD Video (No Watermark)",
+                url: rTt.video,
+                type: "video",
+              });
+            }
+            if (rTt.audio) {
+              formats.push({
+                quality: "TikTok Original Audio (MP3)",
+                url: rTt.audio,
+                type: "audio",
+              });
+            }
+            if (formats.length > 0) {
+              return NextResponse.json({
+                platform: "tiktok",
+                title: rTt.title || "TikTok Video",
+                author: rTt.author || "TikTok Creator",
+                thumbnail: rTt.thumbnail || "",
+                formats,
+              });
+            }
           }
         }
       } catch {}
 
-      return NextResponse.json(
-        {
-          error:
-            "Could not extract TikTok video. Please ensure the link is public and active.",
-        },
-        { status: 422 }
-      );
+      // TikTok universal bypass fallback (never 422)
+      return NextResponse.json({
+        fallbackToIframe: true,
+        platform: "tiktok",
+        title: "TikTok Video",
+        author: "TikTok Creator",
+        thumbnail: "",
+        url,
+        formats: [
+          {
+            quality: "TikTok HD Video (MP4)",
+            url: `https://loader.to/api/button/?url=${encodeURIComponent(url)}&f=1080`,
+            type: "video" as const,
+            isFallback: true,
+          },
+          {
+            quality: "TikTok Original Audio (MP3)",
+            url: `https://loader.to/api/button/?url=${encodeURIComponent(url)}&f=mp3`,
+            type: "audio" as const,
+            isFallback: true,
+          },
+        ],
+      });
     }
 
     return NextResponse.json({ error: "Unsupported media platform" }, { status: 400 });

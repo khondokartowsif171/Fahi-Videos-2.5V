@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Download, AlertCircle, Video, Music, Scissors, Mic, CheckCircle2 } from "lucide-react";
+import { Download, AlertCircle, Video, Music, Scissors, Mic, CheckCircle2, ExternalLink, Copy, Check, Smartphone } from "lucide-react";
 import { logActivity } from "@/lib/activity";
 import { studioBase } from "@/lib/studio-client";
 
@@ -10,6 +10,15 @@ export default function YoutubeDownloader() {
   const [loading, setLoading] = useState(false);
   const [videoData, setVideoData] = useState<any>(null);
   const [error, setError] = useState("");
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+
+  const handleCopy = (link: string, idx: number) => {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(link);
+      setCopiedIndex(idx);
+      setTimeout(() => setCopiedIndex(null), 2500);
+    }
+  };
 
   const handleFetch = async () => {
     if (!url.trim()) return;
@@ -125,80 +134,122 @@ export default function YoutubeDownloader() {
 
       {videoData && (
         <div className="space-y-6 mt-8 animate-in fade-in slide-in-from-bottom-6 duration-500">
-          {/* Native Extraction Results */}
-          {!videoData.fallbackToIframe && (
-            <div className="rounded-3xl border border-white/[0.06] bg-[#111115]/80 backdrop-blur-md p-6 sm:p-8 shadow-[0_12px_40px_-15px_rgba(0,0,0,0.7)]">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4 mb-6">
-                <div>
-                  <span className="text-[10px] bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full font-mono text-emerald-400 font-bold uppercase tracking-widest inline-block mb-2">
-                    Direct Free Stream Ready ({videoData.platform || "Media"})
-                  </span>
-                  <h3 className="text-md sm:text-lg font-bold text-white leading-snug line-clamp-2">
-                    {videoData.title}
-                  </h3>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleSwitchStudio("editor")}
-                    className="px-3.5 py-2 rounded-xl bg-violet-600/20 hover:bg-violet-600/30 border border-violet-500/30 text-violet-300 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <Scissors className="w-3.5 h-3.5" />
-                    <span>Open Video Editor</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSwitchStudio("kotha")}
-                    className="px-3.5 py-2 rounded-xl bg-teal-500/20 hover:bg-teal-500/30 border border-teal-500/30 text-teal-300 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <Mic className="w-3.5 h-3.5" />
-                    <span>Dub in Kotha Studio</span>
-                  </button>
-                </div>
-              </div>
+          {/* Main Download Card (Native Streams or Direct Buttons) */}
+          <div className="rounded-3xl border border-white/[0.06] bg-[#111115]/80 backdrop-blur-md p-6 sm:p-8 shadow-[0_12px_40px_-15px_rgba(0,0,0,0.7)] relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent" />
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {videoData.formats.map((format: any, index: number) => (
-                  <div
-                    key={index}
-                    className="border border-white/5 bg-[#07070a]/60 rounded-2xl p-4.5 flex items-center justify-between hover:border-indigo-500/30 transition-all duration-300 hover:bg-[#07070a]/90 group/item"
-                  >
-                    <div className="flex items-center space-x-3.5">
-                      <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center group-hover/item:scale-105 transition-transform">
-                        {format.type === "video" ? (
-                          <Video className="w-5 h-5 text-indigo-400" />
-                        ) : (
-                          <Music className="w-5 h-5 text-emerald-400" />
-                        )}
-                      </div>
-                      <div>
-                        <div className="text-sm font-bold text-white">{format.quality}</div>
-                        <div className="text-[10px] text-slate-500 uppercase tracking-wider font-mono">
-                          {format.type}
-                        </div>
-                      </div>
-                    </div>
-                    <a
-                      href={`${studioBase || ""}/api/video/download?url=${encodeURIComponent(format.url)}`}
-                      download
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-bold text-white transition-all active:scale-95 shadow-md shadow-indigo-600/10 cursor-pointer flex items-center gap-1.5"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>Download</span>
-                    </a>
-                  </div>
-                ))}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4 mb-6">
+              <div>
+                <span className="text-[10px] bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full font-mono text-emerald-400 font-bold uppercase tracking-widest inline-block mb-2">
+                  100% Free Stream Ready ({videoData.platform || "Media"})
+                </span>
+                <h3 className="text-md sm:text-lg font-bold text-white leading-snug line-clamp-2">
+                  {videoData.title || "Social Media Stream Ready"}
+                </h3>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleSwitchStudio("editor")}
+                  className="px-3.5 py-2 rounded-xl bg-violet-600/20 hover:bg-violet-600/30 border border-violet-500/30 text-violet-300 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Scissors className="w-3.5 h-3.5" />
+                  <span>Open Video Editor</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSwitchStudio("kotha")}
+                  className="px-3.5 py-2 rounded-xl bg-teal-500/20 hover:bg-teal-500/30 border border-teal-500/30 text-teal-300 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Mic className="w-3.5 h-3.5" />
+                  <span>Dub in Kotha Studio</span>
+                </button>
               </div>
             </div>
-          )}
 
-          {/* Secure Widget Fallback Platform */}
+            {/* Formats Grid */}
+            {Array.isArray(videoData.formats) && videoData.formats.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {videoData.formats.map((format: any, index: number) => {
+                  const downloadHref = format.isFallback
+                    ? format.url
+                    : `${studioBase || ""}/api/video/download?url=${encodeURIComponent(format.url)}`;
+
+                  return (
+                    <div
+                      key={index}
+                      className="border border-white/5 bg-[#07070a]/60 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-indigo-500/30 transition-all duration-300 hover:bg-[#07070a]/90 group/item"
+                    >
+                      <div className="flex items-center space-x-3.5">
+                        <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center group-hover/item:scale-105 transition-transform flex-shrink-0">
+                          {format.type === "video" ? (
+                            <Video className="w-5 h-5 text-indigo-400" />
+                          ) : (
+                            <Music className="w-5 h-5 text-emerald-400" />
+                          )}
+                        </div>
+                        <div>
+                          <div className="text-sm font-bold text-white">{format.quality}</div>
+                          <div className="text-[10px] text-slate-500 uppercase tracking-wider font-mono">
+                            {format.type}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 self-end sm:self-center">
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(format.url, index)}
+                          title="Copy direct stream link"
+                          className="p-2.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                        >
+                          {copiedIndex === index ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+
+                        <a
+                          href={format.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Open/Stream directly in browser"
+                          className="p-2.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1 text-xs"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Stream</span>
+                        </a>
+
+                        <a
+                          href={downloadHref}
+                          download="fahi-media"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-bold text-white transition-all active:scale-95 shadow-md shadow-indigo-600/10 cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Download</span>
+                        </a>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Mobile Helpful Tip Box */}
+            <div className="flex items-center gap-2.5 p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs mt-6">
+              <Smartphone className="w-4 h-4 flex-shrink-0 text-indigo-400" />
+              <span>
+                <strong>Mobile Download Tip:</strong> If the video plays in the browser instead of auto-downloading (common on iPhone/iPad), tap the browser Share icon (⬆️) and select <strong>&quot;Save Video&quot;</strong> to save directly to your gallery.
+              </span>
+            </div>
+          </div>
+
+          {/* Secure Interactive Downloader Fallback */}
           {videoData.fallbackToIframe && (
             <div className="rounded-3xl border border-white/[0.06] bg-[#111115]/80 backdrop-blur-md p-6 sm:p-8 shadow-[0_12px_40px_-15px_rgba(0,0,0,0.7)] relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-indigo-500/30 to-transparent" />
-
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-5 mb-6">
                 <div className="space-y-1">
                   <div className="flex items-center space-x-2 text-indigo-400 bg-indigo-400/10 px-2.5 py-1 rounded-full border border-indigo-400/25 text-[10px] font-bold uppercase tracking-widest w-fit">
@@ -206,33 +257,14 @@ export default function YoutubeDownloader() {
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
                       <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-indigo-400"></span>
                     </span>
-                    100% Free Bypass Engine ({videoData.platform || "Media"})
+                    Universal Bypass Engine ({videoData.platform || "Media"})
                   </div>
                   <h3 className="text-base sm:text-lg font-bold text-white">
-                    Select Format & Begin Free Download
+                    Interactive Format Converter & Downloader
                   </h3>
                   <p className="text-xs text-slate-400">
-                    Choose your preferred format (1080p MP4, 720p MP4, MP3 Audio) below, then import into Video Editor or Kotha Studio.
+                    If direct links are rate-limited on your network, use the interactive cloud converter below to extract MP4 (1080p, 720p, 480p) or MP3.
                   </p>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleSwitchStudio("editor")}
-                    className="px-3.5 py-2 rounded-xl bg-violet-600/20 hover:bg-violet-600/30 border border-violet-500/30 text-violet-300 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <Scissors className="w-3.5 h-3.5" />
-                    <span>Open Video Editor</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSwitchStudio("kotha")}
-                    className="px-3.5 py-2 rounded-xl bg-teal-500/20 hover:bg-teal-500/30 border border-teal-500/30 text-teal-300 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <Mic className="w-3.5 h-3.5" />
-                    <span>Dub in Kotha Studio</span>
-                  </button>
                 </div>
               </div>
 
@@ -243,7 +275,7 @@ export default function YoutubeDownloader() {
                   height="390px"
                   title="Downloader Widget"
                   className="rounded-xl w-full bg-[#07070a]"
-                  sandbox="allow-scripts allow-same-origin allow-presentation allow-downloads allow-forms"
+                  sandbox="allow-scripts allow-same-origin allow-presentation allow-downloads allow-forms allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"
                 />
               </div>
             </div>

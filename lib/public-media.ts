@@ -3,22 +3,31 @@ import { isIP } from "node:net";
 
 const allowed = [
   "googlevideo.com",
+  "ytimg.com",
   "fbcdn.net",
+  "fbcdn.com",
+  "fbsbx.com",
+  "facebook.com",
   "cdninstagram.com",
   "instagram.com",
-  "facebook.com",
+  "igcdn.com",
   "tiktokcdn.com",
+  "tiktokcdn-us.com",
   "tiktokcdn-eu.com",
+  "tiktokcdn-in.com",
+  "tiktokv.com",
+  "tikwm.com",
   "byteoversea.com",
   "ibytedtos.com",
   "tiktok.com",
+  "rapidcdn.app",
+  "snapsave.app",
   "storage.googleapis.com",
   "loader.to",
 ];
 
-// btch-downloader currently serves its YouTube MP4/MP3 streams from this
-// exact host. Keep it exact (rather than allowing every *.vidsnap.app host).
-const exactAllowed = new Set(["api.vidsnap.app"]);
+// vidsnap and specialized CDN hosts
+const exactAllowed = new Set(["api.vidsnap.app", "vidsnap.app"]);
 
 export async function validatePublicMediaUrl(raw: string) {
   const u = new URL(raw);
