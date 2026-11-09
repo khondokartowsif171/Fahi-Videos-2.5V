@@ -10,6 +10,9 @@ const nextConfig: NextConfig = {
   },
   distDir: process.env.FAHI_PREVIEW_DIR || ".next",
   outputFileTracingRoot: process.cwd(),
+  outputFileTracingIncludes: {
+    '/api/**/*': ['./node_modules/youtube-dl-exec/bin/**/*'],
+  },
   experimental: { webpackBuildWorker: false },
   eslint: {
     ignoreDuringBuilds: true,

@@ -52,6 +52,9 @@ async function extractWithYoutubeDl(url: string, platformHint: string) {
         noWarnings: true,
         noCallHome: true,
         preferFreeFormats: true,
+        noCheckCertificates: true,
+        userAgent:
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
       }),
       14000,
       "youtube-dl-exec"
