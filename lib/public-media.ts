@@ -1,10 +1,12 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
+
 const allowed = [
   "googlevideo.com",
   "fbcdn.net",
   "cdninstagram.com",
   "instagram.com",
+  "facebook.com",
   "tiktokcdn.com",
   "tiktokcdn-eu.com",
   "byteoversea.com",
@@ -13,9 +15,11 @@ const allowed = [
   "storage.googleapis.com",
   "loader.to",
 ];
+
 // btch-downloader currently serves its YouTube MP4/MP3 streams from this
 // exact host. Keep it exact (rather than allowing every *.vidsnap.app host).
 const exactAllowed = new Set(["api.vidsnap.app"]);
+
 export async function validatePublicMediaUrl(raw: string) {
   const u = new URL(raw);
   if (
@@ -27,6 +31,7 @@ export async function validatePublicMediaUrl(raw: string) {
     (!exactAllowed.has(u.hostname) && !allowed.some((h) => u.hostname === h || u.hostname.endsWith("." + h)))
   )
     throw Error("Unsupported public media host.");
+
   const addresses = await lookup(u.hostname, { all: true });
   if (
     !addresses.length ||
@@ -47,5 +52,6 @@ export async function validatePublicMediaUrl(raw: string) {
     })
   )
     throw Error("Private or reserved media addresses are blocked.");
+
   return u;
 }

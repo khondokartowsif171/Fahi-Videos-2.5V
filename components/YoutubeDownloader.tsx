@@ -180,11 +180,13 @@ export default function YoutubeDownloader() {
                     </div>
                     <a
                       href={`${studioBase || ""}/api/video/download?url=${encodeURIComponent(format.url)}`}
+                      download
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-bold text-white transition-all active:scale-95 shadow-md shadow-indigo-600/10 cursor-pointer"
+                      className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-bold text-white transition-all active:scale-95 shadow-md shadow-indigo-600/10 cursor-pointer flex items-center gap-1.5"
                     >
-                      Download
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Download</span>
                     </a>
                   </div>
                 ))}
