@@ -13,6 +13,7 @@ import ThumbnailEditor from "@/components/ThumbnailEditor";
 import AuraStudio from "@/components/AuraStudio";
 import KothaStudio from "@/components/KothaStudio";
 import AuthModal from "@/components/AuthModal";
+import McpConfigHub from "@/components/McpConfigHub";
 import {
   getCurrentUser,
   recordTrafficVisit,
@@ -29,6 +30,9 @@ const TAB_ALIASES: Record<string, string> = {
   flowlab: "ai",
   kotha: "kotha",
   kothastudio: "kotha",
+  mcp: "mcp",
+  "mcp-config": "mcp",
+  "mcp-setup": "mcp",
 };
 
 const TOOL_LABELS: Record<string, string> = {
@@ -49,7 +53,7 @@ export default function Page() {
   // Public Home Page + Mandatory Login Gate for Tools (bypassed in embedded mode) + Traffic Analytics
   const handleSelectTab = useCallback((requestedTab: string) => {
     const resolvedTab = TAB_ALIASES[requestedTab] || requestedTab;
-    if (resolvedTab === "home" || isEmbedded) {
+    if (resolvedTab === "home" || resolvedTab === "mcp" || isEmbedded) {
       setActiveTabState(resolvedTab);
       recordTrafficVisit(resolvedTab as any);
       return;
@@ -78,6 +82,7 @@ export default function Page() {
     if (params.get("studio") === "1") handleSelectTab("editor");
     if (params.get("kotha") === "1") handleSelectTab("kotha");
     if (params.get("aura") === "1") handleSelectTab("ai");
+    if (params.get("mcp") === "1") handleSelectTab("mcp");
     return cleanup;
   }, [handleSelectTab]);
 
@@ -225,6 +230,7 @@ export default function Page() {
         {activeTab === "home" && <Home setActiveTab={handleSelectTab} />}
         {activeTab === "downloader" && <YoutubeDownloader />}
         {activeTab === "thumbnail" && <ThumbnailEditor />}
+        {activeTab === "mcp" && <McpConfigHub />}
       </main>
     </div>
   );

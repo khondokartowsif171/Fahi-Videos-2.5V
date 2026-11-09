@@ -16,7 +16,9 @@ import {
   MonitorPlay,
   Share2,
   ArrowRight,
-  Mic
+  Mic,
+  Bot,
+  Cpu
 } from 'lucide-react';
 import { getActivities, clearActivities, Activity } from '../lib/activity';
 import { FahiVidsMarkSvg } from './FahiVidsLogo';
@@ -85,6 +87,8 @@ export default function Home({ setActiveTab }: HomeProps) {
         return 'ai';
       case 'kotha':
         return 'kotha';
+      case 'mcp':
+        return 'mcp';
       default:
         return 'home';
     }
@@ -130,6 +134,14 @@ export default function Home({ setActiveTab }: HomeProps) {
       icon: Mic,
       color: 'from-teal-500 to-emerald-400',
       badge: '100% Free Bangla TTS'
+    },
+    {
+      id: 'mcp',
+      title: 'MCP AI Connector',
+      description: 'Connect Cursor, Claude Desktop, and AI agents with 10 zero-key free studio tools.',
+      icon: Bot,
+      color: 'from-cyan-500 to-indigo-500',
+      badge: '10 Tools · Free MCP'
     },
     {
       id: 'convert',
@@ -269,6 +281,13 @@ export default function Home({ setActiveTab }: HomeProps) {
             >
               <Sparkles className="w-5 h-5 text-violet-400" />
               Google Aura Studio
+            </button>
+            <button
+              onClick={() => setActiveTab('mcp')}
+              className="px-8 py-4 bg-cyan-600/20 border border-cyan-500/30 hover:bg-cyan-600/30 text-cyan-300 font-semibold rounded-xl backdrop-blur-sm transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-[0_0_20px_rgba(0,200,255,0.15)]"
+            >
+              <Bot className="w-5 h-5 text-cyan-400" />
+              MCP AI Connector
             </button>
             <button
               onClick={() => setActiveTab('kotha')}

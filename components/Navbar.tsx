@@ -16,6 +16,7 @@ import {
   LogIn,
   LogOut,
   UserCheck,
+  Bot,
 } from 'lucide-react';
 import FahiVidsLogo from './FahiVidsLogo';
 import PwaInstallButton from './PwaInstallButton';
@@ -38,6 +39,7 @@ const tabs = [
   { id: 'thumbnail', label: 'Thumbnail', icon: ImageIcon, public: false },
   { id: 'ai', label: 'Aura Studio', icon: Sparkles, public: false },
   { id: 'kotha', label: 'Kotha Studio', icon: Mic, public: false },
+  { id: 'mcp', label: 'MCP AI', icon: Bot, public: true },
 ];
 
 export default function Navbar({
