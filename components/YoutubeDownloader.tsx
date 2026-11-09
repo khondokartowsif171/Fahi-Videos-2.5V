@@ -20,26 +20,126 @@ export default function YoutubeDownloader() {
     }
   };
 
+  const extractYoutubeIdClient = (rawUrl: string): string | null => {
+    try {
+      const u = new URL(rawUrl);
+      if (u.hostname.includes("youtu.be")) {
+        const id = u.pathname.replace(/^\/+/, "").split("/")[0];
+        if (id && /^[\w-]{11}$/.test(id)) return id;
+      } else if (u.hostname.includes("youtube.com")) {
+        if (
+          u.pathname.startsWith("/shorts/") ||
+          u.pathname.startsWith("/embed/") ||
+          u.pathname.startsWith("/live/")
+        ) {
+          const parts = u.pathname.split("/").filter(Boolean);
+          const id = parts[1];
+          if (id && /^[\w-]{11}$/.test(id)) return id;
+        } else {
+          const v = u.searchParams.get("v");
+          if (v && /^[\w-]{11}$/.test(v)) return v;
+        }
+      }
+    } catch {}
+    const m = rawUrl.match(
+      /(?:youtu\.be\/|v\/|u\/\w\/|embed\/|shorts\/|live\/|watch\?v=|&v=)([a-zA-Z0-9_-]{11})/
+    );
+    return m ? m[1] : null;
+  };
+
+  const fetchYoutubeDirectClient = async (videoId: string) => {
+    const res = await fetch(`https://api.vidsnap.app/parse?id=${encodeURIComponent(videoId)}`);
+    if (!res.ok) return null;
+    const vsData = await res.json();
+    const rawFormats = Array.isArray(vsData?.formats) ? vsData.formats : [];
+    const formats: Array<{ quality: string; url: string; type: "video" | "audio" }> = [];
+
+    const progressives = rawFormats.filter(
+      (f: any) => f && f.url && f.kind === "progressive"
+    );
+    for (const p of progressives) {
+      formats.push({
+        quality: `MP4 Video (${p.qualityLabel || "HD"})`,
+        url: `https://api.vidsnap.app/proxy?u=${encodeURIComponent(p.url)}`,
+        type: "video",
+      });
+    }
+
+    const audioStreams = rawFormats.filter(
+      (f: any) => f && f.url && f.kind === "audio"
+    );
+    const mp4Audios = audioStreams
+      .filter((f: any) => String(f.mimeType || "").includes("mp4"))
+      .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+    const otherAudios = audioStreams
+      .filter((f: any) => !String(f.mimeType || "").includes("mp4"))
+      .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+    const bestAudio = mp4Audios[0] || otherAudios[0];
+
+    if (bestAudio) {
+      formats.push({
+        quality: "MP3 / M4A Audio (High Quality)",
+        url: `https://api.vidsnap.app/proxy?u=${encodeURIComponent(bestAudio.url)}`,
+        type: "audio",
+      });
+    }
+
+    if (formats.length === 0) return null;
+    const thumbs = Array.isArray(vsData?.thumbnails) ? vsData.thumbnails : [];
+    return {
+      platform: "youtube",
+      title: vsData.title || "YouTube Video",
+      author: vsData.author || "YouTube Creator",
+      thumbnail:
+        thumbs.length > 0
+          ? thumbs[thumbs.length - 1]?.url
+          : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+      formats,
+    };
+  };
+
   const handleFetch = async () => {
-    if (!url.trim()) return;
+    const cleanUrl = url.trim();
+    if (!cleanUrl) return;
     setLoading(true);
     setError("");
     setVideoData(null);
 
     try {
-      const response = await fetch(`/api/video/info?url=${encodeURIComponent(url.trim())}`);
+      const response = await fetch(`/api/video/info?url=${encodeURIComponent(cleanUrl)}`);
       const data = await response.json();
-      if (response.ok) {
+      if (response.ok && Array.isArray(data.formats) && data.formats.length > 0) {
         setVideoData(data);
         logActivity({
           type: "youtube_download",
           title: data.title || "Media Link Extraction",
-          metadata: { url: url.trim(), platform: data.platform || "media" },
+          metadata: { url: cleanUrl, platform: data.platform || "media" },
         });
       } else {
+        const ytId = extractYoutubeIdClient(cleanUrl);
+        if (ytId) {
+          const clientData = await fetchYoutubeDirectClient(ytId).catch(() => null);
+          if (clientData) {
+            setVideoData(clientData);
+            logActivity({
+              type: "youtube_download",
+              title: clientData.title || "YouTube Direct Extraction",
+              metadata: { url: cleanUrl, platform: "youtube" },
+            });
+            return;
+          }
+        }
         setError(data.error || "Failed to fetch video info");
       }
     } catch (e: any) {
+      const ytId = extractYoutubeIdClient(cleanUrl);
+      if (ytId) {
+        const clientData = await fetchYoutubeDirectClient(ytId).catch(() => null);
+        if (clientData) {
+          setVideoData(clientData);
+          return;
+        }
+      }
       setError(e.message || "An error occurred");
     } finally {
       setLoading(false);
@@ -225,13 +325,13 @@ export default function YoutubeDownloader() {
 
                         <a
                           href={downloadHref}
-                          {...(!format.isFallback ? { download: "fahi-media" } : {})}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                          {...(!format.isFallback
+                            ? { download: "fahi-media" }
+                            : { target: "_blank", rel: "noopener noreferrer" })}
                           className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-bold text-white transition-all active:scale-95 shadow-md shadow-indigo-600/10 cursor-pointer flex items-center gap-1.5"
                         >
                           <Download className="w-3.5 h-3.5" />
-                          <span>{format.isFallback ? "Cloud Download" : "Download"}</span>
+                          <span>Download</span>
                         </a>
                       </div>
                     </div>
@@ -246,33 +346,6 @@ export default function YoutubeDownloader() {
               <span>
                 <strong>Mobile Tip:</strong> If the video plays in the browser instead of auto-downloading (common on iPhone/iPad or Android), tap the browser Share icon (⬆️) or 3 dots (⋮) and select <strong>&quot;Save Video / Download&quot;</strong> to save directly to your gallery.
               </span>
-            </div>
-
-            {/* Backup Mirrors */}
-            <div className="mt-6 pt-5 border-t border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-              <span className="text-slate-400 font-mono text-[11px]">
-                Alternative Cloud Mirrors:
-              </span>
-              <div className="flex flex-wrap gap-2">
-                <a
-                  href={`https://en.savefrom.net/248/?url=${encodeURIComponent(url)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 text-xs font-mono flex items-center gap-1.5 transition-colors"
-                >
-                  <ExternalLink className="w-3 h-3 text-indigo-400" />
-                  <span>SaveFrom Mirror</span>
-                </a>
-                <a
-                  href={`https://snapsave.app/#${encodeURIComponent(url)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 text-xs font-mono flex items-center gap-1.5 transition-colors"
-                >
-                  <ExternalLink className="w-3 h-3 text-emerald-400" />
-                  <span>SnapSave Mirror</span>
-                </a>
-              </div>
             </div>
           </div>
         </div>

@@ -653,23 +653,40 @@ async function executeMcpTool(
               ? 'tiktok'
               : 'youtube';
 
-        const fallbackFormats = [
-          {
-            quality: '1080p (Full HD MP4)',
-            url: `https://loader.to/api/button/?url=${encodeURIComponent(mediaUrl)}&f=1080`,
-            type: 'video',
-          },
-          {
-            quality: '720p (HD MP4)',
-            url: `https://loader.to/api/button/?url=${encodeURIComponent(mediaUrl)}&f=720`,
-            type: 'video',
-          },
-          {
-            quality: 'MP3 Audio (320kbps)',
-            url: `https://loader.to/api/button/?url=${encodeURIComponent(mediaUrl)}&f=mp3`,
-            type: 'audio',
-          },
-        ];
+        const streams: Array<{ quality: string; url: string; type: string }> = [];
+        if (isYoutube) {
+          const m = mediaUrl.match(
+            /(?:youtu\.be\/|v\/|u\/\w\/|embed\/|shorts\/|live\/|watch\?v=|&v=)([a-zA-Z0-9_-]{11})/
+          );
+          const videoId = m ? m[1] : null;
+          if (videoId) {
+            try {
+              const vsRes = await fetch(
+                `https://api.vidsnap.app/parse?id=${encodeURIComponent(videoId)}`,
+                { signal: AbortSignal.timeout(10000) }
+              );
+              if (vsRes.ok) {
+                const vsData: any = await vsRes.json();
+                const rawFormats = Array.isArray(vsData?.formats) ? vsData.formats : [];
+                for (const p of rawFormats.filter((f: any) => f?.url && f.kind === 'progressive')) {
+                  streams.push({
+                    quality: `MP4 Video (${p.qualityLabel || 'HD'})`,
+                    url: `https://api.vidsnap.app/proxy?u=${encodeURIComponent(p.url)}`,
+                    type: 'video',
+                  });
+                }
+                const bestAudio = rawFormats.find((f: any) => f?.url && f.kind === 'audio');
+                if (bestAudio) {
+                  streams.push({
+                    quality: 'MP3 / M4A Audio (High Quality)',
+                    url: `https://api.vidsnap.app/proxy?u=${encodeURIComponent(bestAudio.url)}`,
+                    type: 'audio',
+                  });
+                }
+              }
+            } catch {}
+          }
+        }
 
         return {
           content: [
@@ -681,7 +698,7 @@ async function executeMcpTool(
                   platform,
                   sourceUrl: mediaUrl,
                   apiEndpoint: `/api/video/info?url=${encodeURIComponent(mediaUrl)}`,
-                  streams: fallbackFormats,
+                  streams,
                 },
                 null,
                 2

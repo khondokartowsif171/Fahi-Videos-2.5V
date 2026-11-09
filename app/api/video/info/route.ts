@@ -194,28 +194,111 @@ export async function GET(req: NextRequest) {
         const u = new URL(url);
         if (u.hostname.includes("youtu.be")) {
           const id = u.pathname.replace(/^\/+/, "").split("/")[0];
-          if (id && id.length === 11) videoId = id;
+          if (id && /^[\w-]{11}$/.test(id)) videoId = id;
         } else if (u.hostname.includes("youtube.com")) {
-          if (u.pathname.startsWith("/shorts/")) {
-            const id = u.pathname.replace(/^\/shorts\/+/, "").split("/")[0];
-            if (id && id.length === 11) videoId = id;
+          if (
+            u.pathname.startsWith("/shorts/") ||
+            u.pathname.startsWith("/embed/") ||
+            u.pathname.startsWith("/live/")
+          ) {
+            const parts = u.pathname.split("/").filter(Boolean);
+            const id = parts[1];
+            if (id && /^[\w-]{11}$/.test(id)) videoId = id;
           } else {
             const v = u.searchParams.get("v");
-            if (v && v.length === 11) videoId = v;
+            if (v && /^[\w-]{11}$/.test(v)) videoId = v;
           }
         }
       } catch {}
       if (!videoId) {
-        const m = url.match(/(?:youtu\.be\/|v\/|u\/\w\/|embed\/|shorts\/|watch\?v=|&v=)([a-zA-Z0-9_-]{11})/);
+        const m = url.match(
+          /(?:youtu\.be\/|v\/|u\/\w\/|embed\/|shorts\/|live\/|watch\?v=|&v=)([a-zA-Z0-9_-]{11})/
+        );
         if (m) videoId = m[1];
       }
       if (videoId) {
         canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
       }
 
-      // Tier 1: Fast direct extractor (btch-downloader wrapper, 10s timeout)
+      // Tier 1: Direct VidSnap Edge Parser (Fastest, bypasses broken middleman proxies)
+      if (videoId) {
+        for (const querySuffix of ["", "&fresh=1"]) {
+          try {
+            const vsRes = await fetch(
+              `https://api.vidsnap.app/parse?id=${encodeURIComponent(videoId)}${querySuffix}`,
+              {
+                signal: AbortSignal.timeout(12000),
+                headers: {
+                  "User-Agent":
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+                  Accept: "application/json",
+                  Origin: "https://vidsnap.app",
+                  Referer: "https://vidsnap.app/",
+                },
+              }
+            );
+            if (vsRes.ok) {
+              const vsData: any = await vsRes.json();
+              const rawFormats = Array.isArray(vsData?.formats) ? vsData.formats : [];
+              const formats: Array<{ quality: string; url: string; type: "video" | "audio" }> = [];
+
+              // Progressive streams (video + audio combined in MP4)
+              const progressives = rawFormats.filter(
+                (f: any) => f && f.url && f.kind === "progressive"
+              );
+              for (const p of progressives) {
+                formats.push({
+                  quality: `MP4 Video (${p.qualityLabel || "HD"})`,
+                  url: `https://api.vidsnap.app/proxy?u=${encodeURIComponent(p.url)}`,
+                  type: "video",
+                });
+              }
+
+              // Best Audio stream (prefer audio/mp4 M4A with highest bitrate)
+              const audioStreams = rawFormats.filter(
+                (f: any) => f && f.url && f.kind === "audio"
+              );
+              const mp4Audios = audioStreams
+                .filter((f: any) => String(f.mimeType || "").includes("mp4"))
+                .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+              const otherAudios = audioStreams
+                .filter((f: any) => !String(f.mimeType || "").includes("mp4"))
+                .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+              const bestAudio = mp4Audios[0] || otherAudios[0];
+
+              if (bestAudio) {
+                formats.push({
+                  quality: "MP3 / M4A Audio (High Quality)",
+                  url: `https://api.vidsnap.app/proxy?u=${encodeURIComponent(bestAudio.url)}`,
+                  type: "audio",
+                });
+              }
+
+              if (formats.length > 0) {
+                const thumbs = Array.isArray(vsData?.thumbnails) ? vsData.thumbnails : [];
+                const bestThumb =
+                  thumbs.length > 0
+                    ? thumbs[thumbs.length - 1]?.url
+                    : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+
+                return NextResponse.json({
+                  platform: "youtube",
+                  title: vsData.title || "YouTube Video",
+                  author: vsData.author || "YouTube Creator",
+                  thumbnail: bestThumb || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+                  formats,
+                });
+              }
+            }
+          } catch (e: any) {
+            console.warn(`VidSnap direct parse (${querySuffix || "primary"}) error:`, e?.message || e);
+          }
+        }
+      }
+
+      // Tier 2: Fast direct extractor (btch-downloader wrapper, 8s timeout)
       try {
-        const info: any = await withTimeout(btch.youtube(canonicalUrl), 10000, "btch.youtube");
+        const info: any = await withTimeout(btch.youtube(canonicalUrl), 8000, "btch.youtube");
         if (info && info.status && (info.mp4 || info.mp3)) {
           const formats: Array<{ quality: string; url: string; type: "video" | "audio" }> = [];
           if (info.mp4) {
@@ -235,45 +318,7 @@ export async function GET(req: NextRequest) {
           }
         }
       } catch (e: any) {
-        console.warn("btch.youtube primary attempt error:", e?.message || e);
-      }
-
-      // Tier 2: Direct HTTP fetch to tioo engine (bypasses any wrapper glitch)
-      try {
-        const tiooRes = await fetch(
-          `https://backend1.tioo.eu.org/youtube?url=${encodeURIComponent(canonicalUrl)}`,
-          {
-            signal: AbortSignal.timeout(10000),
-            headers: {
-              "User-Agent":
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-            },
-          }
-        );
-        if (tiooRes.ok) {
-          const tiooData: any = await tiooRes.json();
-          if (tiooData && (tiooData.mp4 || tiooData.mp3)) {
-            const formats: Array<{ quality: string; url: string; type: "video" | "audio" }> = [];
-            if (tiooData.mp4) {
-              formats.push({ quality: "MP4 Video (HD)", url: tiooData.mp4, type: "video" });
-            }
-            if (tiooData.mp3) {
-              formats.push({ quality: "MP3 Audio", url: tiooData.mp3, type: "audio" });
-            }
-            if (formats.length > 0) {
-              return NextResponse.json({
-                platform: "youtube",
-                title: tiooData.title || "YouTube Video",
-                author: tiooData.author || "YouTube Creator",
-                thumbnail:
-                  tiooData.thumbnail || (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : ""),
-                formats,
-              });
-            }
-          }
-        }
-      } catch (e: any) {
-        console.warn("Direct tioo fetch attempt error:", e?.message || e);
+        console.warn("btch.youtube fallback error:", e?.message || e);
       }
 
       // Tier 3: youtube-dl-exec (fallback with short timeout)
@@ -284,36 +329,13 @@ export async function GET(req: NextRequest) {
         }
       } catch {}
 
-      // Tier 4: Direct Cloud Mirror Downloader (No loader.to green screens!)
-      const mirrorFormats = [
+      return NextResponse.json(
         {
-          quality: "SaveFrom Mirror (HD MP4)",
-          url: `https://en.savefrom.net/248/#url=${encodeURIComponent(canonicalUrl)}`,
-          type: "video" as const,
-          isFallback: true,
+          error:
+            "Could not extract YouTube media stream at this moment. Please verify the video is public and try again.",
         },
-        {
-          quality: "SnapSave Mirror (HD MP4)",
-          url: `https://snapsave.app/#url=${encodeURIComponent(canonicalUrl)}`,
-          type: "video" as const,
-          isFallback: true,
-        },
-        {
-          quality: "Y2Mate Mirror (Audio & Video)",
-          url: `https://www.y2mate.com/youtube/${videoId || ""}`,
-          type: "audio" as const,
-          isFallback: true,
-        },
-      ];
-
-      return NextResponse.json({
-        platform: "youtube",
-        title: "YouTube Video",
-        author: "YouTube Creator",
-        thumbnail: videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : "",
-        url: canonicalUrl,
-        formats: mirrorFormats,
-      });
+        { status: 422 }
+      );
     }
 
     // ==========================================

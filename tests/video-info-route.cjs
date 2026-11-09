@@ -48,6 +48,18 @@ const { GET } = routeModule.exports;
   assert.ok(dataIg.title);
   console.log(`PASS: Instagram Reel extracted successfully: "${dataIg.title}" (${dataIg.formats.length} formats available).`);
 
+  // 4. YouTube extraction with user's exact playlist/radio link (Zero external mirrors)
+  const ytUrl = "https://www.youtube.com/watch?v=FkNzykVN85k&list=RDFkNzykVN85k&start_radio=1";
+  const reqYt = new Request(`https://studio.example/api/video/info?url=${encodeURIComponent(ytUrl)}`);
+  const resYt = await GET(reqYt);
+  assert.equal(resYt.status, 200);
+  const dataYt = await resYt.json();
+  assert.equal(dataYt.platform, "youtube");
+  assert.ok(Array.isArray(dataYt.formats) && dataYt.formats.length > 0);
+  assert.ok(dataYt.formats.every(f => !f.isFallback));
+  assert.ok(dataYt.formats.every(f => !f.url.includes("savefrom") && !f.url.includes("snapsave") && !f.url.includes("y2mate") && !f.url.includes("loader.to")));
+  console.log(`PASS: YouTube extracted directly without external mirrors: "${dataYt.title}" (${dataYt.formats.length} direct streams).`);
+
   console.log("ALL VIDEO INFO ROUTE TESTS PASSED!");
 })().catch((err) => {
   console.error("FAIL:", err);
