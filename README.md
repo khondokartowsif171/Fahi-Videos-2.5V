@@ -1,5 +1,7 @@
 # 🎬 Fahi Videos 2.5V — Professional Free Core Video Studio & World-Class MCP Connector
 
+[![mcptry](https://mcptry.com/badge/io.github.khondokartowsif171/fahi-videos-mcp)](https://mcptry.com/servers/io.github.khondokartowsif171/fahi-videos-mcp)
+
 > **All-in-one browser video creation, Bangladeshi Bengali voiceover dubbing, multi-platform media downloader, and 100% Free-First Model Context Protocol (MCP) server for AI agents.**
 
 Live Web App: **[https://fahi-videos.auraajenticai.cloud](https://fahi-videos.auraajenticai.cloud)**  
