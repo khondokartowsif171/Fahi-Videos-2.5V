@@ -187,12 +187,36 @@ export async function GET(req: NextRequest) {
     // 1. YouTube Multi-Engine Extraction
     // ==========================================
     if (isYoutube) {
-      const ytExecResult = await extractWithYoutubeDl(url, "youtube");
-      if (ytExecResult) return NextResponse.json(ytExecResult);
-
+      // 1. URL Normalization: Extract 11-char video ID and construct clean canonical URL
+      let canonicalUrl = url;
+      let videoId: string | null = null;
       try {
-        const info: any = await withTimeout(btch.youtube(url), 5000, "btch.youtube");
-        if (info && info.status) {
+        const u = new URL(url);
+        if (u.hostname.includes("youtu.be")) {
+          const id = u.pathname.replace(/^\/+/, "").split("/")[0];
+          if (id && id.length === 11) videoId = id;
+        } else if (u.hostname.includes("youtube.com")) {
+          if (u.pathname.startsWith("/shorts/")) {
+            const id = u.pathname.replace(/^\/shorts\/+/, "").split("/")[0];
+            if (id && id.length === 11) videoId = id;
+          } else {
+            const v = u.searchParams.get("v");
+            if (v && v.length === 11) videoId = v;
+          }
+        }
+      } catch {}
+      if (!videoId) {
+        const m = url.match(/(?:youtu\.be\/|v\/|u\/\w\/|embed\/|shorts\/|watch\?v=|&v=)([a-zA-Z0-9_-]{11})/);
+        if (m) videoId = m[1];
+      }
+      if (videoId) {
+        canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
+      }
+
+      // Tier 1: Fast direct extractor (btch-downloader wrapper, 10s timeout)
+      try {
+        const info: any = await withTimeout(btch.youtube(canonicalUrl), 10000, "btch.youtube");
+        if (info && info.status && (info.mp4 || info.mp3)) {
           const formats: Array<{ quality: string; url: string; type: "video" | "audio" }> = [];
           if (info.mp4) {
             formats.push({ quality: "MP4 Video (HD)", url: info.mp4, type: "video" });
@@ -205,74 +229,90 @@ export async function GET(req: NextRequest) {
               platform: "youtube",
               title: info.title || "YouTube Video",
               author: info.author || "YouTube Creator",
-              thumbnail: info.thumbnail || "",
+              thumbnail: info.thumbnail || (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : ""),
               formats,
             });
           }
         }
       } catch (e: any) {
-        console.warn("btch.youtube fallback:", e?.message || e);
+        console.warn("btch.youtube primary attempt error:", e?.message || e);
       }
 
+      // Tier 2: Direct HTTP fetch to tioo engine (bypasses any wrapper glitch)
       try {
-        const { ytdown } = require("ruhend-scraper");
-        const rInfo: any = await withTimeout(ytdown(url), 5000, "ruhend.ytdown");
-        if (rInfo && (rInfo.video || rInfo.audio)) {
-          const formats: Array<{ quality: string; url: string; type: "video" | "audio" }> = [];
-          if (rInfo.video) {
-            formats.push({ quality: "MP4 Video (HD)", url: rInfo.video, type: "video" });
+        const tiooRes = await fetch(
+          `https://backend1.tioo.eu.org/youtube?url=${encodeURIComponent(canonicalUrl)}`,
+          {
+            signal: AbortSignal.timeout(10000),
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+            },
           }
-          if (rInfo.audio) {
-            formats.push({ quality: "MP3 Audio", url: rInfo.audio, type: "audio" });
+        );
+        if (tiooRes.ok) {
+          const tiooData: any = await tiooRes.json();
+          if (tiooData && (tiooData.mp4 || tiooData.mp3)) {
+            const formats: Array<{ quality: string; url: string; type: "video" | "audio" }> = [];
+            if (tiooData.mp4) {
+              formats.push({ quality: "MP4 Video (HD)", url: tiooData.mp4, type: "video" });
+            }
+            if (tiooData.mp3) {
+              formats.push({ quality: "MP3 Audio", url: tiooData.mp3, type: "audio" });
+            }
+            if (formats.length > 0) {
+              return NextResponse.json({
+                platform: "youtube",
+                title: tiooData.title || "YouTube Video",
+                author: tiooData.author || "YouTube Creator",
+                thumbnail:
+                  tiooData.thumbnail || (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : ""),
+                formats,
+              });
+            }
           }
-          if (formats.length > 0) {
-            return NextResponse.json({
-              platform: "youtube",
-              title: rInfo.title || "YouTube Video",
-              author: rInfo.author || "YouTube Creator",
-              thumbnail: rInfo.thumbnail || "",
-              formats,
-            });
-          }
+        }
+      } catch (e: any) {
+        console.warn("Direct tioo fetch attempt error:", e?.message || e);
+      }
+
+      // Tier 3: youtube-dl-exec (fallback with short timeout)
+      try {
+        const ytExecResult = await extractWithYoutubeDl(canonicalUrl, "youtube");
+        if (ytExecResult && ytExecResult.formats?.length > 0) {
+          return NextResponse.json(ytExecResult);
         }
       } catch {}
 
-      // YouTube universal widget fallback
-      const fallbackFormats = [
+      // Tier 4: Direct Cloud Mirror Downloader (No loader.to green screens!)
+      const mirrorFormats = [
         {
-          quality: "1080p (Full HD MP4)",
-          url: `https://loader.to/api/button/?url=${encodeURIComponent(url)}&f=1080`,
+          quality: "SaveFrom Mirror (HD MP4)",
+          url: `https://en.savefrom.net/248/#url=${encodeURIComponent(canonicalUrl)}`,
           type: "video" as const,
           isFallback: true,
         },
         {
-          quality: "720p (HD MP4)",
-          url: `https://loader.to/api/button/?url=${encodeURIComponent(url)}&f=720`,
+          quality: "SnapSave Mirror (HD MP4)",
+          url: `https://snapsave.app/#url=${encodeURIComponent(canonicalUrl)}`,
           type: "video" as const,
           isFallback: true,
         },
         {
-          quality: "480p (MP4)",
-          url: `https://loader.to/api/button/?url=${encodeURIComponent(url)}&f=480`,
-          type: "video" as const,
-          isFallback: true,
-        },
-        {
-          quality: "MP3 Audio (320kbps)",
-          url: `https://loader.to/api/button/?url=${encodeURIComponent(url)}&f=mp3`,
+          quality: "Y2Mate Mirror (Audio & Video)",
+          url: `https://www.y2mate.com/youtube/${videoId || ""}`,
           type: "audio" as const,
           isFallback: true,
         },
       ];
 
       return NextResponse.json({
-        fallbackToIframe: true,
         platform: "youtube",
         title: "YouTube Video",
         author: "YouTube Creator",
-        thumbnail: "",
-        url,
-        formats: fallbackFormats,
+        thumbnail: videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : "",
+        url: canonicalUrl,
+        formats: mirrorFormats,
       });
     }
 
@@ -280,10 +320,7 @@ export async function GET(req: NextRequest) {
     // 2. Facebook Multi-Engine Extraction
     // ==========================================
     if (isFacebook) {
-      const fbExecResult = await extractWithYoutubeDl(url, "facebook");
-      if (fbExecResult) return NextResponse.json(fbExecResult);
-
-      // Tier 1: snapsave-media-downloader
+      // Tier 1: snapsave-media-downloader (fastest for FB Reels & Videos)
       try {
         const { snapsave } = require("snapsave-media-downloader");
         const snapRes: any = await withTimeout(snapsave(url), 7000, "snapsave.fb");
@@ -311,7 +348,7 @@ export async function GET(req: NextRequest) {
 
       // Tier 2: btch.fbdown
       try {
-        const info: any = await withTimeout(btch.fbdown(url), 5000, "btch.fbdown");
+        const info: any = await withTimeout(btch.fbdown(url), 7000, "btch.fbdown");
         if (info && info.status) {
           const formats: Array<{ quality: string; url: string; type: "video" | "audio" }> = [];
           if (info.HD) {
@@ -338,7 +375,7 @@ export async function GET(req: NextRequest) {
       try {
         const { fbdl } = require("ruhend-scraper");
         if (typeof fbdl === "function") {
-          const rFb: any = await withTimeout(fbdl(url), 5000, "ruhend.fbdl");
+          const rFb: any = await withTimeout(fbdl(url), 7000, "ruhend.fbdl");
           const list = Array.isArray(rFb?.data) ? rFb.data : [];
           if (list.length > 0) {
             const formats = list
@@ -361,9 +398,16 @@ export async function GET(req: NextRequest) {
         }
       } catch {}
 
-      // Facebook universal bypass fallback (never 422)
+      // Tier 4: youtube-dl-exec (fallback)
+      try {
+        const fbExecResult = await extractWithYoutubeDl(url, "facebook");
+        if (fbExecResult && fbExecResult.formats?.length > 0) {
+          return NextResponse.json(fbExecResult);
+        }
+      } catch {}
+
+      // Tier 5: Facebook direct cloud mirror fallback (never 422, zero loader.to)
       return NextResponse.json({
-        fallbackToIframe: true,
         platform: "facebook",
         title: "Facebook Video / Reel",
         author: "Facebook Creator",
@@ -371,21 +415,15 @@ export async function GET(req: NextRequest) {
         url,
         formats: [
           {
-            quality: "HD Video (MP4)",
-            url: `https://loader.to/api/button/?url=${encodeURIComponent(url)}&f=1080`,
+            quality: "SnapSave Mirror (HD MP4)",
+            url: `https://snapsave.app/#url=${encodeURIComponent(url)}`,
             type: "video" as const,
             isFallback: true,
           },
           {
-            quality: "SD Video (MP4)",
-            url: `https://loader.to/api/button/?url=${encodeURIComponent(url)}&f=720`,
+            quality: "FDown Mirror (SD MP4)",
+            url: `https://fdown.net/download.php?url=${encodeURIComponent(url)}`,
             type: "video" as const,
-            isFallback: true,
-          },
-          {
-            quality: "Audio (MP3)",
-            url: `https://loader.to/api/button/?url=${encodeURIComponent(url)}&f=mp3`,
-            type: "audio" as const,
             isFallback: true,
           },
         ],
@@ -396,13 +434,9 @@ export async function GET(req: NextRequest) {
     // 3. Instagram Multi-Engine Extraction (Reels, Posts)
     // ==========================================
     if (isInstagram) {
-      // Tier 1: youtube-dl-exec (Native yt-dlp)
-      const igExecResult = await extractWithYoutubeDl(url, "instagram");
-      if (igExecResult) return NextResponse.json(igExecResult);
-
-      // Tier 2: btch-downloader with fast timeout
+      // Tier 1: btch-downloader with fast timeout
       try {
-        const igInfo: any = await withTimeout(btch.igdl(url), 5000, "btch.igdl");
+        const igInfo: any = await withTimeout(btch.igdl(url), 7000, "btch.igdl");
         const igList = Array.isArray(igInfo)
           ? igInfo
           : Array.isArray(igInfo?.result)
@@ -432,11 +466,11 @@ export async function GET(req: NextRequest) {
         console.warn("btch.igdl fallback:", e?.message || e);
       }
 
-      // Tier 3: ruhend-scraper with fast timeout
+      // Tier 2: ruhend-scraper with fast timeout
       try {
         const { igdl } = require("ruhend-scraper");
         if (typeof igdl === "function") {
-          const rIg: any = await withTimeout(igdl(url), 5000, "ruhend.igdl");
+          const rIg: any = await withTimeout(igdl(url), 7000, "ruhend.igdl");
           const list = Array.isArray(rIg?.data) ? rIg.data : [];
           if (list.length > 0) {
             const formats = list
@@ -459,10 +493,10 @@ export async function GET(req: NextRequest) {
         }
       } catch {}
 
-      // Tier 4: snapsave-media-downloader with fast timeout
+      // Tier 3: snapsave-media-downloader with fast timeout
       try {
         const { snapsave } = require("snapsave-media-downloader");
-        const snapRes: any = await withTimeout(snapsave(url), 5000, "snapsave");
+        const snapRes: any = await withTimeout(snapsave(url), 7000, "snapsave");
         if (snapRes && snapRes.status && Array.isArray(snapRes.data) && snapRes.data.length > 0) {
           const formats = snapRes.data
             .filter((item: any) => item && item.url && item.url.trim().length > 0)
@@ -483,9 +517,16 @@ export async function GET(req: NextRequest) {
         }
       } catch {}
 
-      // Instagram universal bypass fallback (never 422)
+      // Tier 4: youtube-dl-exec (fallback)
+      try {
+        const igExecResult = await extractWithYoutubeDl(url, "instagram");
+        if (igExecResult && igExecResult.formats?.length > 0) {
+          return NextResponse.json(igExecResult);
+        }
+      } catch {}
+
+      // Tier 5: Instagram direct cloud mirror fallback (never 422, zero loader.to)
       return NextResponse.json({
-        fallbackToIframe: true,
         platform: "instagram",
         title: "Instagram Reel / Video",
         author: "Instagram Creator",
@@ -493,21 +534,15 @@ export async function GET(req: NextRequest) {
         url,
         formats: [
           {
-            quality: "Instagram Reel (HD 1080p MP4)",
-            url: `https://loader.to/api/button/?url=${encodeURIComponent(url)}&f=1080`,
+            quality: "SnapSave Mirror (HD MP4)",
+            url: `https://snapsave.app/#url=${encodeURIComponent(url)}`,
             type: "video" as const,
             isFallback: true,
           },
           {
-            quality: "Instagram Reel (720p MP4)",
-            url: `https://loader.to/api/button/?url=${encodeURIComponent(url)}&f=720`,
+            quality: "FastDl Mirror (HD MP4)",
+            url: `https://fastdl.app/en#url=${encodeURIComponent(url)}`,
             type: "video" as const,
-            isFallback: true,
-          },
-          {
-            quality: "Instagram Reel Audio (MP3)",
-            url: `https://loader.to/api/button/?url=${encodeURIComponent(url)}&f=mp3`,
-            type: "audio" as const,
             isFallback: true,
           },
         ],
