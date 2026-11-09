@@ -11,12 +11,179 @@ export default function YoutubeDownloader() {
   const [videoData, setVideoData] = useState<any>(null);
   const [error, setError] = useState("");
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [mergingIndex, setMergingIndex] = useState<number | null>(null);
+  const [mergeProgressLabel, setMergeProgressLabel] = useState<string>("");
 
   const handleCopy = (link: string, idx: number) => {
     if (typeof navigator !== "undefined" && navigator.clipboard) {
       navigator.clipboard.writeText(link);
       setCopiedIndex(idx);
       setTimeout(() => setCopiedIndex(null), 2500);
+    }
+  };
+
+  const ensureFfmpegLoaded = async (): Promise<any> => {
+    if (typeof window === "undefined") throw new Error("Browser environment required");
+    const win = window as any;
+    if (!win.FFmpeg?.createFFmpeg) {
+      await new Promise<void>((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = `${studioBase || ""}/ffmpeg.min.js`;
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error("Failed to load HD muxer script"));
+        document.head.appendChild(script);
+      });
+    }
+    if (win.__fahiFfmpegInstance) {
+      return win.__fahiFfmpegInstance;
+    }
+    const coreCdns = [
+      "https://fastly.jsdelivr.net/npm/@ffmpeg/core-st@0.11.0/dist/ffmpeg-core.js",
+      "https://cdn.jsdelivr.net/npm/@ffmpeg/core-st@0.11.0/dist/ffmpeg-core.js",
+      "https://unpkg.com/@ffmpeg/core-st@0.11.0/dist/ffmpeg-core.js",
+    ];
+    for (const corePath of coreCdns) {
+      const ffmpeg = win.FFmpeg.createFFmpeg({ log: false, mainName: "main", corePath });
+      try {
+        await Promise.race([
+          ffmpeg.load(),
+          new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 25000)),
+        ]);
+        win.__fahiFfmpegInstance = ffmpeg;
+        return ffmpeg;
+      } catch {
+        try {
+          ffmpeg.exit();
+        } catch {}
+      }
+    }
+    throw new Error("Could not initialize HD audio-video muxer");
+  };
+
+  const fetchStreamBuffer = async (
+    streamUrl: string,
+    onProgress: (ratio: number) => void
+  ): Promise<Uint8Array> => {
+    const res = await fetch(streamUrl);
+    if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+    const total = Number(res.headers.get("content-length")) || 0;
+    const reader = res.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        chunks.push(value);
+        received += value.byteLength;
+        if (total > 0) onProgress(Math.min(1, received / total));
+      }
+    }
+    const combined = new Uint8Array(received);
+    let offset = 0;
+    for (const chunk of chunks) {
+      combined.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return combined;
+  };
+
+  const handleMergeDownload = async (format: any, idx: number) => {
+    if (mergingIndex !== null) return;
+    setMergingIndex(idx);
+    setMergeProgressLabel("Initializing HD...");
+    setError("");
+
+    try {
+      const ffmpeg = await ensureFfmpegLoaded();
+
+      let videoProxyUrl = format.url;
+      let audioProxyUrl = format.audioUrl;
+
+      const fetchWithRetry = async (
+        targetUrl: string,
+        itag: string,
+        kind: "video" | "audio",
+        onProgress: (r: number) => void
+      ) => {
+        try {
+          return await fetchStreamBuffer(targetUrl, onProgress);
+        } catch (err) {
+          if (format.videoId) {
+            const freshRes = await fetch(
+              `https://api.vidsnap.app/parse?id=${encodeURIComponent(format.videoId)}&fresh=1`
+            );
+            if (freshRes.ok) {
+              const freshData = await freshRes.json();
+              const freshFmt = (freshData.formats || []).find(
+                (x: any) => String(x.itag) === String(itag) && x.kind === kind
+              );
+              if (freshFmt?.url) {
+                const refreshedProxy = `https://api.vidsnap.app/proxy?u=${encodeURIComponent(freshFmt.url)}`;
+                return await fetchStreamBuffer(refreshedProxy, onProgress);
+              }
+            }
+          }
+          throw err;
+        }
+      };
+
+      setMergeProgressLabel("Video 0%");
+      const vBuf = await fetchWithRetry(videoProxyUrl, format.itag, "video", (r) => {
+        setMergeProgressLabel(`HD ${Math.round(r * 45)}%`);
+      });
+
+      setMergeProgressLabel("Audio 45%");
+      const aBuf = await fetchWithRetry(audioProxyUrl, format.audioItag, "audio", (r) => {
+        setMergeProgressLabel(`HD ${Math.round(45 + r * 45)}%`);
+      });
+
+      setMergeProgressLabel("Merging 95%");
+      ffmpeg.FS("writeFile", "video.bin", vBuf);
+      ffmpeg.FS("writeFile", "audio.bin", aBuf);
+      await ffmpeg.run(
+        "-i",
+        "video.bin",
+        "-i",
+        "audio.bin",
+        "-c",
+        "copy",
+        "-movflags",
+        "faststart",
+        "-y",
+        "output.mp4"
+      );
+
+      const mergedData = ffmpeg.FS("readFile", "output.mp4");
+      try {
+        ffmpeg.FS("unlink", "video.bin");
+        ffmpeg.FS("unlink", "audio.bin");
+        ffmpeg.FS("unlink", "output.mp4");
+      } catch {}
+
+      const safeTitle = String(videoData?.title || "fahi-video")
+        .replace(/[\\/:*?"<>|]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 70);
+      const blob = new Blob([mergedData.buffer], { type: "video/mp4" });
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `${safeTitle} [${format.quality}].mp4`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
+      setMergeProgressLabel("Saved!");
+      setTimeout(() => {
+        setMergingIndex(null);
+        setMergeProgressLabel("");
+      }, 1500);
+    } catch (e: any) {
+      setError(`HD Merge Error: ${e?.message || "Could not merge HD stream. Try 360p MP4 below."}`);
+      setMergingIndex(null);
+      setMergeProgressLabel("");
     }
   };
 
@@ -52,18 +219,7 @@ export default function YoutubeDownloader() {
     if (!res.ok) return null;
     const vsData = await res.json();
     const rawFormats = Array.isArray(vsData?.formats) ? vsData.formats : [];
-    const formats: Array<{ quality: string; url: string; type: "video" | "audio" }> = [];
-
-    const progressives = rawFormats.filter(
-      (f: any) => f && f.url && f.kind === "progressive"
-    );
-    for (const p of progressives) {
-      formats.push({
-        quality: `MP4 Video (${p.qualityLabel || "HD"})`,
-        url: `https://api.vidsnap.app/proxy?u=${encodeURIComponent(p.url)}`,
-        type: "video",
-      });
-    }
+    const formats: Array<any> = [];
 
     const audioStreams = rawFormats.filter(
       (f: any) => f && f.url && f.kind === "audio"
@@ -75,11 +231,57 @@ export default function YoutubeDownloader() {
       .filter((f: any) => !String(f.mimeType || "").includes("mp4"))
       .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
     const bestAudio = mp4Audios[0] || otherAudios[0];
+    const bestAudioProxyUrl = bestAudio
+      ? `https://api.vidsnap.app/proxy?u=${encodeURIComponent(bestAudio.url)}`
+      : undefined;
 
-    if (bestAudio) {
+    if (bestAudioProxyUrl) {
+      const avcVideos = rawFormats.filter(
+        (f: any) =>
+          f &&
+          f.url &&
+          f.kind === "video" &&
+          String(f.mimeType || "").includes("avc1") &&
+          ["1080p", "720p", "480p"].includes(String(f.qualityLabel || ""))
+      );
+      const seenRes = new Set<string>();
+      for (const v of avcVideos) {
+        const qLabel = String(v.qualityLabel);
+        if (seenRes.has(qLabel)) continue;
+        seenRes.add(qLabel);
+        formats.push({
+          quality:
+            qLabel === "1080p"
+              ? "MP4 Video (1080p Full HD)"
+              : qLabel === "720p"
+                ? "MP4 Video (720p HD)"
+                : `MP4 Video (${qLabel} SD)`,
+          url: `https://api.vidsnap.app/proxy?u=${encodeURIComponent(v.url)}`,
+          audioUrl: bestAudioProxyUrl,
+          itag: String(v.itag || ""),
+          audioItag: String(bestAudio.itag || ""),
+          videoId,
+          requiresMerge: true,
+          type: "video",
+        });
+      }
+    }
+
+    const progressives = rawFormats.filter(
+      (f: any) => f && f.url && f.kind === "progressive"
+    );
+    for (const p of progressives) {
+      formats.push({
+        quality: `MP4 Video (${p.qualityLabel || "360p"})`,
+        url: `https://api.vidsnap.app/proxy?u=${encodeURIComponent(p.url)}`,
+        type: "video",
+      });
+    }
+
+    if (bestAudio && bestAudioProxyUrl) {
       formats.push({
         quality: "MP3 / M4A Audio (High Quality)",
-        url: `https://api.vidsnap.app/proxy?u=${encodeURIComponent(bestAudio.url)}`,
+        url: bestAudioProxyUrl,
         type: "audio",
       });
     }
@@ -310,7 +512,7 @@ export default function YoutubeDownloader() {
                           )}
                         </button>
 
-                        {!format.isFallback && (
+                        {!format.isFallback && !format.requiresMerge && (
                           <a
                             href={format.url}
                             target="_blank"
@@ -323,16 +525,37 @@ export default function YoutubeDownloader() {
                           </a>
                         )}
 
-                        <a
-                          href={downloadHref}
-                          {...(!format.isFallback
-                            ? { download: "fahi-media" }
-                            : { target: "_blank", rel: "noopener noreferrer" })}
-                          className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-bold text-white transition-all active:scale-95 shadow-md shadow-indigo-600/10 cursor-pointer flex items-center gap-1.5"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                          <span>Download</span>
-                        </a>
+                        {format.requiresMerge ? (
+                          <button
+                            type="button"
+                            onClick={() => handleMergeDownload(format, index)}
+                            disabled={mergingIndex !== null}
+                            className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-600/60 rounded-xl text-xs font-bold text-white transition-all active:scale-95 shadow-md shadow-indigo-600/10 cursor-pointer flex items-center gap-1.5"
+                          >
+                            {mergingIndex === index ? (
+                              <>
+                                <span className="h-3.5 w-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                                <span>{mergeProgressLabel || "Processing..."}</span>
+                              </>
+                            ) : (
+                              <>
+                                <Download className="w-3.5 h-3.5" />
+                                <span>Download</span>
+                              </>
+                            )}
+                          </button>
+                        ) : (
+                          <a
+                            href={downloadHref}
+                            {...(!format.isFallback
+                              ? { download: "fahi-media" }
+                              : { target: "_blank", rel: "noopener noreferrer" })}
+                            className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-bold text-white transition-all active:scale-95 shadow-md shadow-indigo-600/10 cursor-pointer flex items-center gap-1.5"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>Download</span>
+                          </a>
+                        )}
                       </div>
                     </div>
                   );

@@ -240,21 +240,18 @@ export async function GET(req: NextRequest) {
             if (vsRes.ok) {
               const vsData: any = await vsRes.json();
               const rawFormats = Array.isArray(vsData?.formats) ? vsData.formats : [];
-              const formats: Array<{ quality: string; url: string; type: "video" | "audio" }> = [];
+              const formats: Array<{
+                quality: string;
+                url: string;
+                audioUrl?: string;
+                itag?: string;
+                audioItag?: string;
+                videoId?: string;
+                requiresMerge?: boolean;
+                type: "video" | "audio";
+              }> = [];
 
-              // Progressive streams (video + audio combined in MP4)
-              const progressives = rawFormats.filter(
-                (f: any) => f && f.url && f.kind === "progressive"
-              );
-              for (const p of progressives) {
-                formats.push({
-                  quality: `MP4 Video (${p.qualityLabel || "HD"})`,
-                  url: `https://api.vidsnap.app/proxy?u=${encodeURIComponent(p.url)}`,
-                  type: "video",
-                });
-              }
-
-              // Best Audio stream (prefer audio/mp4 M4A with highest bitrate)
+              // Find best Audio stream first (prefer audio/mp4 M4A with highest bitrate for lossless MP4 muxing)
               const audioStreams = rawFormats.filter(
                 (f: any) => f && f.url && f.kind === "audio"
               );
@@ -265,11 +262,60 @@ export async function GET(req: NextRequest) {
                 .filter((f: any) => !String(f.mimeType || "").includes("mp4"))
                 .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
               const bestAudio = mp4Audios[0] || otherAudios[0];
+              const bestAudioProxyUrl = bestAudio
+                ? `https://api.vidsnap.app/proxy?u=${encodeURIComponent(bestAudio.url)}`
+                : undefined;
 
-              if (bestAudio) {
+              // 1. High-Definition H.264 MP4 streams (1080p Full HD, 720p HD, 480p SD) merged with AAC audio
+              if (bestAudioProxyUrl) {
+                const avcVideos = rawFormats.filter(
+                  (f: any) =>
+                    f &&
+                    f.url &&
+                    f.kind === "video" &&
+                    String(f.mimeType || "").includes("avc1") &&
+                    ["1080p", "720p", "480p"].includes(String(f.qualityLabel || ""))
+                );
+                const seenRes = new Set<string>();
+                for (const v of avcVideos) {
+                  const qLabel = String(v.qualityLabel);
+                  if (seenRes.has(qLabel)) continue;
+                  seenRes.add(qLabel);
+                  formats.push({
+                    quality:
+                      qLabel === "1080p"
+                        ? "MP4 Video (1080p Full HD)"
+                        : qLabel === "720p"
+                          ? "MP4 Video (720p HD)"
+                          : `MP4 Video (${qLabel} SD)`,
+                    url: `https://api.vidsnap.app/proxy?u=${encodeURIComponent(v.url)}`,
+                    audioUrl: bestAudioProxyUrl,
+                    itag: String(v.itag || ""),
+                    audioItag: String(bestAudio.itag || ""),
+                    videoId,
+                    requiresMerge: true,
+                    type: "video",
+                  });
+                }
+              }
+
+              // 2. Progressive streams (360p video + audio pre-combined in MP4)
+              const progressives = rawFormats.filter(
+                (f: any) => f && f.url && f.kind === "progressive"
+              );
+              for (const p of progressives) {
+                formats.push({
+                  quality: `MP4 Video (${p.qualityLabel || "360p"})`,
+                  url: `https://api.vidsnap.app/proxy?u=${encodeURIComponent(p.url)}`,
+                  type: "video",
+                });
+              }
+
+              // 3. Direct Audio stream
+              if (bestAudio && bestAudioProxyUrl) {
                 formats.push({
                   quality: "MP3 / M4A Audio (High Quality)",
-                  url: `https://api.vidsnap.app/proxy?u=${encodeURIComponent(bestAudio.url)}`,
+                  url: bestAudioProxyUrl,
                   type: "audio",
                 });
               }
