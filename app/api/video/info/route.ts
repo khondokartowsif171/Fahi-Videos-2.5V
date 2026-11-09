@@ -394,16 +394,21 @@ export async function GET(req: NextRequest) {
         const snapRes: any = await withTimeout(snapsave(url), 7000, "snapsave.fb");
         if (snapRes && snapRes.status && Array.isArray(snapRes.data) && snapRes.data.length > 0) {
           const formats = snapRes.data
-            .filter((item: any) => item && item.url)
+            .filter((item: any) => item && item.url && String(item.url).startsWith("http"))
             .map((item: any) => ({
               quality: item.resolution ? `${item.resolution} (MP4)` : "Facebook Video (HD MP4)",
               url: item.url,
               type: "video" as const,
             }));
           if (formats.length > 0) {
+            const rawDesc = String(snapRes.data[0]?.description || "").trim();
+            const cleanTitle =
+              rawDesc && rawDesc !== "..." && rawDesc !== ".."
+                ? rawDesc
+                : "Facebook Video / Reel";
             return NextResponse.json({
               platform: "facebook",
-              title: snapRes.data[0]?.description || "Facebook Video / Reel",
+              title: cleanTitle,
               author: "Facebook Creator",
               thumbnail: snapRes.data[0]?.thumbnail || "",
               formats,

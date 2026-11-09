@@ -115,12 +115,15 @@ export async function GET(req: Request) {
       }, { status: status === 416 || status === 429 ? status : 502 });
     }
 
-    const mime = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-    if (!/^(video|audio)\//.test(mime)) {
+    const rawMime = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    const isOctetStream =
+      rawMime === 'application/octet-stream' || rawMime === 'binary/octet-stream';
+    if (!/^(video|audio)\//.test(rawMime) && !isOctetStream) {
       await response.body.cancel();
       responseController.abort();
       return Response.redirect(raw, 302);
     }
+    const mime = isOctetStream ? 'video/mp4' : rawMime;
 
     const contentRange = response.headers.get('content-range');
     const rangeTotal = contentRange?.match(/^bytes\s+\d+-\d+\/(\d+)$/i);
@@ -148,9 +151,21 @@ export async function GET(req: Request) {
           : mime.startsWith('audio/')
             ? 'audio'
             : 'mp4';
+
+    const customName = new URL(req.url).searchParams.get('name') || '';
+    const safeCustom = customName
+      .replace(/[^\w\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 45);
+    const fileBaseName =
+      safeCustom && safeCustom.toLowerCase() !== 'fahi-vids'
+        ? `Fahi-vids-${safeCustom}`
+        : 'Fahi-vids';
+
     const headers = new Headers({
       'Content-Type': mime,
-      'Content-Disposition': `attachment; filename="fahi-media.${extension}"`,
+      'Content-Disposition': `attachment; filename="${fileBaseName}.${extension}"`,
       'Cache-Control': 'private, no-store',
       'X-Content-Type-Options': 'nosniff',
     });

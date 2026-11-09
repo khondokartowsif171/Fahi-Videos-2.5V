@@ -161,16 +161,16 @@ export default function YoutubeDownloader() {
         ffmpeg.FS("unlink", "output.mp4");
       } catch {}
 
-      const safeTitle = String(videoData?.title || "fahi-video")
+      const safeTitle = String(videoData?.title || "video")
         .replace(/[\\/:*?"<>|]+/g, " ")
         .replace(/\s+/g, " ")
         .trim()
-        .slice(0, 70);
+        .slice(0, 60);
       const blob = new Blob([mergedData.buffer], { type: "video/mp4" });
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = blobUrl;
-      a.download = `${safeTitle} [${format.quality}].mp4`;
+      a.download = `Fahi-vids - ${safeTitle} [${format.quality}].mp4`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -475,7 +475,7 @@ export default function YoutubeDownloader() {
                 {videoData.formats.map((format: any, index: number) => {
                   const downloadHref = format.isFallback
                     ? format.url
-                    : `${studioBase || ""}/api/video/download?url=${encodeURIComponent(format.url)}`;
+                    : `${studioBase || ""}/api/video/download?url=${encodeURIComponent(format.url)}&name=${encodeURIComponent(videoData.title || "video")}`;
 
                   return (
                     <div
@@ -548,7 +548,7 @@ export default function YoutubeDownloader() {
                           <a
                             href={downloadHref}
                             {...(!format.isFallback
-                              ? { download: "fahi-media" }
+                              ? { download: "Fahi-vids" }
                               : { target: "_blank", rel: "noopener noreferrer" })}
                             className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-bold text-white transition-all active:scale-95 shadow-md shadow-indigo-600/10 cursor-pointer flex items-center gap-1.5"
                           >
