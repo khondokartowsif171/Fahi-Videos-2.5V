@@ -213,9 +213,11 @@ export async function GET(req: NextRequest) {
         canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
       }
 
+      const debugLogs: string[] = [];
       // Tier 1: Fast direct extractor (btch-downloader wrapper, 10s timeout)
       try {
         const info: any = await withTimeout(btch.youtube(canonicalUrl), 10000, "btch.youtube");
+        debugLogs.push(`btch status: ${info?.status}, mp4: ${!!info?.mp4}, mp3: ${!!info?.mp3}, msg: ${info?.message || info?.error}`);
         if (info && info.status && (info.mp4 || info.mp3)) {
           const formats: Array<{ quality: string; url: string; type: "video" | "audio" }> = [];
           if (info.mp4) {
@@ -231,10 +233,12 @@ export async function GET(req: NextRequest) {
               author: info.author || "YouTube Creator",
               thumbnail: info.thumbnail || (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : ""),
               formats,
+              ...(searchParams.get("debug") === "1" ? { debugLogs } : {}),
             });
           }
         }
       } catch (e: any) {
+        debugLogs.push(`btch error: ${e?.message || e}`);
         console.warn("btch.youtube primary attempt error:", e?.message || e);
       }
 
@@ -250,8 +254,10 @@ export async function GET(req: NextRequest) {
             },
           }
         );
+        debugLogs.push(`tioo fetch status: ${tiooRes.status}`);
         if (tiooRes.ok) {
           const tiooData: any = await tiooRes.json();
+          debugLogs.push(`tioo data status: ${tiooData?.status}, mp4: ${!!tiooData?.mp4}, mp3: ${!!tiooData?.mp3}`);
           if (tiooData && (tiooData.mp4 || tiooData.mp3)) {
             const formats: Array<{ quality: string; url: string; type: "video" | "audio" }> = [];
             if (tiooData.mp4) {
@@ -268,11 +274,13 @@ export async function GET(req: NextRequest) {
                 thumbnail:
                   tiooData.thumbnail || (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : ""),
                 formats,
+                ...(searchParams.get("debug") === "1" ? { debugLogs } : {}),
               });
             }
           }
         }
       } catch (e: any) {
+        debugLogs.push(`tioo error: ${e?.message || e}`);
         console.warn("Direct tioo fetch attempt error:", e?.message || e);
       }
 
@@ -313,6 +321,7 @@ export async function GET(req: NextRequest) {
         thumbnail: videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : "",
         url: canonicalUrl,
         formats: mirrorFormats,
+        ...(searchParams.get("debug") === "1" ? { debugLogs } : {}),
       });
     }
 
