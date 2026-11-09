@@ -210,26 +210,28 @@ export default function YoutubeDownloader() {
                           )}
                         </button>
 
-                        <a
-                          href={format.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title="Open/Stream directly in browser"
-                          className="p-2.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1 text-xs"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          <span className="hidden sm:inline">Stream</span>
-                        </a>
+                        {!format.isFallback && (
+                          <a
+                            href={format.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Open/Stream directly in browser"
+                            className="p-2.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1 text-xs"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Stream</span>
+                          </a>
+                        )}
 
                         <a
                           href={downloadHref}
-                          download="fahi-media"
+                          {...(!format.isFallback ? { download: "fahi-media" } : {})}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-bold text-white transition-all active:scale-95 shadow-md shadow-indigo-600/10 cursor-pointer flex items-center gap-1.5"
                         >
                           <Download className="w-3.5 h-3.5" />
-                          <span>Download</span>
+                          <span>{format.isFallback ? "Cloud Download" : "Download"}</span>
                         </a>
                       </div>
                     </div>
@@ -242,44 +244,37 @@ export default function YoutubeDownloader() {
             <div className="flex items-center gap-2.5 p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs mt-6">
               <Smartphone className="w-4 h-4 flex-shrink-0 text-indigo-400" />
               <span>
-                <strong>Mobile Download Tip:</strong> If the video plays in the browser instead of auto-downloading (common on iPhone/iPad), tap the browser Share icon (⬆️) and select <strong>&quot;Save Video&quot;</strong> to save directly to your gallery.
+                <strong>Mobile Tip:</strong> If the video plays in the browser instead of auto-downloading (common on iPhone/iPad or Android), tap the browser Share icon (⬆️) or 3 dots (⋮) and select <strong>&quot;Save Video / Download&quot;</strong> to save directly to your gallery.
               </span>
             </div>
-          </div>
 
-          {/* Secure Interactive Downloader Fallback */}
-          {videoData.fallbackToIframe && (
-            <div className="rounded-3xl border border-white/[0.06] bg-[#111115]/80 backdrop-blur-md p-6 sm:p-8 shadow-[0_12px_40px_-15px_rgba(0,0,0,0.7)] relative overflow-hidden">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-5 mb-6">
-                <div className="space-y-1">
-                  <div className="flex items-center space-x-2 text-indigo-400 bg-indigo-400/10 px-2.5 py-1 rounded-full border border-indigo-400/25 text-[10px] font-bold uppercase tracking-widest w-fit">
-                    <span className="relative flex h-2.5 w-2.5 mr-1">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-indigo-400"></span>
-                    </span>
-                    Universal Bypass Engine ({videoData.platform || "Media"})
-                  </div>
-                  <h3 className="text-base sm:text-lg font-bold text-white">
-                    Interactive Format Converter & Downloader
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    If direct links are rate-limited on your network, use the interactive cloud converter below to extract MP4 (1080p, 720p, 480p) or MP3.
-                  </p>
-                </div>
-              </div>
-
-              <div className="rounded-2xl overflow-hidden border border-white/5 bg-[#07070a] p-2.5 shadow-inner">
-                <iframe
-                  src={`https://loader.to/api/card/?url=${encodeURIComponent(url)}&color=6366f1`}
-                  width="100%"
-                  height="390px"
-                  title="Downloader Widget"
-                  className="rounded-xl w-full bg-[#07070a]"
-                  sandbox="allow-scripts allow-same-origin allow-presentation allow-downloads allow-forms allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"
-                />
+            {/* Backup Mirrors */}
+            <div className="mt-6 pt-5 border-t border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <span className="text-slate-400 font-mono text-[11px]">
+                Alternative Cloud Mirrors:
+              </span>
+              <div className="flex flex-wrap gap-2">
+                <a
+                  href={`https://en.savefrom.net/248/?url=${encodeURIComponent(url)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 text-xs font-mono flex items-center gap-1.5 transition-colors"
+                >
+                  <ExternalLink className="w-3 h-3 text-indigo-400" />
+                  <span>SaveFrom Mirror</span>
+                </a>
+                <a
+                  href={`https://snapsave.app/#${encodeURIComponent(url)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 text-xs font-mono flex items-center gap-1.5 transition-colors"
+                >
+                  <ExternalLink className="w-3 h-3 text-emerald-400" />
+                  <span>SnapSave Mirror</span>
+                </a>
               </div>
             </div>
-          )}
+          </div>
         </div>
       )}
     </div>

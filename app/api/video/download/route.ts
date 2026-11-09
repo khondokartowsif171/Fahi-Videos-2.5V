@@ -17,7 +17,11 @@ async function fetchHeaders(target: URL, range: string | null) {
     const response = await fetch(target, {
       redirect: 'manual',
       signal: controller.signal,
-      headers: range ? { Range: range } : undefined,
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+        ...(range ? { Range: range } : {}),
+      },
     });
     return { response, controller };
   } finally {
@@ -115,7 +119,7 @@ export async function GET(req: Request) {
     if (!/^(video|audio)\//.test(mime)) {
       await response.body.cancel();
       responseController.abort();
-      return Response.json({ error: 'The source returned a page instead of downloadable media.' }, { status: 422 });
+      return Response.redirect(raw, 302);
     }
 
     const contentRange = response.headers.get('content-range');
