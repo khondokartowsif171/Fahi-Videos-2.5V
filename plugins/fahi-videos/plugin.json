@@ -1,0 +1,29 @@
+{
+  "name": "fahi-videos",
+  "displayName": "Fahi Videos Studio & MCP",
+  "version": "2.5.0",
+  "description": "All-in-one video creation suite: Bangladeshi Bengali voiceover dubbing, multi-platform media downloader (YouTube, Facebook, Instagram Reels, TikTok), CapCut NLE editing blueprints, and studio audio SFX generation.",
+  "logo": "assets/logo.svg",
+  "author": {
+    "name": "Khondokar Towsif",
+    "email": "khondokartowsif171@gmail.com"
+  },
+  "homepage": "https://fahi-videos.auraajenticai.cloud",
+  "repository": "https://github.com/khondokartowsif171/Fahi-Videos-2.5V",
+  "license": "MIT",
+  "keywords": [
+    "video",
+    "downloader",
+    "bengali",
+    "tts",
+    "kotha-studio",
+    "capcut",
+    "ugc",
+    "mcp"
+  ],
+  "suggestedPrompts": [
+    "Generate a natural Bangladeshi Bengali voiceover for a marketing video",
+    "Extract 1080p MP4 download links for an Instagram Reel or YouTube video",
+    "Create a CapCut timeline blueprint with transitions, masks, and subtitles"
+  ]
+}
