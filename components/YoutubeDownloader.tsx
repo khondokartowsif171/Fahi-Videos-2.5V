@@ -274,6 +274,8 @@ export default function YoutubeDownloader() {
       formats.push({
         quality: `MP4 Video (${p.qualityLabel || "360p"})`,
         url: `https://api.vidsnap.app/proxy?u=${encodeURIComponent(p.url)}`,
+        itag: String(p.itag || "18"),
+        videoId,
         type: "video",
       });
     }
@@ -282,6 +284,8 @@ export default function YoutubeDownloader() {
       formats.push({
         quality: "MP3 / M4A Audio (High Quality)",
         url: bestAudioProxyUrl,
+        itag: String(bestAudio.itag || "140"),
+        videoId,
         type: "audio",
       });
     }
@@ -300,6 +304,66 @@ export default function YoutubeDownloader() {
     };
   };
 
+  const handleDirectYoutubeSave = async (format: any, idx: number) => {
+    if (mergingIndex !== null) return;
+    setMergingIndex(idx);
+    setMergeProgressLabel("Starting 0%");
+    setError("");
+
+    try {
+      const kind = format.type === "audio" ? "audio" : "progressive";
+      let buf: Uint8Array;
+      try {
+        buf = await fetchStreamBuffer(format.url, (r) => {
+          setMergeProgressLabel(`Saving ${Math.round(r * 100)}%`);
+        });
+      } catch {
+        if (!format.videoId) throw new Error("Stream expired");
+        const freshRes = await fetch(
+          `https://api.vidsnap.app/parse?id=${encodeURIComponent(format.videoId)}&fresh=1`
+        );
+        if (!freshRes.ok) throw new Error("Could not refresh stream");
+        const freshData = await freshRes.json();
+        const freshFmt =
+          (freshData.formats || []).find(
+            (x: any) => String(x.itag) === String(format.itag) && x.kind === kind
+          ) || (freshData.formats || []).find((x: any) => x.kind === kind);
+        if (!freshFmt?.url) throw new Error("Refreshed format unavailable");
+        const refreshedProxy = `https://api.vidsnap.app/proxy?u=${encodeURIComponent(freshFmt.url)}`;
+        buf = await fetchStreamBuffer(refreshedProxy, (r) => {
+          setMergeProgressLabel(`Saving ${Math.round(r * 100)}%`);
+        });
+      }
+
+      const safeTitle = String(videoData?.title || "video")
+        .replace(/[\\/:*?"<>|]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 60);
+      const isAudio = format.type === "audio";
+      const ext = isAudio ? "m4a" : "mp4";
+      const mime = isAudio ? "audio/mp4" : "video/mp4";
+      const blob = new Blob([buf.buffer as ArrayBuffer], { type: mime });
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `Fahi-vids - ${safeTitle} [${format.quality}].${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
+      setMergeProgressLabel("Saved!");
+      setTimeout(() => {
+        setMergingIndex(null);
+        setMergeProgressLabel("");
+      }, 1500);
+    } catch (e: any) {
+      setError(`Download Error: ${e?.message || "Could not download stream. Please try again."}`);
+      setMergingIndex(null);
+      setMergeProgressLabel("");
+    }
+  };
+
   const handleFetch = async () => {
     const cleanUrl = url.trim();
     if (!cleanUrl) return;
@@ -308,6 +372,21 @@ export default function YoutubeDownloader() {
     setVideoData(null);
 
     try {
+      // For YouTube, prefer direct browser-edge parsing first so Cloudflare Edge IP matches browser downloads 100%
+      const ytId = extractYoutubeIdClient(cleanUrl);
+      if (ytId) {
+        const clientData = await fetchYoutubeDirectClient(ytId).catch(() => null);
+        if (clientData && Array.isArray(clientData.formats) && clientData.formats.length > 0) {
+          setVideoData(clientData);
+          logActivity({
+            type: "youtube_download",
+            title: clientData.title || "YouTube Direct Extraction",
+            metadata: { url: cleanUrl, platform: "youtube" },
+          });
+          return;
+        }
+      }
+
       const response = await fetch(`/api/video/info?url=${encodeURIComponent(cleanUrl)}`);
       const data = await response.json();
       if (response.ok && Array.isArray(data.formats) && data.formats.length > 0) {
@@ -318,30 +397,9 @@ export default function YoutubeDownloader() {
           metadata: { url: cleanUrl, platform: data.platform || "media" },
         });
       } else {
-        const ytId = extractYoutubeIdClient(cleanUrl);
-        if (ytId) {
-          const clientData = await fetchYoutubeDirectClient(ytId).catch(() => null);
-          if (clientData) {
-            setVideoData(clientData);
-            logActivity({
-              type: "youtube_download",
-              title: clientData.title || "YouTube Direct Extraction",
-              metadata: { url: cleanUrl, platform: "youtube" },
-            });
-            return;
-          }
-        }
         setError(data.error || "Failed to fetch video info");
       }
     } catch (e: any) {
-      const ytId = extractYoutubeIdClient(cleanUrl);
-      if (ytId) {
-        const clientData = await fetchYoutubeDirectClient(ytId).catch(() => null);
-        if (clientData) {
-          setVideoData(clientData);
-          return;
-        }
-      }
       setError(e.message || "An error occurred");
     } finally {
       setLoading(false);
@@ -525,10 +583,14 @@ export default function YoutubeDownloader() {
                           </a>
                         )}
 
-                        {format.requiresMerge ? (
+                        {format.requiresMerge || format.videoId ? (
                           <button
                             type="button"
-                            onClick={() => handleMergeDownload(format, index)}
+                            onClick={() =>
+                              format.requiresMerge
+                                ? handleMergeDownload(format, index)
+                                : handleDirectYoutubeSave(format, index)
+                            }
                             disabled={mergingIndex !== null}
                             className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-600/60 rounded-xl text-xs font-bold text-white transition-all active:scale-95 shadow-md shadow-indigo-600/10 cursor-pointer flex items-center gap-1.5"
                           >
@@ -547,9 +609,9 @@ export default function YoutubeDownloader() {
                         ) : (
                           <a
                             href={downloadHref}
-                            {...(!format.isFallback
-                              ? { download: "Fahi-vids" }
-                              : { target: "_blank", rel: "noopener noreferrer" })}
+                            download="Fahi-vids"
+                            target="_blank"
+                            rel="noopener noreferrer"
                             className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-bold text-white transition-all active:scale-95 shadow-md shadow-indigo-600/10 cursor-pointer flex items-center gap-1.5"
                           >
                             <Download className="w-3.5 h-3.5" />

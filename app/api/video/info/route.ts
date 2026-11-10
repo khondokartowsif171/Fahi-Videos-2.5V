@@ -307,6 +307,8 @@ export async function GET(req: NextRequest) {
                 formats.push({
                   quality: `MP4 Video (${p.qualityLabel || "360p"})`,
                   url: `https://api.vidsnap.app/proxy?u=${encodeURIComponent(p.url)}`,
+                  itag: String(p.itag || "18"),
+                  videoId,
                   type: "video",
                 });
               }
@@ -316,6 +318,8 @@ export async function GET(req: NextRequest) {
                 formats.push({
                   quality: "MP3 / M4A Audio (High Quality)",
                   url: bestAudioProxyUrl,
+                  itag: String(bestAudio.itag || "140"),
+                  videoId,
                   type: "audio",
                 });
               }
