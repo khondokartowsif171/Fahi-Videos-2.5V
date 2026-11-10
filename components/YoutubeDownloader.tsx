@@ -22,42 +22,127 @@ export default function YoutubeDownloader() {
     }
   };
 
-  const ensureFfmpegLoaded = async (): Promise<any> => {
+  const ensureWasmMuxerReady = async (): Promise<{
+    createFFmpegCore: any;
+    wasmBinary: Uint8Array;
+  }> => {
     if (typeof window === "undefined") throw new Error("Browser environment required");
     const win = window as any;
-    if (!win.FFmpeg?.createFFmpeg) {
-      await new Promise<void>((resolve, reject) => {
-        const script = document.createElement("script");
-        script.src = `${studioBase || ""}/ffmpeg.min.js`;
-        script.onload = () => resolve();
-        script.onerror = () => reject(new Error("Failed to load HD muxer script"));
-        document.head.appendChild(script);
-      });
-    }
-    if (win.__fahiFfmpegInstance) {
-      return win.__fahiFfmpegInstance;
-    }
-    const coreCdns = [
-      "https://fastly.jsdelivr.net/npm/@ffmpeg/core-st@0.11.0/dist/ffmpeg-core.js",
-      "https://cdn.jsdelivr.net/npm/@ffmpeg/core-st@0.11.0/dist/ffmpeg-core.js",
-      "https://unpkg.com/@ffmpeg/core-st@0.11.0/dist/ffmpeg-core.js",
-    ];
-    for (const corePath of coreCdns) {
-      const ffmpeg = win.FFmpeg.createFFmpeg({ log: false, mainName: "main", corePath });
-      try {
-        await Promise.race([
-          ffmpeg.load(),
-          new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 25000)),
-        ]);
-        win.__fahiFfmpegInstance = ffmpeg;
-        return ffmpeg;
-      } catch {
+
+    if (typeof win.createFFmpegCore !== "function") {
+      const scriptUrls = [
+        `${studioBase || ""}/ffmpeg-core.js`,
+        "https://fastly.jsdelivr.net/npm/@ffmpeg/core-st@0.11.0/dist/ffmpeg-core.js",
+        "https://cdn.jsdelivr.net/npm/@ffmpeg/core-st@0.11.0/dist/ffmpeg-core.js",
+        "https://unpkg.com/@ffmpeg/core-st@0.11.0/dist/ffmpeg-core.js",
+      ];
+      let loaded = false;
+      for (const src of scriptUrls) {
         try {
-          ffmpeg.exit();
+          await new Promise<void>((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = src;
+            script.onload = () => resolve();
+            script.onerror = () => reject(new Error(`Failed to load ${src}`));
+            document.head.appendChild(script);
+          });
+          if (typeof win.createFFmpegCore === "function") {
+            loaded = true;
+            break;
+          }
+        } catch {}
+      }
+      if (!loaded || typeof win.createFFmpegCore !== "function") {
+        throw new Error("Could not load MP4 muxer script");
+      }
+    }
+
+    if (!win.__fahiWasmBinary) {
+      const wasmUrls = [
+        "https://fastly.jsdelivr.net/npm/@ffmpeg/core-st@0.11.0/dist/ffmpeg-core.wasm",
+        "https://cdn.jsdelivr.net/npm/@ffmpeg/core-st@0.11.0/dist/ffmpeg-core.wasm",
+        "https://unpkg.com/@ffmpeg/core-st@0.11.0/dist/ffmpeg-core.wasm",
+      ];
+      for (const wasmUrl of wasmUrls) {
+        try {
+          const res = await fetch(wasmUrl);
+          if (res.ok) {
+            const ab = await res.arrayBuffer();
+            if (ab.byteLength > 1000000) {
+              win.__fahiWasmBinary = new Uint8Array(ab);
+              break;
+            }
+          }
         } catch {}
       }
     }
-    throw new Error("Could not initialize HD audio-video muxer");
+
+    if (!win.__fahiWasmBinary) {
+      throw new Error("Could not download MP4 muxer WebAssembly core");
+    }
+
+    return {
+      createFFmpegCore: win.createFFmpegCore,
+      wasmBinary: win.__fahiWasmBinary,
+    };
+  };
+
+  const muxVideoAndAudioWasm = async (
+    videoBytes: Uint8Array,
+    audioBytes: Uint8Array
+  ): Promise<Uint8Array> => {
+    const { createFFmpegCore, wasmBinary } = await ensureWasmMuxerReady();
+    const Core = await createFFmpegCore({
+      wasmBinary,
+      print: () => {},
+      printErr: () => {},
+    });
+
+    Core.FS.writeFile("video.mp4", videoBytes);
+    Core.FS.writeFile("audio.m4a", audioBytes);
+
+    const main = Core.cwrap("main", "number", ["number", "number"]);
+    const args = [
+      "./ffmpeg",
+      "-nostdin",
+      "-y",
+      "-i",
+      "video.mp4",
+      "-i",
+      "audio.m4a",
+      "-c",
+      "copy",
+      "-movflags",
+      "faststart",
+      "output.mp4",
+    ];
+    const argvPtr = Core._malloc(args.length * 4);
+    const strPtrs: number[] = [];
+    args.forEach((arg, i) => {
+      const len = Core.lengthBytesUTF8(arg) + 1;
+      const sPtr = Core._malloc(len);
+      strPtrs.push(sPtr);
+      Core.stringToUTF8(arg, sPtr, len);
+      Core.setValue(argvPtr + i * 4, sPtr, "i32");
+    });
+
+    try {
+      main(args.length, argvPtr);
+    } catch (e: any) {
+      if (e && typeof e.status === "number" && e.status !== 0) {
+        throw new Error(`Muxer exited with status ${e.status}`);
+      }
+    }
+
+    const merged: Uint8Array = Core.FS.readFile("output.mp4");
+    const copy = new Uint8Array(merged.byteLength);
+    copy.set(merged);
+    try {
+      Core.FS.unlink("video.mp4");
+      Core.FS.unlink("audio.m4a");
+      Core.FS.unlink("output.mp4");
+    } catch {}
+    return copy;
   };
 
   const fetchStreamBuffer = async (
@@ -88,26 +173,71 @@ export default function YoutubeDownloader() {
     return combined;
   };
 
+  const downloadRangedStream = async (
+    rawGoogleUrl: string | undefined,
+    fallbackProxyUrl: string,
+    knownSize: number,
+    onProgress: (ratio: number) => void
+  ): Promise<Uint8Array> => {
+    let totalSize = Number(knownSize) || 0;
+    if (!totalSize && rawGoogleUrl) {
+      try {
+        totalSize = Number(new URL(rawGoogleUrl).searchParams.get("clen")) || 0;
+      } catch {}
+    }
+
+    if (rawGoogleUrl && totalSize > 0) {
+      const CHUNK_SIZE = 6 * 1024 * 1024;
+      const out = new Uint8Array(totalSize);
+      let offset = 0;
+      while (offset < totalSize) {
+        const end = Math.min(offset + CHUNK_SIZE - 1, totalSize - 1);
+        const sep = rawGoogleUrl.includes("?") ? "&" : "?";
+        const rangedUrl = `${rawGoogleUrl}${sep}range=${offset}-${end}`;
+        const proxyUrl = `https://api.vidsnap.app/proxy?u=${encodeURIComponent(rangedUrl)}`;
+        const res = await fetch(proxyUrl);
+        if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+        const reader = res.body.getReader();
+        let chunkReceived = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) {
+            if (offset + chunkReceived + value.byteLength <= out.byteLength) {
+              out.set(value, offset + chunkReceived);
+            }
+            chunkReceived += value.byteLength;
+            onProgress(Math.min(1, (offset + chunkReceived) / totalSize));
+          }
+        }
+        if (chunkReceived === 0) break;
+        offset += chunkReceived;
+      }
+      return offset === totalSize ? out : out.slice(0, offset);
+    }
+
+    return await fetchStreamBuffer(fallbackProxyUrl, onProgress);
+  };
+
   const handleMergeDownload = async (format: any, idx: number) => {
     if (mergingIndex !== null) return;
     setMergingIndex(idx);
-    setMergeProgressLabel("Initializing HD...");
+    setMergeProgressLabel("Initializing...");
     setError("");
 
     try {
-      const ffmpeg = await ensureFfmpegLoaded();
-
-      let videoProxyUrl = format.url;
-      let audioProxyUrl = format.audioUrl;
+      await ensureWasmMuxerReady();
 
       const fetchWithRetry = async (
-        targetUrl: string,
+        proxyUrl: string,
+        rawUrl: string | undefined,
+        knownSize: number,
         itag: string,
         kind: "video" | "audio",
         onProgress: (r: number) => void
       ) => {
         try {
-          return await fetchStreamBuffer(targetUrl, onProgress);
+          return await downloadRangedStream(rawUrl, proxyUrl, knownSize, onProgress);
         } catch (err) {
           if (format.videoId) {
             const freshRes = await fetch(
@@ -120,7 +250,12 @@ export default function YoutubeDownloader() {
               );
               if (freshFmt?.url) {
                 const refreshedProxy = `https://api.vidsnap.app/proxy?u=${encodeURIComponent(freshFmt.url)}`;
-                return await fetchStreamBuffer(refreshedProxy, onProgress);
+                return await downloadRangedStream(
+                  freshFmt.url,
+                  refreshedProxy,
+                  Number(freshFmt.size) || knownSize,
+                  onProgress
+                );
               }
             }
           }
@@ -129,48 +264,42 @@ export default function YoutubeDownloader() {
       };
 
       setMergeProgressLabel("Video 0%");
-      const vBuf = await fetchWithRetry(videoProxyUrl, format.itag, "video", (r) => {
-        setMergeProgressLabel(`HD ${Math.round(r * 45)}%`);
-      });
-
-      setMergeProgressLabel("Audio 45%");
-      const aBuf = await fetchWithRetry(audioProxyUrl, format.audioItag, "audio", (r) => {
-        setMergeProgressLabel(`HD ${Math.round(45 + r * 45)}%`);
-      });
-
-      setMergeProgressLabel("Merging 95%");
-      ffmpeg.FS("writeFile", "video.bin", vBuf);
-      ffmpeg.FS("writeFile", "audio.bin", aBuf);
-      await ffmpeg.run(
-        "-i",
-        "video.bin",
-        "-i",
-        "audio.bin",
-        "-c",
-        "copy",
-        "-movflags",
-        "faststart",
-        "-y",
-        "output.mp4"
+      const vBuf = await fetchWithRetry(
+        format.url,
+        format.rawUrl,
+        Number(format.size) || 0,
+        format.itag,
+        "video",
+        (r) => {
+          setMergeProgressLabel(`DL ${Math.round(r * 50)}%`);
+        }
       );
 
-      const mergedData = ffmpeg.FS("readFile", "output.mp4");
-      try {
-        ffmpeg.FS("unlink", "video.bin");
-        ffmpeg.FS("unlink", "audio.bin");
-        ffmpeg.FS("unlink", "output.mp4");
-      } catch {}
+      setMergeProgressLabel("Audio 50%");
+      const aBuf = await fetchWithRetry(
+        format.audioUrl,
+        format.rawAudioUrl,
+        Number(format.audioSize) || 0,
+        format.audioItag,
+        "audio",
+        (r) => {
+          setMergeProgressLabel(`DL ${Math.round(50 + r * 42)}%`);
+        }
+      );
+
+      setMergeProgressLabel("Merging 95%");
+      const mergedData = await muxVideoAndAudioWasm(vBuf, aBuf);
 
       const safeTitle = String(videoData?.title || "video")
         .replace(/[\\/:*?"<>|]+/g, " ")
         .replace(/\s+/g, " ")
         .trim()
         .slice(0, 60);
-      const blob = new Blob([mergedData.buffer], { type: "video/mp4" });
+      const blob = new Blob([mergedData as unknown as BlobPart], { type: "video/mp4" });
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = blobUrl;
-      a.download = `Fahi-vids - ${safeTitle} [${format.quality}].mp4`;
+      a.download = `Fahi-vids - ${safeTitle} - ${format.quality}.mp4`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -181,7 +310,7 @@ export default function YoutubeDownloader() {
         setMergeProgressLabel("");
       }, 1500);
     } catch (e: any) {
-      setError(`HD Merge Error: ${e?.message || "Could not merge HD stream. Try 360p MP4 below."}`);
+      setError(`HD Merge Error: ${e?.message || "Could not merge stream. Please try again."}`);
       setMergingIndex(null);
       setMergeProgressLabel("");
     }
@@ -214,6 +343,18 @@ export default function YoutubeDownloader() {
     return m ? m[1] : null;
   };
 
+  const getClenSize = (f: any): number => {
+    const s = Number(f?.size) || 0;
+    if (s > 0) return s;
+    if (f?.url) {
+      try {
+        const clen = Number(new URL(f.url).searchParams.get("clen"));
+        if (clen > 0) return clen;
+      } catch {}
+    }
+    return 0;
+  };
+
   const fetchYoutubeDirectClient = async (videoId: string) => {
     const res = await fetch(`https://api.vidsnap.app/parse?id=${encodeURIComponent(videoId)}`);
     if (!res.ok) return null;
@@ -231,10 +372,27 @@ export default function YoutubeDownloader() {
       .filter((f: any) => !String(f.mimeType || "").includes("mp4"))
       .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
     const bestAudio = mp4Audios[0] || otherAudios[0];
+    const bestAudioSize = getClenSize(bestAudio);
     const bestAudioProxyUrl = bestAudio
       ? `https://api.vidsnap.app/proxy?u=${encodeURIComponent(bestAudio.url)}`
       : undefined;
 
+    const progressives = rawFormats.filter(
+      (f: any) => f && f.url && f.kind === "progressive"
+    );
+    const validProgressives = progressives.filter((p: any) => {
+      const br = Number(p.bitrate) || 0;
+      const sz = getClenSize(p);
+      if (br > 0 && br < 64000) return false;
+      if (sz > 0 && sz < 500000) return false;
+      if (sz > 0 && bestAudioSize > 0 && sz <= bestAudioSize) return false;
+      return true;
+    });
+    const validProg360 = validProgressives.find(
+      (p: any) => String(p.qualityLabel || "360p") === "360p"
+    );
+
+    const seenRes = new Set<string>();
     if (bestAudioProxyUrl) {
       const avcVideos = rawFormats.filter(
         (f: any) =>
@@ -242,9 +400,8 @@ export default function YoutubeDownloader() {
           f.url &&
           f.kind === "video" &&
           String(f.mimeType || "").includes("avc1") &&
-          ["1080p", "720p", "480p"].includes(String(f.qualityLabel || ""))
+          ["1080p", "720p", "480p", "360p"].includes(String(f.qualityLabel || ""))
       );
-      const seenRes = new Set<string>();
       for (const v of avcVideos) {
         const qLabel = String(v.qualityLabel);
         if (seenRes.has(qLabel)) continue;
@@ -255,9 +412,19 @@ export default function YoutubeDownloader() {
               ? "MP4 Video (1080p Full HD)"
               : qLabel === "720p"
                 ? "MP4 Video (720p HD)"
-                : `MP4 Video (${qLabel} SD)`,
+                : qLabel === "480p"
+                  ? "MP4 Video (480p SD)"
+                  : `MP4 Video (${qLabel})`,
           url: `https://api.vidsnap.app/proxy?u=${encodeURIComponent(v.url)}`,
+          rawUrl: v.url,
+          size: getClenSize(v),
           audioUrl: bestAudioProxyUrl,
+          rawAudioUrl: bestAudio.url,
+          audioSize: bestAudioSize,
+          streamUrl:
+            qLabel === "360p" && validProg360
+              ? `https://api.vidsnap.app/proxy?u=${encodeURIComponent(validProg360.url)}`
+              : undefined,
           itag: String(v.itag || ""),
           audioItag: String(bestAudio.itag || ""),
           videoId,
@@ -267,13 +434,17 @@ export default function YoutubeDownloader() {
       }
     }
 
-    const progressives = rawFormats.filter(
-      (f: any) => f && f.url && f.kind === "progressive"
-    );
-    for (const p of progressives) {
+    for (const p of validProgressives) {
+      const qLabel = String(p.qualityLabel || "360p");
+      if (seenRes.has(qLabel)) continue;
+      seenRes.add(qLabel);
+      const pProxy = `https://api.vidsnap.app/proxy?u=${encodeURIComponent(p.url)}`;
       formats.push({
-        quality: `MP4 Video (${p.qualityLabel || "360p"})`,
-        url: `https://api.vidsnap.app/proxy?u=${encodeURIComponent(p.url)}`,
+        quality: `MP4 Video (${qLabel})`,
+        url: pProxy,
+        rawUrl: p.url,
+        size: getClenSize(p),
+        streamUrl: pProxy,
         itag: String(p.itag || "18"),
         videoId,
         type: "video",
@@ -284,6 +455,9 @@ export default function YoutubeDownloader() {
       formats.push({
         quality: "MP3 / M4A Audio (High Quality)",
         url: bestAudioProxyUrl,
+        rawUrl: bestAudio.url,
+        size: bestAudioSize,
+        streamUrl: bestAudioProxyUrl,
         itag: String(bestAudio.itag || "140"),
         videoId,
         type: "audio",
@@ -314,9 +488,14 @@ export default function YoutubeDownloader() {
       const kind = format.type === "audio" ? "audio" : "progressive";
       let buf: Uint8Array;
       try {
-        buf = await fetchStreamBuffer(format.url, (r) => {
-          setMergeProgressLabel(`Saving ${Math.round(r * 100)}%`);
-        });
+        buf = await downloadRangedStream(
+          format.rawUrl,
+          format.url,
+          Number(format.size) || 0,
+          (r) => {
+            setMergeProgressLabel(`Saving ${Math.round(r * 100)}%`);
+          }
+        );
       } catch {
         if (!format.videoId) throw new Error("Stream expired");
         const freshRes = await fetch(
@@ -330,9 +509,14 @@ export default function YoutubeDownloader() {
           ) || (freshData.formats || []).find((x: any) => x.kind === kind);
         if (!freshFmt?.url) throw new Error("Refreshed format unavailable");
         const refreshedProxy = `https://api.vidsnap.app/proxy?u=${encodeURIComponent(freshFmt.url)}`;
-        buf = await fetchStreamBuffer(refreshedProxy, (r) => {
-          setMergeProgressLabel(`Saving ${Math.round(r * 100)}%`);
-        });
+        buf = await downloadRangedStream(
+          freshFmt.url,
+          refreshedProxy,
+          getClenSize(freshFmt) || Number(format.size) || 0,
+          (r) => {
+            setMergeProgressLabel(`Saving ${Math.round(r * 100)}%`);
+          }
+        );
       }
 
       const safeTitle = String(videoData?.title || "video")
@@ -343,11 +527,11 @@ export default function YoutubeDownloader() {
       const isAudio = format.type === "audio";
       const ext = isAudio ? "m4a" : "mp4";
       const mime = isAudio ? "audio/mp4" : "video/mp4";
-      const blob = new Blob([buf.buffer as ArrayBuffer], { type: mime });
+      const blob = new Blob([buf as unknown as BlobPart], { type: mime });
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = blobUrl;
-      a.download = `Fahi-vids - ${safeTitle} [${format.quality}].${ext}`;
+      a.download = `Fahi-vids - ${safeTitle} - ${format.quality}.${ext}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -570,9 +754,9 @@ export default function YoutubeDownloader() {
                           )}
                         </button>
 
-                        {!format.isFallback && !format.requiresMerge && (
+                        {(format.streamUrl || (!format.isFallback && !format.requiresMerge)) && (
                           <a
-                            href={format.url}
+                            href={format.streamUrl || format.url}
                             target="_blank"
                             rel="noopener noreferrer"
                             title="Open/Stream directly in browser"

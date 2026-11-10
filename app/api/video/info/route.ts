@@ -240,10 +240,26 @@ export async function GET(req: NextRequest) {
             if (vsRes.ok) {
               const vsData: any = await vsRes.json();
               const rawFormats = Array.isArray(vsData?.formats) ? vsData.formats : [];
+              const getClenSize = (f: any): number => {
+                const s = Number(f?.size) || 0;
+                if (s > 0) return s;
+                if (f?.url) {
+                  try {
+                    const clen = Number(new URL(f.url).searchParams.get("clen"));
+                    if (clen > 0) return clen;
+                  } catch {}
+                }
+                return 0;
+              };
               const formats: Array<{
                 quality: string;
                 url: string;
+                rawUrl?: string;
+                size?: number;
                 audioUrl?: string;
+                rawAudioUrl?: string;
+                audioSize?: number;
+                streamUrl?: string;
                 itag?: string;
                 audioItag?: string;
                 videoId?: string;
@@ -262,11 +278,28 @@ export async function GET(req: NextRequest) {
                 .filter((f: any) => !String(f.mimeType || "").includes("mp4"))
                 .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
               const bestAudio = mp4Audios[0] || otherAudios[0];
+              const bestAudioSize = getClenSize(bestAudio);
               const bestAudioProxyUrl = bestAudio
                 ? `https://api.vidsnap.app/proxy?u=${encodeURIComponent(bestAudio.url)}`
                 : undefined;
 
-              // 1. High-Definition H.264 MP4 streams (1080p Full HD, 720p HD, 480p SD) merged with AAC audio
+              const progressives = rawFormats.filter(
+                (f: any) => f && f.url && f.kind === "progressive"
+              );
+              const validProgressives = progressives.filter((p: any) => {
+                const br = Number(p.bitrate) || 0;
+                const sz = getClenSize(p);
+                if (br > 0 && br < 64000) return false;
+                if (sz > 0 && sz < 500000) return false;
+                if (sz > 0 && bestAudioSize > 0 && sz <= bestAudioSize) return false;
+                return true;
+              });
+              const validProg360 = validProgressives.find(
+                (p: any) => String(p.qualityLabel || "360p") === "360p"
+              );
+
+              // 1. High-Definition & Standard H.264 MP4 streams (1080p Full HD, 720p HD, 480p SD, 360p) merged with AAC audio
+              const seenRes = new Set<string>();
               if (bestAudioProxyUrl) {
                 const avcVideos = rawFormats.filter(
                   (f: any) =>
@@ -274,9 +307,8 @@ export async function GET(req: NextRequest) {
                     f.url &&
                     f.kind === "video" &&
                     String(f.mimeType || "").includes("avc1") &&
-                    ["1080p", "720p", "480p"].includes(String(f.qualityLabel || ""))
+                    ["1080p", "720p", "480p", "360p"].includes(String(f.qualityLabel || ""))
                 );
-                const seenRes = new Set<string>();
                 for (const v of avcVideos) {
                   const qLabel = String(v.qualityLabel);
                   if (seenRes.has(qLabel)) continue;
@@ -287,9 +319,19 @@ export async function GET(req: NextRequest) {
                         ? "MP4 Video (1080p Full HD)"
                         : qLabel === "720p"
                           ? "MP4 Video (720p HD)"
-                          : `MP4 Video (${qLabel} SD)`,
+                          : qLabel === "480p"
+                            ? "MP4 Video (480p SD)"
+                            : `MP4 Video (${qLabel})`,
                     url: `https://api.vidsnap.app/proxy?u=${encodeURIComponent(v.url)}`,
+                    rawUrl: v.url,
+                    size: getClenSize(v),
                     audioUrl: bestAudioProxyUrl,
+                    rawAudioUrl: bestAudio.url,
+                    audioSize: bestAudioSize,
+                    streamUrl:
+                      qLabel === "360p" && validProg360
+                        ? `https://api.vidsnap.app/proxy?u=${encodeURIComponent(validProg360.url)}`
+                        : undefined,
                     itag: String(v.itag || ""),
                     audioItag: String(bestAudio.itag || ""),
                     videoId,
@@ -299,14 +341,18 @@ export async function GET(req: NextRequest) {
                 }
               }
 
-              // 2. Progressive streams (360p video + audio pre-combined in MP4)
-              const progressives = rawFormats.filter(
-                (f: any) => f && f.url && f.kind === "progressive"
-              );
-              for (const p of progressives) {
+              // 2. Fallback Progressive streams (only if valid and not already covered)
+              for (const p of validProgressives) {
+                const qLabel = String(p.qualityLabel || "360p");
+                if (seenRes.has(qLabel)) continue;
+                seenRes.add(qLabel);
+                const pProxy = `https://api.vidsnap.app/proxy?u=${encodeURIComponent(p.url)}`;
                 formats.push({
-                  quality: `MP4 Video (${p.qualityLabel || "360p"})`,
-                  url: `https://api.vidsnap.app/proxy?u=${encodeURIComponent(p.url)}`,
+                  quality: `MP4 Video (${qLabel})`,
+                  url: pProxy,
+                  rawUrl: p.url,
+                  size: getClenSize(p),
+                  streamUrl: pProxy,
                   itag: String(p.itag || "18"),
                   videoId,
                   type: "video",
@@ -318,6 +364,9 @@ export async function GET(req: NextRequest) {
                 formats.push({
                   quality: "MP3 / M4A Audio (High Quality)",
                   url: bestAudioProxyUrl,
+                  rawUrl: bestAudio.url,
+                  size: bestAudioSize,
+                  streamUrl: bestAudioProxyUrl,
                   itag: String(bestAudio.itag || "140"),
                   videoId,
                   type: "audio",
