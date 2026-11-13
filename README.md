@@ -7,7 +7,7 @@
 > **All-in-one browser video creation, Bangladeshi Bengali voiceover dubbing, multi-platform media downloader, and 100% Free-First Model Context Protocol (MCP) server for AI agents.**
 
 Live Web App: **[https://fahi-videos.auraajenticai.cloud](https://fahi-videos.auraajenticai.cloud)**  
-Live MCP Endpoint: **`https://fahi-videos.auraajenticai.cloud/mcp`**  
+Live MCP Endpoint: **`https://fahi-videos.auraajenticai.cloud/mcp`** (`v2.6.0`)  
 Official Directories: **[mcprush (Grade A)](https://mcprush.com/khondokartowsif171/fahi-videos-mcp)** · **[mcptry (Grade A · 89/100)](https://mcptry.com/servers/io.github.khondokartowsif171/fahi-videos-mcp)**
 
 ---
@@ -25,7 +25,7 @@ Official Directories: **[mcprush (Grade A)](https://mcprush.com/khondokartowsif1
 
 ## 🤖 World-Class Model Context Protocol (MCP) Connector
 
-Fahi Videos 2.5V implements the official [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) specification (protocols `2024-11-05` and `2025-03-26`), enabling AI agents to programmatically control video production, generate Bengali voiceovers, build UGC ads, and extract media streams.
+Fahi Videos 2.5V implements the official [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) specification (`v2.6.0`, protocols `2025-06-18`, `2025-03-26`, and `2024-11-05`), enabling AI agents to programmatically control video production, generate Bengali voiceovers, build UGC ads, and extract media streams.
 
 ### 🛠️ The 10 MCP Tools
 

@@ -94,7 +94,7 @@ async function rpcCall(method, params, headers = {}) {
   assert.equal(manifest.status, 'ok');
   assert.equal(manifest.freeTierReady, true);
   assert.equal(manifest.mcpServer.name, 'fahi-videos-mcp-connector');
-  assert.equal(manifest.mcpServer.version, '2.5.1');
+  assert.equal(manifest.mcpServer.version, '2.6.0');
   assert.equal(manifest.mcpServer.license, 'Apache-2.0');
   assert.equal(manifest.counts.tools, 10);
   assert.equal(manifest.counts.resources, 4);
@@ -107,7 +107,7 @@ async function rpcCall(method, params, headers = {}) {
   });
   assert.equal(initRes.result.protocolVersion, '2024-11-05');
   assert.equal(initRes.result.serverInfo.name, 'fahi-videos-mcp-connector');
-  assert.equal(initRes.result.serverInfo.version, '2.5.1');
+  assert.equal(initRes.result.serverInfo.version, '2.6.0');
 
   // 3. Test tools/list (all 10 tools have schemas, annotations, outputSchema, and property descriptions)
   const toolsList = await rpcCall('tools/list');

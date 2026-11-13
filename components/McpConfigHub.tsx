@@ -180,7 +180,7 @@ export default function McpConfigHub() {
     toolsCount: number;
   }>({
     name: 'fahi-videos-mcp-connector',
-    version: '2.5.1',
+    version: '2.6.0',
     protocolVersion: '2024-11-05',
     toolsCount: 10,
   });
@@ -362,7 +362,7 @@ export default function McpConfigHub() {
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-cyan-500/15 border border-cyan-400/30 text-cyan-300">
               <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
               <span>Official Model Context Protocol (MCP) Hub</span>
-              <span className="text-[10px] bg-cyan-400/20 px-1.5 py-0.5 rounded text-cyan-200">v2.5</span>
+              <span className="text-[10px] bg-cyan-400/20 px-1.5 py-0.5 rounded text-cyan-200">v{serverMeta.version}</span>
             </div>
             <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight text-white">
               Fahi Videos <span className="bg-gradient-to-r from-cyan-400 via-sky-300 to-indigo-400 bg-clip-text text-transparent">MCP AI Connector</span>

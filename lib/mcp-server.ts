@@ -39,7 +39,7 @@ import {
 export const MCP_SERVER_INFO = {
   name: 'fahi-videos-mcp-connector',
   title: 'Fahi-Videos MCP Connector',
-  version: '2.5.1',
+  version: '2.6.0',
   protocolVersion: '2024-11-05',
   supportedProtocolVersions: ['2025-06-18', '2025-03-26', '2024-11-05'],
   vendor: 'Aura Agentic AI Cloud (fahi-videos.auraajenticai.cloud)',
