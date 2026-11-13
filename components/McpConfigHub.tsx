@@ -26,6 +26,13 @@ import {
   Server,
   Zap,
 } from 'lucide-react';
+import {
+  DIRECT_MCP_URL,
+  MCPRUSH_GW_URL,
+  MCP_CLIENT_CONFIGS,
+  type McpClientId,
+  type McpTransportMode,
+} from '@/lib/mcp-client-configs';
 
 interface ToolDef {
   name: string;
@@ -166,7 +173,8 @@ const MCP_TOOLS_CATALOG: ToolDef[] = [
 ];
 
 export default function McpConfigHub() {
-  const [activeClientTab, setActiveClientTab] = useState<'cursor' | 'claude_desktop' | 'claude_code' | 'gemini' | 'direct'>('cursor');
+  const [activeClientTab, setActiveClientTab] = useState<McpClientId>('cursor');
+  const [transportMode, setTransportMode] = useState<McpTransportMode>('direct');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // Live Server Health State
@@ -195,7 +203,7 @@ export default function McpConfigHub() {
   // Filter tool category
   const [filterCat, setFilterCat] = useState<'all' | 'audio' | 'video' | 'media' | 'ai' | 'crm'>('all');
 
-  const liveEndpoint = 'https://fahi-videos.auraajenticai.cloud/mcp';
+  const liveEndpoint = DIRECT_MCP_URL;
 
   // Live Ping Checker
   const checkLiveHealth = async () => {
@@ -304,46 +312,11 @@ export default function McpConfigHub() {
     }
   };
 
-  // Configuration Snippets
-  const configSnippets = {
-    cursor: JSON.stringify(
-      {
-        mcpServers: {
-          'fahi-videos-mcp': {
-            httpUrl: liveEndpoint,
-          },
-        },
-      },
-      null,
-      2
-    ),
-    claude_desktop: JSON.stringify(
-      {
-        mcpServers: {
-          'fahi-videos-mcp': {
-            command: 'npx',
-            args: ['-y', 'mcp-remote', liveEndpoint],
-          },
-        },
-      },
-      null,
-      2
-    ),
-    claude_code: `claude mcp add fahi-videos-mcp ${liveEndpoint}`,
-    gemini: JSON.stringify(
-      {
-        mcpServers: {
-          'fahi-videos-mcp': {
-            url: liveEndpoint,
-            type: 'http',
-          },
-        },
-      },
-      null,
-      2
-    ),
-    direct: `# Streamable HTTP Test (POST JSON-RPC)\ncurl -X POST ${liveEndpoint} \\\n  -H "Content-Type: application/json" \\\n  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'\n\n# SSE Event Stream (GET)\ncurl -N -H "Accept: text/event-stream" ${liveEndpoint}`,
-  };
+  // Active client configuration selection (16 official clients)
+  const activeClient =
+    MCP_CLIENT_CONFIGS.find((client) => client.id === activeClientTab) || MCP_CLIENT_CONFIGS[0];
+  const activeVariant = activeClient.variants[transportMode];
+  const activeEndpointUrl = transportMode === 'direct' ? DIRECT_MCP_URL : MCPRUSH_GW_URL;
 
   const filteredTools =
     filterCat === 'all'
@@ -482,95 +455,158 @@ export default function McpConfigHub() {
         </button>
       </div>
 
-      {/* 1-Click Client Setup Configurator */}
+      {/* 1-Click Client Setup Configurator (All 16 Official Clients) */}
       <div className="rounded-3xl bg-[#080D1A] border border-white/10 p-6 space-y-5">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 border-b border-white/10 pb-4">
           <div>
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
               <Terminal className="w-5 h-5 text-cyan-400" />
-              <span>1-Click AI Client Configuration</span>
+              <span>1-Click AI Client Configuration (16 Clients)</span>
             </h2>
             <p className="text-xs text-slate-400 mt-1">
-              Select your AI tool or IDE to get the exact copy-paste configuration block.
+              Select any AI client, IDE, CLI, or SDK to copy its verified MCP JSON, TOML, YAML, or command setup.
             </p>
           </div>
 
-          {/* Client Tab Switcher */}
-          <div className="flex items-center p-1 bg-white/5 border border-white/10 rounded-xl text-xs font-semibold overflow-x-auto max-w-full">
+          {/* Endpoint Mode Switcher */}
+          <div className="flex items-center p-1 bg-white/5 border border-white/10 rounded-xl text-xs font-semibold shrink-0">
             <button
-              onClick={() => setActiveClientTab('cursor')}
+              type="button"
+              onClick={() => setTransportMode('direct')}
               className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
-                activeClientTab === 'cursor' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40' : 'text-slate-400 hover:text-white'
+                transportMode === 'direct'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
+                  : 'text-slate-400 hover:text-white'
               }`}
             >
-              Cursor IDE
+              Direct Free (Zero Key)
             </button>
             <button
-              onClick={() => setActiveClientTab('claude_desktop')}
+              type="button"
+              onClick={() => setTransportMode('mcprush')}
               className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
-                activeClientTab === 'claude_desktop' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40' : 'text-slate-400 hover:text-white'
+                transportMode === 'mcprush'
+                  ? 'bg-lime-500/20 text-lime-300 border border-lime-400/40'
+                  : 'text-slate-400 hover:text-white'
               }`}
             >
-              Claude Desktop
-            </button>
-            <button
-              onClick={() => setActiveClientTab('claude_code')}
-              className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
-                activeClientTab === 'claude_code' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Claude Code CLI
-            </button>
-            <button
-              onClick={() => setActiveClientTab('gemini')}
-              className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
-                activeClientTab === 'gemini' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Gemini / Windsurf
-            </button>
-            <button
-              onClick={() => setActiveClientTab('direct')}
-              className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
-                activeClientTab === 'direct' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              cURL / HTTP
+              mcprush Gateway (Key)
             </button>
           </div>
         </div>
 
-        {/* Configuration Code Display */}
-        <div className="relative">
-          <div className="text-[11px] text-slate-400 mb-2 font-mono flex items-center justify-between">
-            <span>
-              {activeClientTab === 'cursor' && 'File: .cursor/mcp.json'}
-              {activeClientTab === 'claude_desktop' && 'File: %APPDATA%\\Claude\\claude_desktop_config.json (Windows) or ~/Library/... (Mac)'}
-              {activeClientTab === 'claude_code' && 'Terminal Command:'}
-              {activeClientTab === 'gemini' && 'File: mcp.json or settings.json'}
-              {activeClientTab === 'direct' && 'Direct Protocol Test:'}
-            </span>
-            <button
-              onClick={() => handleCopy(configSnippets[activeClientTab], `snippet-${activeClientTab}`)}
-              className="flex items-center gap-1.5 text-xs text-cyan-400 hover:text-cyan-300 font-bold cursor-pointer"
-            >
-              {copiedKey === `snippet-${activeClientTab}` ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="text-emerald-400">Copied to Clipboard!</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>Copy Snippet</span>
-                </>
-              )}
-            </button>
+        {/* 16-Client Selector Pills */}
+        <div className="flex flex-wrap gap-2">
+          {MCP_CLIENT_CONFIGS.map((client) => {
+            const isSelected = activeClient.id === client.id;
+            return (
+              <button
+                key={client.id}
+                type="button"
+                onClick={() => setActiveClientTab(client.id)}
+                className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                  isSelected
+                    ? 'bg-cyan-500/20 text-cyan-200 border-cyan-400/50 shadow-[0_0_16px_rgba(34,211,238,0.18)]'
+                    : 'bg-white/[0.03] text-slate-300 border-white/10 hover:bg-white/[0.08] hover:text-white'
+                }`}
+              >
+                <span
+                  className={`font-mono text-[10px] font-extrabold px-1.5 py-0.5 rounded ${
+                    isSelected
+                      ? 'bg-cyan-400/25 text-cyan-200'
+                      : 'bg-white/10 text-slate-400'
+                  }`}
+                >
+                  {client.shortCode}
+                </span>
+                <span>{client.name}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Selected Client Primary Config */}
+        <div className="space-y-4">
+          <div className="relative">
+            <div className="text-[11px] text-slate-400 mb-2 font-mono flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="px-2 py-0.5 rounded bg-cyan-500/15 border border-cyan-400/30 text-cyan-300 font-bold text-[10px] shrink-0">
+                  {activeVariant.primary.format}
+                </span>
+                <span className="truncate">{activeVariant.primary.label}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  handleCopy(activeVariant.primary.code, `snippet-${activeClient.id}-${transportMode}-primary`)
+                }
+                className="flex items-center gap-1.5 text-xs text-cyan-400 hover:text-cyan-300 font-bold cursor-pointer shrink-0"
+              >
+                {copiedKey === `snippet-${activeClient.id}-${transportMode}-primary` ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="text-emerald-400">Copied to Clipboard!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy {activeVariant.primary.format}</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            <pre className="p-4 rounded-2xl bg-black/60 border border-white/10 font-mono text-xs text-cyan-300 overflow-x-auto leading-relaxed shadow-inner">
+              <code>{activeVariant.primary.code}</code>
+            </pre>
           </div>
 
-          <pre className="p-4 rounded-2xl bg-black/60 border border-white/10 font-mono text-xs text-cyan-300 overflow-x-auto leading-relaxed shadow-inner">
-            <code>{configSnippets[activeClientTab]}</code>
-          </pre>
+          {activeVariant.secondary && (
+            <div className="relative">
+              <div className="text-[11px] text-slate-400 mb-2 font-mono flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="px-2 py-0.5 rounded bg-indigo-500/15 border border-indigo-400/30 text-indigo-300 font-bold text-[10px] shrink-0">
+                    {activeVariant.secondary.format}
+                  </span>
+                  <span className="truncate">{activeVariant.secondary.label}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleCopy(
+                      activeVariant.secondary!.code,
+                      `snippet-${activeClient.id}-${transportMode}-secondary`
+                    )
+                  }
+                  className="flex items-center gap-1.5 text-xs text-indigo-300 hover:text-indigo-200 font-bold cursor-pointer shrink-0"
+                >
+                  {copiedKey === `snippet-${activeClient.id}-${transportMode}-secondary` ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-emerald-400">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copy {activeVariant.secondary.format}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <pre className="p-4 rounded-2xl bg-black/60 border border-white/10 font-mono text-xs text-indigo-200 overflow-x-auto leading-relaxed shadow-inner">
+                <code>{activeVariant.secondary.code}</code>
+              </pre>
+            </div>
+          )}
+
+          {/* Setup Note & Active Endpoint */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 py-3 rounded-2xl bg-white/[0.03] border border-white/10 text-xs text-slate-300">
+            <p className="leading-relaxed">{activeVariant.instruction}</p>
+            <span className="font-mono text-[11px] text-slate-400 shrink-0 break-all">
+              {activeEndpointUrl}
+            </span>
+          </div>
         </div>
       </div>
 

@@ -63,6 +63,12 @@ function loadTsModule(relPath, cache = {}) {
 }
 
 const { handleMcpHttp } = loadTsModule('lib/mcp-server.ts');
+const {
+  DIRECT_MCP_URL,
+  MCPRUSH_GW_URL,
+  MCPRUSH_LISTING_SLUG,
+  MCP_CLIENT_CONFIGS,
+} = loadTsModule('lib/mcp-client-configs.ts');
 
 async function rpcCall(method, params, headers = {}) {
   const req = new Request('http://localhost/api/mcp', {
@@ -276,8 +282,38 @@ async function rpcCall(method, params, headers = {}) {
     promptGet.result.messages[0].content.text.includes('instagram.com/reel/C999/')
   );
 
+  // 12. Test all 16 AI client MCP configurations (Direct Free + mcprush Gateway)
+  assert.equal(MCP_CLIENT_CONFIGS.length, 16);
+  const byId = Object.fromEntries(MCP_CLIENT_CONFIGS.map((c) => [c.id, c]));
+  for (const client of MCP_CLIENT_CONFIGS) {
+    for (const mode of ['direct', 'mcprush']) {
+      const variant = client.variants[mode];
+      assert.ok(variant && variant.primary.code && variant.instruction, `Missing ${mode} variant on ${client.id}`);
+      const expectedTarget = mode === 'direct' ? DIRECT_MCP_URL : MCPRUSH_GW_URL;
+      const snippets = [variant.primary, ...(variant.secondary ? [variant.secondary] : [])];
+      for (const snip of snippets) {
+        if (snip.format === 'JSON') {
+          const parsed = JSON.parse(snip.code);
+          assert.ok(parsed && typeof parsed === 'object', `Invalid JSON object on ${client.id}.${mode}`);
+        }
+      }
+      const combinedCode = snippets.map((s) => s.code).join('\n');
+      assert.ok(
+        combinedCode.includes(expectedTarget) || (mode === 'mcprush' && combinedCode.includes(MCPRUSH_LISTING_SLUG)),
+        `${client.id}.${mode} must reference ${expectedTarget}`
+      );
+    }
+  }
+  assert.equal(JSON.parse(byId.cursor.variants.direct.primary.code).mcpServers['fahi-videos-mcp'].url, DIRECT_MCP_URL);
+  assert.equal(JSON.parse(byId.cursor.variants.direct.primary.code).mcpServers['fahi-videos-mcp'].type, 'http');
+  assert.equal(JSON.parse(byId.vscode.variants.direct.primary.code).servers['fahi-videos-mcp'].url, DIRECT_MCP_URL);
+  assert.equal(JSON.parse(byId.zed.variants.direct.primary.code).context_servers['fahi-videos-mcp'].url, DIRECT_MCP_URL);
+  assert.equal(JSON.parse(byId.gemini_cli.variants.direct.primary.code).mcpServers['fahi-videos-mcp'].httpUrl, DIRECT_MCP_URL);
+  assert.equal(JSON.parse(byId.windsurf.variants.direct.primary.code).mcpServers['fahi-videos-mcp'].serverUrl, DIRECT_MCP_URL);
+  assert.equal(JSON.parse(byId.devin_desktop.variants.direct.primary.code).mcpServers['fahi-videos-mcp'].serverUrl, DIRECT_MCP_URL);
+
   console.log(
-    'PASS: 100% Free-First MCP Connector (Kotha Studio, YT/FB/Insta/TikTok Downloader, CapCut Video Studio, Free Image Fallback, 10 tools, 4 resources, 3 prompts) verified with zero API key.'
+    'PASS: 100% Free-First MCP Connector (Kotha Studio, YT/FB/Insta/TikTok Downloader, CapCut Video Studio, Free Image Fallback, 10 tools, 4 resources, 3 prompts, 16 AI client configs) verified with zero API key.'
   );
 })().catch((err) => {
   console.error(err);
