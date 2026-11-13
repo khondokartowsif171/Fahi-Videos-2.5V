@@ -1,7 +1,7 @@
 {
   "name": "fahi-videos",
   "displayName": "Fahi Videos Studio & MCP",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "description": "All-in-one video creation suite: Bangladeshi Bengali voiceover dubbing, multi-platform media downloader (YouTube, Facebook, Instagram Reels, TikTok), CapCut NLE editing blueprints, and studio audio SFX generation.",
   "logo": "assets/logo.svg",
   "author": {
@@ -10,7 +10,7 @@
   },
   "homepage": "https://fahi-videos.auraajenticai.cloud",
   "repository": "https://github.com/khondokartowsif171/Fahi-Videos-2.5V",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": [
     "video",
     "downloader",

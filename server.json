@@ -2,9 +2,26 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.khondokartowsif171/fahi-videos-mcp",
   "title": "Fahi-Videos MCP Server",
-  "description": "AI video generation, analytics, prompts, and database ops for Fahi-Videos platform.",
+  "description": "100% free AI video studio: Bengali TTS, YT/FB/IG/TikTok extractor, CapCut timelines, SFX & CRM.",
   "version": "2.5.1",
   "websiteUrl": "https://fahi-videos.auraajenticai.cloud",
+  "icons": [
+    {
+      "src": "https://fahi-videos.auraajenticai.cloud/icon-512.png",
+      "mimeType": "image/png",
+      "sizes": ["512x512"]
+    },
+    {
+      "src": "https://fahi-videos.auraajenticai.cloud/icon-192.png",
+      "mimeType": "image/png",
+      "sizes": ["192x192"]
+    },
+    {
+      "src": "https://fahi-videos.auraajenticai.cloud/icon.svg",
+      "mimeType": "image/svg+xml",
+      "sizes": ["any"]
+    }
+  ],
   "repository": {
     "url": "https://github.com/khondokartowsif171/Fahi-Videos-2.5V",
     "source": "github"

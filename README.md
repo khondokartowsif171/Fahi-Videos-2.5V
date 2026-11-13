@@ -33,27 +33,27 @@ Fahi Videos 2.5V implements the official [Model Context Protocol (MCP)](https://
 |:---|:---|:---|
 | `fahi_generate_bangla_tts` | Generate natural Bengali voiceovers (WAV/MP3 base64) with 3-tier fallback. | `text`, `voiceName`, `durationSec` |
 | `fahi_build_ugc_storyboard` | Build multi-scene e-commerce UGC storyboard with scripts, Banglish guides, and SRT. | `productName`, `category`, `offerPriceBn`, `tone` |
-| `fahi_translate_and_adapt_scene` | Translate & culturally adapt English video narration into localized Bengali. | `englishText`, `targetTone`, `targetAudience` |
-| `fahi_generate_srt_subtitles` | Generate formatted, timed `.SRT` subtitles for Bengali narration. | `text`, `durationSec`, `wordsPerSubtitle` |
-| `fahi_extract_media_info` | Free stream extraction for YouTube, Facebook, Instagram, and TikTok links. | `url` |
-| `fahi_capcut_editor_blueprint` | Compute CapCut Pro timeline blueprints, splits, keyframes, transitions, and masks. | `projectTitle`, `aspectRatio`, `maskShape`, `animIn` |
-| `fahi_synthesize_studio_sfx` | Generate pure studio 16-bit WAV sound effects (whoosh, pop, click, riser). | `sfxId` (`whoosh`, `pop`, `click`, `riser`, etc.) |
-| `fahi_enhance_cinematic_prompt` | Transform raw concepts into cinematic Bangladesh-aware video/image prompts. | `prompt`, `mood`, `visualStyle`, `lighting` |
-| `fahi_generate_image` | Generate cinematic visual scenes or thumbnails with free fallback. | `prompt`, `aspectRatio` |
-| `fahi_crm_leads` | Query, filter, and capture customer orders and CRM leads. | `action` (`list`, `capture`, `stats`), `name`, `phone` |
+| `fahi_translate_and_adapt_scene` | Translate & culturally adapt an English scene summary into Dhaka-standard Bengali script. | `englishSummary`, `onScreenText`, `currentBangla`, `tone` |
+| `fahi_generate_srt_subtitles` | Generate formatted `.SRT` subtitles and 30fps CapCut SMPTE timecodes for scenes. | `scenes`, `bilingual` |
+| `fahi_extract_media_info` | Free multi-platform stream extraction for YouTube, Facebook, Instagram, and TikTok links. | `url` |
+| `fahi_capcut_editor_blueprint` | Compute CapCut Pro timeline blueprints, 30fps timecodes, transitions, and CSS masks. | `projectTitle`, `aspectRatio`, `maskShape`, `animIn` |
+| `fahi_synthesize_studio_sfx` | Synthesize pure studio 22.05kHz PCM WAV sound effects and beat loops. | `sfxId` (`whoosh`, `riser`, `bass_drop`, `ding`, `lofi_beat`) |
+| `fahi_enhance_cinematic_prompt` | Transform raw concepts into cinema-grade video prompts with camera/lens/lighting rig. | `prompt`, `camera`, `lens`, `lighting`, `motionSpeed` |
+| `fahi_generate_image` | Generate 1280x720 HD thumbnails and scenes with free-tier fallback. | `prompt`, `aspectRatio` |
+| `fahi_crm_leads` | List pipeline leads/stats or add new customer orders in the CRM pipeline. | `action` (`list`, `add`), `customerName`, `phone`, `product` |
 
 ### 📚 Studio Resources (`resources/list` & `resources/read`)
 
-1. `fahi://studio/capabilities`: Real-time manifest of available engines and limits.
-2. `fahi://voices/bangla-personas`: Bengali voice persona descriptions and tonal use cases.
-3. `fahi://presets/capcut-blueprints`: CapCut aspect ratios, animations, and CSS mask shapes.
-4. `fahi://presets/ecommerce-categories`: UGC marketing structures for fashion, gadgets, food, skincare, etc.
+1. `fahi://studio/capabilities`: Real-time manifest of free core modules (`kotha`, `downloader`, `editor`, `thumbnail`).
+2. `fahi://kotha/voices`: Bengali voice persona directory (`Kore`, `Puck`, `Charon`, `Zephyr`), tone presets, and categories.
+3. `fahi://aura/cinematography-rig`: Camera moves, prime/anamorphic lenses, lighting atmospheres, and transitions.
+4. `fahi://capcut/studio-tools`: Supported CSS masks, blend modes, clip animations, and SFX presets.
 
 ### 💡 Studio Prompts (`prompts/list` & `prompts/get`)
 
-1. `bangla-ecommerce-ugc-campaign`: End-to-end multi-scene e-commerce ad creation.
-2. `free-yt-fb-insta-to-bangla-reel`: Convert any social video into a localized Bengali short/reel.
-3. `cinematic-bangladesh-veo-director`: Cinematic video direction prompt.
+1. `bangla-viral-ugc-campaign`: End-to-end 5-scene Bangladeshi Bengali UGC campaign workflow.
+2. `free-yt-fb-insta-to-bangla-reel`: Convert any YouTube, Facebook, or Instagram Reel into a localized Bengali reel.
+3. `youtube-thumbnail-and-seo-pack`: High-CTR YouTube thumbnail visual and bilingual Bengali/English SEO metadata.
 
 ---
 
@@ -141,4 +141,4 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## 📄 License
 
-Proprietary © 2026 Fahi Videos & Aura Agentic AI Cloud. All rights reserved.
+Licensed under the [Apache License 2.0](./LICENSE) © 2026 Fahi Videos & Aura Agentic AI Cloud.

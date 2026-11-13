@@ -12,7 +12,7 @@ The official **Fahi Videos 2.5V** plugin for Antigravity, providing AI agents wi
 - **📥 Universal Downloader**: Extract downloadable MP4/MP3 streams from YouTube, Facebook, Instagram Reels, and TikTok.
 - **✂️ CapCut Pro Blueprint Engine**: Compute timeline splits, SMPTE `00:00:00:00` timecodes, keyframe easing curves, CSS mask clip-paths, and animations.
 - **📢 E-Commerce UGC Storyboards**: Multi-scene marketing ad builder with scripts, Banglish director cues, and SRT subtitles.
-- **🔊 Pure Studio SFX**: Synthesize 16-bit 44.1kHz WAV sound effects (whoosh, pop, click, riser).
+- **🔊 Pure Studio SFX**: Synthesize 22.05kHz PCM WAV sound effects and beat loops (`whoosh`, `riser`, `bass_drop`, `ding`, `lofi_beat`).
 
 ## 🚀 Live Endpoints
 

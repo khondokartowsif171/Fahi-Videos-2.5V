@@ -94,6 +94,8 @@ async function rpcCall(method, params, headers = {}) {
   assert.equal(manifest.status, 'ok');
   assert.equal(manifest.freeTierReady, true);
   assert.equal(manifest.mcpServer.name, 'fahi-videos-mcp-connector');
+  assert.equal(manifest.mcpServer.version, '2.5.1');
+  assert.equal(manifest.mcpServer.license, 'Apache-2.0');
   assert.equal(manifest.counts.tools, 10);
   assert.equal(manifest.counts.resources, 4);
   assert.equal(manifest.counts.prompts, 3);
@@ -105,10 +107,25 @@ async function rpcCall(method, params, headers = {}) {
   });
   assert.equal(initRes.result.protocolVersion, '2024-11-05');
   assert.equal(initRes.result.serverInfo.name, 'fahi-videos-mcp-connector');
+  assert.equal(initRes.result.serverInfo.version, '2.5.1');
 
-  // 3. Test tools/list (all 10 tools work without API key)
+  // 3. Test tools/list (all 10 tools have schemas, annotations, outputSchema, and property descriptions)
   const toolsList = await rpcCall('tools/list');
   assert.equal(toolsList.result.tools.length, 10);
+  for (const tool of toolsList.result.tools) {
+    assert.ok(tool.title && tool.description, `Missing title/description on ${tool.name}`);
+    assert.ok(tool.annotations && typeof tool.annotations.readOnlyHint === 'boolean', `Missing annotations on ${tool.name}`);
+    assert.equal(tool.annotations.destructiveHint, false, `${tool.name} must be non-destructive`);
+    assert.ok(tool.outputSchema && tool.outputSchema.type === 'object', `Missing outputSchema on ${tool.name}`);
+    for (const [propName, propDef] of Object.entries(tool.inputSchema?.properties || {})) {
+      assert.ok(propDef.description, `Missing description on ${tool.name}.${propName}`);
+      if (propDef.items?.properties) {
+        for (const [subName, subDef] of Object.entries(propDef.items.properties)) {
+          assert.ok(subDef.description, `Missing description on ${tool.name}.${propName}.${subName}`);
+        }
+      }
+    }
+  }
 
   // 4. Test tools/call -> fahi_build_ugc_storyboard (100% Free)
   const ugcRes = await rpcCall('tools/call', {
@@ -143,23 +160,32 @@ async function rpcCall(method, params, headers = {}) {
   assert.equal(ttsData.freeTier, true);
   assert.ok(ttsData.audioBase64.length > 100);
 
-  // 6. Test tools/call -> fahi_extract_media_info for YouTube, Facebook, and Instagram (100% Free)
-  for (const [sampleUrl, expectedPlat] of [
-    ['https://www.youtube.com/watch?v=dQw4w9WgXcQ', 'youtube'],
-    ['https://www.facebook.com/watch/?v=123456', 'facebook'],
-    ['https://www.instagram.com/reel/C12345678/', 'instagram'],
-    ['https://www.tiktok.com/@user/video/123456', 'tiktok'],
+  // 6. Test tools/call -> fahi_extract_media_info across YouTube, Facebook, Instagram, and TikTok
+  for (const [sampleUrl, expectedPlat, minStreams, requireDirect] of [
+    ['https://www.youtube.com/watch?v=FkNzykVN85k&list=RDFkNzykVN85k&start_radio=1', 'youtube', 3, true],
+    ['https://www.facebook.com/reel/2343598226299411', 'facebook', 1, true],
+    ['https://www.instagram.com/reel/DfajF1zvsbl/', 'instagram', 1, true],
+    ['https://www.tiktok.com/@user/video/123456', 'tiktok', 1, false],
   ]) {
     const dlRes = await rpcCall('tools/call', {
       name: 'fahi_extract_media_info',
       arguments: { url: sampleUrl },
     });
-    assert.ok(!dlRes.result.isError);
+    assert.ok(!dlRes.result.isError, `Unexpected error for ${sampleUrl}`);
+    assert.ok(dlRes.result.structuredContent, 'structuredContent must be present');
     const dlData = JSON.parse(dlRes.result.content[0].text);
     assert.equal(dlData.freeTier, true);
     assert.equal(dlData.platform, expectedPlat);
-    assert.ok(dlData.streams.length >= 3);
+    assert.ok(dlData.streams.length >= minStreams, `Expected >= ${minStreams} streams for ${expectedPlat}, got ${dlData.streams.length}`);
+    if (requireDirect) {
+      assert.ok(dlData.streams.some((s) => !s.isFallback && String(s.url).startsWith('https://')));
+    }
   }
+  const badDlRes = await rpcCall('tools/call', {
+    name: 'fahi_extract_media_info',
+    arguments: { url: 'https://example.com/not-supported.mp4' },
+  });
+  assert.equal(badDlRes.result.isError, true);
 
   // 7. Test tools/call -> fahi_capcut_editor_blueprint (100% Free CapCut Studio)
   const editorRes = await rpcCall('tools/call', {
@@ -203,7 +229,43 @@ async function rpcCall(method, params, headers = {}) {
   assert.equal(sfxData.mimeType, 'audio/wav');
   assert.ok(sfxData.byteLength > 2000);
 
-  // 10. Test resources/list & prompts/get
+  // 10. Test tools/call -> remaining 4 tools (translate, srt, cinematic prompt, crm)
+  const trRes = await rpcCall('tools/call', {
+    name: 'fahi_translate_and_adapt_scene',
+    arguments: {
+      englishSummary: 'Limited offer on wireless earbuds with free delivery across Bangladesh.',
+      tone: 'commercial',
+    },
+  });
+  assert.ok(!trRes.result.isError && trRes.result.structuredContent?.banglaScript);
+
+  const srtRes = await rpcCall('tools/call', {
+    name: 'fahi_generate_srt_subtitles',
+    arguments: {
+      scenes: [{ sceneNumber: 1, startTimeSec: 0, endTimeSec: 4, banglaScript: 'নতুন অফার এখনই অর্ডার করুন।', titleEn: 'New offer' }],
+      bilingual: true,
+    },
+  });
+  assert.ok(!srtRes.result.isError && srtRes.result.structuredContent?.srtContent.includes('00:00:00,000'));
+
+  const cineRes = await rpcCall('tools/call', {
+    name: 'fahi_enhance_cinematic_prompt',
+    arguments: { prompt: 'Rainy evening tea stall in Dhaka' },
+  });
+  assert.ok(!cineRes.result.isError && cineRes.result.structuredContent?.enhancedPrompt);
+
+  const crmAddRes = await rpcCall('tools/call', {
+    name: 'fahi_crm_leads',
+    arguments: { action: 'add', customerName: 'Test Buyer', phone: '+8801712345678', product: 'Smart Watch' },
+  });
+  assert.ok(!crmAddRes.result.isError && crmAddRes.result.structuredContent?.success === true);
+  const crmListRes = await rpcCall('tools/call', {
+    name: 'fahi_crm_leads',
+    arguments: { action: 'list' },
+  });
+  assert.ok(!crmListRes.result.isError && crmListRes.result.structuredContent?.leads.length >= 1);
+
+  // 11. Test resources/list & prompts/get
   const resList = await rpcCall('resources/list');
   assert.equal(resList.result.resources.length, 4);
   const promptGet = await rpcCall('prompts/get', {
