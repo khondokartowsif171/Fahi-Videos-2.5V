@@ -2,6 +2,8 @@
 
 [![mcptry](https://mcptry.com/badge/io.github.khondokartowsif171/fahi-videos-mcp)](https://mcptry.com/servers/io.github.khondokartowsif171/fahi-videos-mcp)
 
+[![Fahi-Videos MCP server](https://mcprush.com/badge/fahi-videos-mcp/card.svg)](https://mcprush.com/to/fahi-videos-mcp?ref=badge)
+
 The official **Fahi Videos 2.5V** plugin for Antigravity, providing AI agents with 10 free-first video production tools, Bangladeshi Bengali voiceover dubbing, social video downloading, and CapCut NLE video editing blueprints.
 
 ## ✨ Capabilities
@@ -17,4 +19,5 @@ The official **Fahi Videos 2.5V** plugin for Antigravity, providing AI agents wi
 - **Live Web App**: [https://fahi-videos.auraajenticai.cloud](https://fahi-videos.auraajenticai.cloud)
 - **MCP AI Hub**: [https://fahi-videos.auraajenticai.cloud/mcp-config](https://fahi-videos.auraajenticai.cloud/mcp-config)
 - **Remote MCP Endpoint**: `https://fahi-videos.auraajenticai.cloud/mcp`
-- **Official mcptry Registry**: [https://mcptry.com/servers/io.github.khondokartowsif171/fahi-videos-mcp](https://mcptry.com/servers/io.github.khondokartowsif171/fahi-videos-mcp)
+- **Official mcprush Listing (Grade A)**: [https://mcprush.com/khondokartowsif171/fahi-videos-mcp](https://mcprush.com/khondokartowsif171/fahi-videos-mcp)
+- **Official mcptry Registry (Grade A)**: [https://mcptry.com/servers/io.github.khondokartowsif171/fahi-videos-mcp](https://mcptry.com/servers/io.github.khondokartowsif171/fahi-videos-mcp)

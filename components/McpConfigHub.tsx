@@ -412,16 +412,28 @@ export default function McpConfigHub() {
                 <p className="font-mono text-[11px] text-slate-200">2024-11-05</p>
               </div>
               <div>
-                <span className="text-slate-400 text-[11px]">Registry</span>
-                <a
-                  href="https://mcptry.com/servers/io.github.khondokartowsif171/fahi-videos-mcp"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 font-bold text-indigo-300 hover:text-indigo-200 hover:underline"
-                >
-                  <span>mcptry Verified</span>
-                  <ExternalLink className="w-2.5 h-2.5" />
-                </a>
+                <span className="text-slate-400 text-[11px]">Registries</span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <a
+                    href="https://mcprush.com/khondokartowsif171/fahi-videos-mcp"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 font-bold text-lime-300 hover:text-lime-200 hover:underline"
+                  >
+                    <span>mcprush (A)</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                  <span className="text-slate-600">·</span>
+                  <a
+                    href="https://mcptry.com/servers/io.github.khondokartowsif171/fahi-videos-mcp"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 font-bold text-indigo-300 hover:text-indigo-200 hover:underline"
+                  >
+                    <span>mcptry (A)</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                </div>
               </div>
             </div>
           </div>
@@ -756,39 +768,66 @@ export default function McpConfigHub() {
       </div>
 
       {/* Official Registry Badges & Links Footer */}
-      <div className="p-6 rounded-3xl bg-gradient-to-r from-[#0B0F1A] via-[#090D16] to-[#0B0F1A] border border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-3 rounded-2xl bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">
-            <ShieldCheck className="w-6 h-6" />
+      <div className="p-6 rounded-3xl bg-gradient-to-r from-[#0B0F1A] via-[#090D16] to-[#0B0F1A] border border-white/10 flex flex-col lg:flex-row items-center justify-between gap-6">
+        <div className="space-y-4 flex-1">
+          <div className="flex items-start gap-3">
+            <div className="p-3 rounded-2xl bg-indigo-500/15 border border-indigo-500/30 text-indigo-400 shrink-0">
+              <ShieldCheck className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white">Verified on Global MCP Directories (Grade A)</h3>
+              <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
+                Listed &amp; verified on the official GitHub Model Context Protocol Registry, mcprush.com (Grade A · Low Access · Works with 16 Clients), and mcptry.com (Grade A · 89/100).
+              </p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-sm font-bold text-white">Verified on Global MCP Directories</h3>
-            <p className="text-xs text-slate-400">
-              Listed on official GitHub Model Context Protocol Registry and mcptry health checker.
-            </p>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <a
+              href="https://mcprush.com/khondokartowsif171/fahi-videos-mcp"
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-lime-500/15 hover:bg-lime-500/25 border border-lime-400/30 text-xs font-bold text-lime-200 transition-colors"
+            >
+              <span>mcprush Listing (Grade A)</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+            <a
+              href="https://mcptry.com/servers/io.github.khondokartowsif171/fahi-videos-mcp"
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/15 text-xs font-bold text-white transition-colors"
+            >
+              <span>mcptry Status &amp; Playground</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+            <a
+              href="https://github.com/khondokartowsif171/Fahi-Videos-2.5V"
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/40 border border-indigo-500/40 text-xs font-bold text-indigo-200 transition-colors"
+            >
+              <span>GitHub Repository</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 shrink-0 flex-wrap">
-          <a
-            href="https://mcptry.com/servers/io.github.khondokartowsif171/fahi-videos-mcp"
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/15 text-xs font-bold text-white transition-colors"
-          >
-            <span>mcptry Status & Playground</span>
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
-          <a
-            href="https://github.com/khondokartowsif171/Fahi-Videos-2.5V"
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/40 border border-indigo-500/40 text-xs font-bold text-indigo-200 transition-colors"
-          >
-            <span>GitHub Repository</span>
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
-        </div>
+        <a
+          href="https://mcprush.com/khondokartowsif171/fahi-videos-mcp"
+          target="_blank"
+          rel="noreferrer"
+          className="shrink-0 block rounded-2xl overflow-hidden border border-white/10 hover:border-lime-400/40 transition-all shadow-xl"
+        >
+          <img
+            width={380}
+            height={200}
+            src="https://mcprush.com/badge/fahi-videos-mcp/card.svg"
+            alt="Fahi-Videos MCP server"
+            loading="lazy"
+            className="block max-w-full h-auto"
+          />
+        </a>
       </div>
     </div>
   );
