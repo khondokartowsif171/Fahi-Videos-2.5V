@@ -19,6 +19,7 @@ import {
   formatTimestamp,
   buildDynamicEcommerceUgcScenes,
 } from '../utils/dubbingLogic';
+import { computeKeyframeCaptureDimensions } from '../utils/dynamicVideoRenderer';
 
 interface VideoFrameExtractorModalProps {
   isOpen: boolean;
@@ -117,9 +118,14 @@ export const VideoFrameExtractorModal: React.FC<VideoFrameExtractorModalProps> =
         hintText: string;
       }[] = [];
 
+      const keyframeDims = computeKeyframeCaptureDimensions(
+        videoEl.videoWidth,
+        videoEl.videoHeight,
+        720
+      );
       const canvas = document.createElement('canvas');
-      canvas.width = 640;
-      canvas.height = 360;
+      canvas.width = keyframeDims.width;
+      canvas.height = keyframeDims.height;
       const ctx = canvas.getContext('2d');
 
       for (let i = 0; i < numClips; i++) {

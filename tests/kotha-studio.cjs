@@ -254,7 +254,87 @@ const { handleKotha } = loadTsModule(path.join(__dirname, '../lib/kotha-server.t
   assert.equal(framesData.scenes.length, 2);
   assert.ok(framesData.scenes[0].banglaScript.length > 10);
 
-  console.log('PASS: Kotha Studio dubbing logic, SRT subtitles, WAV synthesis, and 100% free server endpoints verified.');
+  // Verify dynamic video renderer geometry, native aspect preservation, & sync timing
+  const dynamicRenderer = loadTsModule(
+    path.join(__dirname, '../components/kotha/utils/dynamicVideoRenderer.ts')
+  );
+  const {
+    normalizeEvenDimension,
+    detectAspectRatioLabel,
+    computeKeyframeCaptureDimensions,
+    computeOutputCanvasDimensions,
+    computeMediaRect,
+    getRecommendedDefaults,
+    computeScenePlaybackTiming,
+    mapSceneProgressToVideoTime,
+  } = dynamicRenderer;
+
+  assert.equal(normalizeEvenDimension(719), 720);
+  assert.equal(normalizeEvenDimension(1080), 1080);
+  assert.equal(detectAspectRatioLabel(1920, 1080), '16:9');
+  assert.equal(detectAspectRatioLabel(1080, 1920), '9:16');
+  assert.equal(detectAspectRatioLabel(1080, 1080), '1:1');
+  assert.equal(detectAspectRatioLabel(1080, 1350), '4:5');
+
+  const portraitKeyframe = computeKeyframeCaptureDimensions(1080, 1920, 720);
+  assert.deepEqual(portraitKeyframe, { width: 406, height: 720 });
+  assert.deepEqual(computeKeyframeCaptureDimensions(0, 0), { width: 640, height: 360 });
+
+  const origLandscape = computeOutputCanvasDimensions('original', { width: 1920, height: 1080 }, 'hd');
+  assert.deepEqual(origLandscape, { width: 1280, height: 720, aspectLabel: '16:9' });
+  const origFullHd = computeOutputCanvasDimensions('original', { width: 1920, height: 1080 }, 'fullhd');
+  assert.deepEqual(origFullHd, { width: 1920, height: 1080, aspectLabel: '16:9' });
+  const origReels = computeOutputCanvasDimensions('original', { width: 1080, height: 1920 }, 'hd');
+  assert.deepEqual(origReels, { width: 720, height: 1280, aspectLabel: '9:16' });
+  const tinyUpscaled = computeOutputCanvasDimensions('original', { width: 640, height: 360 }, 'hd');
+  assert.deepEqual(tinyUpscaled, { width: 1280, height: 720, aspectLabel: '16:9' });
+  const forced45 = computeOutputCanvasDimensions('4:5', { width: 1920, height: 1080 }, 'fullhd');
+  assert.deepEqual(forced45, { width: 1080, height: 1350, aspectLabel: '4:5' });
+
+  // Zero-distortion contain fit for 16:9 video inside 9:16 canvas
+  const containRect = computeMediaRect(0, 0, 720, 1280, 1920, 1080, 'contain');
+  assert.equal(containRect.dw, 720);
+  assert.equal(Math.round(containRect.dh), 405);
+  assert.ok(containRect.dy > 400);
+
+  // Zero-distortion cover crop for 16:9 video filling 9:16 canvas
+  const coverRect = computeMediaRect(0, 0, 720, 1280, 1920, 1080, 'cover');
+  assert.equal(coverRect.dw, 720);
+  assert.equal(coverRect.dh, 1280);
+  assert.equal(coverRect.sh, 1080);
+  assert.ok(Math.abs(coverRect.sw / coverRect.sh - 720 / 1280) < 0.001);
+
+  assert.deepEqual(getRecommendedDefaults(true), { aspectMode: 'original', layoutStyle: 'clean' });
+  assert.deepEqual(getRecommendedDefaults(false), { aspectMode: '9:16', layoutStyle: 'studio-card' });
+
+  // Long Bengali voiceover must NOT be cut off at 7.5s
+  const longDubTiming = computeScenePlaybackTiming({
+    sceneStartSec: 0,
+    sceneEndSec: 12,
+    speechDurationSec: 11.4,
+    speechSpeed: 1,
+    totalVideoDurationSec: 45,
+    isEmbedded: false,
+    hasDecodedAudio: true,
+  });
+  assert.ok(longDubTiming.targetDurationMs >= 11400);
+  assert.equal(longDubTiming.sourceStartSec, 0);
+  assert.equal(longDubTiming.sourceEndSec, 12);
+  assert.ok(Math.abs(mapSceneProgressToVideoTime(longDubTiming, 0.5) - 6) < 0.01);
+
+  // Embedded strict rounding (zero padding gap)
+  const embeddedTiming = computeScenePlaybackTiming({
+    sceneStartSec: 2,
+    sceneEndSec: 7,
+    speechDurationSec: 4.5,
+    speechSpeed: 1,
+    totalVideoDurationSec: 20,
+    isEmbedded: true,
+    hasDecodedAudio: true,
+  });
+  assert.equal(embeddedTiming.targetDurationMs, 4500);
+
+  console.log('PASS: Kotha Studio dubbing logic, SRT subtitles, WAV synthesis, dynamic video framing, and 100% free server endpoints verified.');
 })().catch((err) => {
   console.error(err);
   process.exitCode = 1;
