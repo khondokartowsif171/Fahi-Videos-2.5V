@@ -182,12 +182,12 @@ export default function PwaInstallButton({
         title="1-Click Install FahiVids WebApp (PC, Android & iOS)"
         className={
           compact
-            ? "px-2.5 py-1.5 rounded-lg text-xs font-bold bg-gradient-to-r from-cyan-500/20 to-indigo-500/25 hover:from-cyan-500/30 hover:to-indigo-500/35 text-cyan-300 border border-cyan-400/35 flex items-center space-x-1 transition-all shadow-[0_0_12px_rgba(0,200,255,0.2)]"
-            : "flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-gradient-to-r from-cyan-500/20 to-indigo-500/25 hover:from-cyan-500/30 hover:to-indigo-500/40 text-cyan-200 border border-cyan-400/40 transition-all shadow-[0_0_14px_rgba(0,200,255,0.25)] hover:scale-[1.02]"
+            ? "px-2 py-1.5 rounded-lg text-[11px] font-bold bg-gradient-to-r from-cyan-500/20 to-indigo-500/25 hover:from-cyan-500/30 hover:to-indigo-500/35 text-cyan-300 border border-cyan-400/35 flex items-center space-x-1 transition-all shadow-[0_0_12px_rgba(0,200,255,0.2)] whitespace-nowrap shrink-0"
+            : "flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-gradient-to-r from-cyan-500/20 to-indigo-500/25 hover:from-cyan-500/30 hover:to-indigo-500/40 text-cyan-200 border border-cyan-400/40 transition-all shadow-[0_0_14px_rgba(0,200,255,0.25)] hover:scale-[1.02] whitespace-nowrap shrink-0"
         }
       >
         <Download className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-        <span>Install App</span>
+        <span>{compact ? 'Install' : 'Install App'}</span>
       </button>
 
       {showGuideModal && (

@@ -163,14 +163,14 @@ export default function Navbar({
 
       {/* Mobile Top Bar (Hidden in Editor mode for full screen studio) */}
       {(isEmbedded || activeTab !== 'editor') && (
-        <header className="sticky top-0 z-50 md:hidden bg-[#050810]/95 backdrop-blur-xl border-b border-white/5 h-14 flex items-center justify-between px-4">
+        <header className="sticky top-0 z-50 md:hidden bg-[#050810]/95 backdrop-blur-xl border-b border-white/5 h-14 flex items-center justify-between px-3 gap-2">
           <div
-            className="flex items-center gap-2 cursor-pointer"
+            className="flex items-center gap-2 cursor-pointer shrink-0"
             onClick={() => setActiveTab('home')}
           >
             <FahiVidsLogo size={26} />
           </div>
-          <div className="flex items-center gap-1.5 min-w-0">
+          <div className="flex items-center justify-end gap-1.5 min-w-0">
             {isEmbedded && (
               <select
                 aria-label="Studio tool"
@@ -189,7 +189,7 @@ export default function Navbar({
             {!isEmbedded && currentUser ? (
               <button
                 onClick={() => void signOutUser()}
-                className="px-2 py-1.5 bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 rounded-lg text-[11px] font-bold flex items-center gap-1 max-w-[104px] min-w-0 shrink-0"
+                className="px-2 py-1.5 bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 rounded-lg text-[11px] font-bold flex items-center gap-1 max-w-[96px] min-w-0 shrink-0"
                 title={`Signed in as ${currentUser.name} (${currentUser.email}) — Tap to Sign Out`}
               >
                 {currentUser.avatarUrl ? (
@@ -207,7 +207,7 @@ export default function Navbar({
             ) : !isEmbedded ? (
               <button
                 onClick={() => onOpenAuthModal?.()}
-                className="px-2.5 py-1.5 bg-cyan-500 text-black rounded-lg text-xs font-extrabold flex items-center gap-1"
+                className="px-2.5 py-1.5 bg-cyan-500 text-black rounded-lg text-xs font-extrabold flex items-center gap-1 whitespace-nowrap shrink-0"
               >
                 <LogIn className="w-3.5 h-3.5" />
                 <span>Login</span>
@@ -218,7 +218,7 @@ export default function Navbar({
               <button
                 style={isEmbedded ? { display: 'none' } : undefined}
                 onClick={() => setAdminModalOpen(true)}
-                className="p-1.5 bg-violet-600/20 border border-violet-500/30 text-violet-300 rounded-lg text-xs font-bold flex items-center space-x-1"
+                className="p-1.5 bg-violet-600/20 border border-violet-500/30 text-violet-300 rounded-lg text-xs font-bold flex items-center space-x-1 whitespace-nowrap shrink-0"
                 title="Admin Dashboard"
               >
                 <ShieldCheck className="w-4 h-4 text-violet-400" />
@@ -228,7 +228,8 @@ export default function Navbar({
             <button
               style={isEmbedded ? { display: 'none' } : undefined}
               onClick={() => setSettingsOpen(true)}
-              className="p-2 text-slate-400 hover:text-white rounded-full"
+              className="p-1.5 text-slate-400 hover:text-white rounded-full shrink-0"
+              aria-label="Open Studio Settings"
             >
               <Settings className="w-5 h-5" />
             </button>
