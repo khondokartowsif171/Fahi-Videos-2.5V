@@ -12,6 +12,7 @@ import {
   buildSupabaseGoogleAuthorizeUrl,
   createPkceChallenge,
   extractSupabaseOAuthUser,
+  formatOAuthErrorMessage,
   generateCodeVerifier,
   parseOAuthCallbackUrl,
 } from "./oauth-helpers";
@@ -37,7 +38,7 @@ export interface AdminUserRecord {
   id: string;
   name: string;
   email: string;
-  provider: "supabase" | "local" | "admin";
+  provider: "google" | "email" | "supabase" | "local" | "admin";
   createdAt: number;
   lastActiveAt: number;
   loginCount: number;
@@ -55,7 +56,7 @@ export interface AdminAnalyticsEvent {
     | "ai_generate"
     | "kotha_dub"
     | "tool_open";
-  tool: "home" | "downloader" | "editor" | "thumbnail" | "ai" | "kotha";
+  tool: "home" | "downloader" | "editor" | "thumbnail" | "ai" | "kotha" | "mcp";
   title: string;
   userEmail: string;
   userName: string;
@@ -69,6 +70,7 @@ const LOCAL_USERS_KEY = "fahi_registered_users_v1";
 const ADMIN_USERS_INDEX_KEY = "fahi_admin_users_index_v1";
 const ADMIN_EVENTS_KEY = "fahi_admin_analytics_events_v1";
 const BLOCKED_EMAILS_KEY = "fahi_blocked_emails_v1";
+const ADMIN_SUPABASE_TOKEN_KEY = "fahi_admin_supabase_token_v1";
 
 export function getSupabaseConfig(): SupabaseConfig {
   const envUrl =
@@ -142,24 +144,43 @@ export function toggleBlockUserEmail(email: string): boolean {
   );
   localStorage.setItem(ADMIN_USERS_INDEX_KEY, JSON.stringify(updated));
 
-  // Sync block/unblock status directly to Supabase Cloud (fahi_user_profiles)
+  // Sync block/unblock status directly to Supabase Cloud (fahi_user_profiles) using admin JWT
   const { supabaseUrl, supabaseAnonKey, isConfigured } = getSupabaseConfig();
   if (isConfigured) {
-    fetch(
-      `${supabaseUrl}/rest/v1/fahi_user_profiles?email=eq.${encodeURIComponent(clean)}`,
-      {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: supabaseAnonKey,
-          Authorization: `Bearer ${supabaseAnonKey}`,
-        },
-        body: JSON.stringify({
-          is_blocked: nextBlockedState,
-          last_active_at: new Date().toISOString(),
-        }),
-      }
-    ).catch(() => {});
+    ensureAdminSupabaseSession()
+      .then(async (adminJwt) => {
+        if (!adminJwt) return;
+        const apiRes = await fetch("/api/admin/analytics", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${adminJwt}`,
+          },
+          body: JSON.stringify({
+            action: "toggle_block",
+            email: clean,
+            isBlocked: nextBlockedState,
+          }),
+        }).catch(() => null);
+        if (apiRes && apiRes.ok) return;
+
+        await fetch(
+          `${supabaseUrl}/rest/v1/fahi_user_profiles?email=eq.${encodeURIComponent(clean)}`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              apikey: supabaseAnonKey,
+              Authorization: `Bearer ${adminJwt}`,
+            },
+            body: JSON.stringify({
+              is_blocked: nextBlockedState,
+              last_active_at: new Date().toISOString(),
+            }),
+          }
+        );
+      })
+      .catch(() => {});
   }
 
   return nextBlockedState;
@@ -225,13 +246,24 @@ export function upsertAdminUserRecord(
     const now = Date.now();
     const existingIdx = list.findIndex((u) => u.email.toLowerCase() === cleanEmail);
 
+    const resolvedProvider: AdminUserRecord["provider"] =
+      cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase()
+        ? "admin"
+        : user.authMethod === "google"
+          ? "google"
+          : user.provider === "admin"
+            ? "admin"
+            : user.provider === "supabase"
+              ? "email"
+              : user.provider || "local";
+
     let record: AdminUserRecord;
     if (existingIdx >= 0) {
       const prev = list[existingIdx];
       record = {
         ...prev,
         name: user.name || prev.name,
-        provider: user.provider || prev.provider,
+        provider: resolvedProvider || prev.provider,
         lastActiveAt: now,
         loginCount: prev.loginCount + (incrementLogin ? 1 : 0),
         actionCount: prev.actionCount + (incrementAction ? 1 : 0),
@@ -243,7 +275,7 @@ export function upsertAdminUserRecord(
         id: user.id || `usr_${now}`,
         name: user.name || cleanEmail.split("@")[0] || "Creator",
         email: cleanEmail,
-        provider: user.provider || "local",
+        provider: resolvedProvider,
         createdAt: now,
         lastActiveAt: now,
         loginCount: 1,
@@ -344,7 +376,7 @@ export function recordAdminAnalyticsEvent(
 }
 
 export function recordTrafficVisit(
-  tab: "home" | "downloader" | "editor" | "thumbnail" | "ai" | "kotha"
+  tab: "home" | "downloader" | "editor" | "thumbnail" | "ai" | "kotha" | "mcp"
 ): void {
   if (typeof window === "undefined") return;
   const labels: Record<string, string> = {
@@ -354,12 +386,193 @@ export function recordTrafficVisit(
     thumbnail: "Opened HD Thumbnail Designer",
     ai: "Opened Aura AI Studio",
     kotha: "Opened Kotha Studio (কণ্ঠধ্বনি)",
+    mcp: "Opened MCP AI Connector Hub",
   };
   recordAdminAnalyticsEvent({
     type: tab === "home" ? "page_view" : "tool_open",
     tool: tab,
     title: labels[tab] || `Opened ${tab}`,
   });
+}
+
+function isAdminEmailAddress(email?: string | null): boolean {
+  const clean = String(email || "").trim().toLowerCase();
+  return (
+    clean === DEFAULT_ADMIN_EMAIL.toLowerCase() ||
+    clean === "auraajenticai@gmail.com"
+  );
+}
+
+function isJwtUnexpired(token: string): boolean {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return false;
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+    const payload = JSON.parse(atob(padded));
+    if (!payload?.exp) return true;
+    return Number(payload.exp) * 1000 > Date.now() + 30_000;
+  } catch {
+    return false;
+  }
+}
+
+export async function ensureAdminSupabaseSession(
+  email?: string,
+  password?: string
+): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+
+  const current = getCurrentUser();
+  if (current?.accessToken && isAdminEmailAddress(current.email) && isJwtUnexpired(current.accessToken)) {
+    localStorage.setItem(ADMIN_SUPABASE_TOKEN_KEY, current.accessToken);
+    return current.accessToken;
+  }
+
+  if (!email && !password) {
+    const cachedToken = localStorage.getItem(ADMIN_SUPABASE_TOKEN_KEY) || "";
+    if (cachedToken && isJwtUnexpired(cachedToken)) {
+      return cachedToken;
+    }
+  }
+
+  const isLocalAdminActive =
+    localStorage.getItem("fahi_admin_logged_in") === "true";
+  if (!isLocalAdminActive && (!email || !password)) {
+    return null;
+  }
+
+  const { supabaseUrl, supabaseAnonKey, isConfigured } = getSupabaseConfig();
+  if (!isConfigured) return null;
+
+  const candidateEmail = (
+    email ||
+    localStorage.getItem("fahi_admin_username") ||
+    DEFAULT_ADMIN_EMAIL
+  )
+    .trim()
+    .toLowerCase();
+  const candidatePass = (
+    password ||
+    localStorage.getItem("fahi_admin_password") ||
+    DEFAULT_ADMIN_PASS
+  ).trim();
+
+  if (!candidateEmail || !candidatePass) return null;
+
+  try {
+    const res = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: supabaseAnonKey,
+      },
+      body: JSON.stringify({ email: candidateEmail, password: candidatePass }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const token = String(data?.access_token || "");
+    if (!token) return null;
+
+    localStorage.setItem(ADMIN_SUPABASE_TOKEN_KEY, token);
+    if (!current || current.email.toLowerCase() === candidateEmail || !current.accessToken) {
+      const updatedSession: FahiUser = {
+        id: data.user?.id || current?.id || "super-admin",
+        email: candidateEmail,
+        name:
+          data.user?.user_metadata?.full_name ||
+          current?.name ||
+          "CEO — Aura Agentic AI",
+        accessToken: token,
+        refreshToken: data.refresh_token || current?.refreshToken,
+        provider: isAdminEmailAddress(candidateEmail) ? "admin" : "supabase",
+      };
+      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(updatedSession));
+    }
+    return token;
+  } catch {
+    return null;
+  }
+}
+
+export function clearAdminSupabaseToken(): void {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(ADMIN_SUPABASE_TOKEN_KEY);
+  }
+}
+
+function cacheAdminUsersList(cleanUsers: AdminUserRecord[]): void {
+  localStorage.setItem(ADMIN_USERS_INDEX_KEY, JSON.stringify(cleanUsers));
+  const cloudBlocked = cleanUsers
+    .filter((u) => u.isBlocked)
+    .map((u) => u.email.toLowerCase());
+  const localBlocked = getBlockedEmails().filter(
+    (e) => !LEGACY_SEED_EMAILS.has(e.toLowerCase())
+  );
+  const mergedBlocked = Array.from(new Set([...cloudBlocked, ...localBlocked]));
+  localStorage.setItem(BLOCKED_EMAILS_KEY, JSON.stringify(mergedBlocked));
+}
+
+function normalizeCloudUsersRows(rows: any[]): AdminUserRecord[] {
+  return rows
+    .filter(
+      (r: any) =>
+        r &&
+        r.email &&
+        !LEGACY_SEED_EMAILS.has(String(r.email).trim().toLowerCase())
+    )
+    .map((r: any, i: number) => {
+      const email = String(r.email).trim().toLowerCase();
+      return {
+        id: r.id || `cloud_u_${i}`,
+        name: r.name || "Creator",
+        email,
+        provider:
+          email === DEFAULT_ADMIN_EMAIL.toLowerCase()
+            ? "admin"
+            : r.provider || "supabase",
+        createdAt: r.created_at
+          ? new Date(r.created_at).getTime()
+          : typeof r.createdAt === "number"
+            ? r.createdAt
+            : Date.now(),
+        lastActiveAt: r.last_active_at
+          ? new Date(r.last_active_at).getTime()
+          : typeof r.lastActiveAt === "number"
+            ? r.lastActiveAt
+            : Date.now(),
+        loginCount: Number(r.login_count ?? r.loginCount) || 1,
+        actionCount: Number(r.action_count ?? r.actionCount) || 0,
+        isBlocked:
+          email === DEFAULT_ADMIN_EMAIL.toLowerCase()
+            ? false
+            : Boolean(r.is_blocked ?? r.isBlocked),
+      };
+    });
+}
+
+function normalizeCloudEventsRows(rows: any[]): AdminAnalyticsEvent[] {
+  return rows
+    .filter(
+      (r: any) =>
+        r &&
+        !LEGACY_SEED_EMAILS.has(
+          String(r.user_email ?? r.userEmail ?? "").trim().toLowerCase()
+        )
+    )
+    .map((r: any, i: number) => ({
+      id: r.id || `cloud_e_${i}`,
+      type: r.event_type || r.type || "tool_open",
+      tool: r.tool || "home",
+      title: r.title || r.action || "Studio Action",
+      userEmail: r.user_email || r.userEmail || "guest@public-visitor",
+      userName: r.user_name || r.userName || "Visitor",
+      timestamp: r.created_at
+        ? new Date(r.created_at).getTime()
+        : typeof r.timestamp === "number"
+          ? r.timestamp
+          : Date.now(),
+    }));
 }
 
 export async function fetchCloudAdminAnalytics(): Promise<{
@@ -370,22 +583,45 @@ export async function fetchCloudAdminAnalytics(): Promise<{
   if (!isConfigured || typeof window === "undefined") return {};
 
   try {
+    const adminJwt = await ensureAdminSupabaseSession();
+    if (adminJwt) {
+      const apiRes = await fetch("/api/admin/analytics", {
+        headers: { Authorization: `Bearer ${adminJwt}` },
+        cache: "no-store",
+      }).catch(() => null);
+      if (apiRes && apiRes.ok) {
+        const apiData = await apiRes.json().catch(() => null);
+        if (apiData && Array.isArray(apiData.users) && Array.isArray(apiData.events)) {
+          const cleanUsers = normalizeCloudUsersRows(apiData.users);
+          const cleanEvents = normalizeCloudEventsRows(apiData.events);
+          if (cleanUsers.length > 0) {
+            cacheAdminUsersList(cleanUsers);
+          }
+          if (cleanEvents.length > 0) {
+            localStorage.setItem(ADMIN_EVENTS_KEY, JSON.stringify(cleanEvents));
+          }
+          return { users: cleanUsers, events: cleanEvents };
+        }
+      }
+    }
+
+    const authToken = adminJwt || getCurrentUser()?.accessToken || supabaseAnonKey;
     const [usersRes, eventsRes] = await Promise.all([
       fetch(
-        `${supabaseUrl}/rest/v1/fahi_user_profiles?select=*&order=last_active_at.desc&limit=200`,
+        `${supabaseUrl}/rest/v1/fahi_user_profiles?select=*&order=last_active_at.desc&limit=500`,
         {
           headers: {
             apikey: supabaseAnonKey,
-            Authorization: `Bearer ${supabaseAnonKey}`,
+            Authorization: `Bearer ${authToken}`,
           },
         }
       ),
       fetch(
-        `${supabaseUrl}/rest/v1/fahi_analytics_events?select=*&order=created_at.desc&limit=200`,
+        `${supabaseUrl}/rest/v1/fahi_analytics_events?select=*&order=created_at.desc&limit=1000`,
         {
           headers: {
             apikey: supabaseAnonKey,
-            Authorization: `Bearer ${supabaseAnonKey}`,
+            Authorization: `Bearer ${authToken}`,
           },
         }
       ),
@@ -394,68 +630,16 @@ export async function fetchCloudAdminAnalytics(): Promise<{
     const result: { users?: AdminUserRecord[]; events?: AdminAnalyticsEvent[] } = {};
     if (usersRes.ok) {
       const rows = await usersRes.json();
-      if (Array.isArray(rows)) {
-        const cleanUsers = rows
-          .filter(
-            (r: any) =>
-              r &&
-              r.email &&
-              !LEGACY_SEED_EMAILS.has(String(r.email).trim().toLowerCase())
-          )
-          .map((r: any, i: number) => ({
-            id: r.id || `cloud_u_${i}`,
-            name: r.name || "Creator",
-            email: String(r.email).trim().toLowerCase(),
-            provider: r.provider || "supabase",
-            createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
-            lastActiveAt: r.last_active_at
-              ? new Date(r.last_active_at).getTime()
-              : Date.now(),
-            loginCount: Number(r.login_count) || 1,
-            actionCount: Number(r.action_count) || 0,
-            isBlocked:
-              String(r.email).trim().toLowerCase() ===
-              DEFAULT_ADMIN_EMAIL.toLowerCase()
-                ? false
-                : Boolean(r.is_blocked),
-          }));
-
+      if (Array.isArray(rows) && (rows.length > 0 || Boolean(adminJwt))) {
+        const cleanUsers = normalizeCloudUsersRows(rows);
         result.users = cleanUsers;
-        localStorage.setItem(ADMIN_USERS_INDEX_KEY, JSON.stringify(cleanUsers));
-
-        const cloudBlocked = cleanUsers
-          .filter((u) => u.isBlocked)
-          .map((u) => u.email.toLowerCase());
-        const localBlocked = getBlockedEmails().filter(
-          (e) => !LEGACY_SEED_EMAILS.has(e.toLowerCase())
-        );
-        const mergedBlocked = Array.from(
-          new Set([...cloudBlocked, ...localBlocked])
-        );
-        localStorage.setItem(BLOCKED_EMAILS_KEY, JSON.stringify(mergedBlocked));
+        cacheAdminUsersList(cleanUsers);
       }
     }
     if (eventsRes.ok) {
       const rows = await eventsRes.json();
-      if (Array.isArray(rows)) {
-        const cleanEvents = rows
-          .filter(
-            (r: any) =>
-              r &&
-              !LEGACY_SEED_EMAILS.has(
-                String(r.user_email || "").trim().toLowerCase()
-              )
-          )
-          .map((r: any, i: number) => ({
-            id: r.id || `cloud_e_${i}`,
-            type: r.event_type || "tool_open",
-            tool: r.tool || "home",
-            title: r.title || r.action || "Studio Action",
-            userEmail: r.user_email || "guest@public-visitor",
-            userName: r.user_name || "Visitor",
-            timestamp: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
-          }));
-
+      if (Array.isArray(rows) && (rows.length > 0 || Boolean(adminJwt))) {
+        const cleanEvents = normalizeCloudEventsRows(rows);
         result.events = cleanEvents;
         localStorage.setItem(ADMIN_EVENTS_KEY, JSON.stringify(cleanEvents));
       }
@@ -869,10 +1053,19 @@ export async function handleOAuthCallbackOnLoad(): Promise<{
 
   if (parsed.kind === "error") {
     const rawErr = parsed.errorMessage || "Google sign-in was cancelled or denied.";
-    const friendly = rawErr.toLowerCase().includes("not enabled")
-      ? "Supabase ড্যাশবোর্ডে Google Provider এখনো চালু করা হয়নি। Authentication -> Providers -> Google অন করুন।"
-      : rawErr;
-    return { error: friendly, pendingTab };
+    const isStaleStateError =
+      parsed.errorCode === "bad_oauth_state" ||
+      /state not found|expired/i.test(rawErr);
+    if (isStaleStateError) {
+      const existingUser = getCurrentUser();
+      if (existingUser?.email && existingUser?.accessToken) {
+        return { user: existingUser, pendingTab };
+      }
+    }
+    return {
+      error: formatOAuthErrorMessage(rawErr, parsed.errorCode),
+      pendingTab,
+    };
   }
 
   const { supabaseUrl, supabaseAnonKey, isConfigured } = getSupabaseConfig();

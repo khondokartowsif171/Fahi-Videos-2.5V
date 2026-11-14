@@ -4,6 +4,7 @@ export interface ParsedOAuthCallback {
   accessToken?: string;
   refreshToken?: string;
   expiresIn?: number;
+  errorCode?: string;
   errorMessage?: string;
   cleanUrl: string;
 }
@@ -95,8 +96,10 @@ export function parseOAuthCallbackUrl(href: string): ParsedOAuthCallback {
 
   const queryErrorDesc =
     url.searchParams.get('error_description') || url.searchParams.get('error');
+  const queryErrorCode = url.searchParams.get('error_code');
   const hashErrorDesc =
     hashParams.get('error_description') || hashParams.get('error');
+  const hashErrorCode = hashParams.get('error_code');
   const code = url.searchParams.get('code') || undefined;
   const accessToken = hashParams.get('access_token') || undefined;
   const refreshToken = hashParams.get('refresh_token') || undefined;
@@ -122,8 +125,14 @@ export function parseOAuthCallbackUrl(href: string): ParsedOAuthCallback {
   const cleanUrl = url.toString();
 
   const errorMessage = (queryErrorDesc || hashErrorDesc || '').trim();
-  if (errorMessage) {
-    return { kind: 'error', errorMessage, cleanUrl };
+  const errorCode = (queryErrorCode || hashErrorCode || '').trim() || undefined;
+  if (errorMessage || errorCode) {
+    return {
+      kind: 'error',
+      errorCode,
+      errorMessage: errorMessage || errorCode,
+      cleanUrl,
+    };
   }
   if (code) {
     return { kind: 'pkce', code, cleanUrl };
@@ -138,6 +147,35 @@ export function parseOAuthCallbackUrl(href: string): ParsedOAuthCallback {
     };
   }
   return { kind: 'none', cleanUrl };
+}
+
+/** Convert raw OAuth/Supabase callback errors into clear, actionable guidance. */
+export function formatOAuthErrorMessage(
+  errorMessage: string,
+  errorCode?: string
+): string {
+  const raw = (errorMessage || '').trim();
+  const lower = raw.toLowerCase();
+  const code = (errorCode || '').trim().toLowerCase();
+
+  if (
+    code === 'bad_oauth_state' ||
+    lower.includes('state not found') ||
+    (lower.includes('oauth state') && lower.includes('expired'))
+  ) {
+    return 'গুগল সাইন-ইন লিংক বা সেশনের মেয়াদ শেষ হয়েছে অথবা পুরনো ট্যাব রিফ্রেশ হয়েছে (OAuth state expired)। অনুগ্রহ করে নিচের "Continue with Google" বাটনে আবার ক্লিক করুন।';
+  }
+  if (lower.includes('not enabled')) {
+    return 'Supabase ড্যাশবোর্ডে Google Provider এখনো চালু করা হয়নি। Authentication -> Providers -> Google অন করুন।';
+  }
+  if (
+    code === 'access_denied' ||
+    lower === 'access_denied' ||
+    lower.includes('cancelled')
+  ) {
+    return 'Google সাইন-ইন বাতিল করা হয়েছে। আবার চেষ্টা করতে "Continue with Google" চাপুন।';
+  }
+  return raw || 'Google sign-in could not be completed. Please try again.';
 }
 
 /** Normalize a GoTrue user/session response into FahiVids's session model. */

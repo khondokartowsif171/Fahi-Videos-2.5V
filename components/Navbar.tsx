@@ -170,7 +170,7 @@ export default function Navbar({
           >
             <FahiVidsLogo size={26} />
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 min-w-0">
             {isEmbedded && (
               <select
                 aria-label="Studio tool"
@@ -189,11 +189,20 @@ export default function Navbar({
             {!isEmbedded && currentUser ? (
               <button
                 onClick={() => void signOutUser()}
-                className="p-1.5 bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 rounded-lg text-xs font-bold flex items-center gap-1"
-                title="Sign Out"
+                className="px-2 py-1.5 bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 rounded-lg text-[11px] font-bold flex items-center gap-1 max-w-[104px] min-w-0 shrink-0"
+                title={`Signed in as ${currentUser.name} (${currentUser.email}) — Tap to Sign Out`}
               >
-                <UserCheck className="w-3.5 h-3.5" />
-                <LogOut className="w-3.5 h-3.5 text-red-300" />
+                {currentUser.avatarUrl ? (
+                  <img
+                    src={currentUser.avatarUrl}
+                    alt={currentUser.name}
+                    className="w-4 h-4 rounded-full object-cover shrink-0 border border-emerald-400/50"
+                  />
+                ) : (
+                  <UserCheck className="w-3.5 h-3.5 shrink-0" />
+                )}
+                <span className="truncate">{currentUser.name}</span>
+                <LogOut className="w-3.5 h-3.5 text-red-300 shrink-0" />
               </button>
             ) : !isEmbedded ? (
               <button

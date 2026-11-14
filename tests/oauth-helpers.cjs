@@ -5,6 +5,7 @@ const {
   createPkceChallenge,
   buildSupabaseGoogleAuthorizeUrl,
   parseOAuthCallbackUrl,
+  formatOAuthErrorMessage,
   extractSupabaseOAuthUser,
 } = require('../lib/oauth-helpers.ts');
 
@@ -59,13 +60,30 @@ const {
   assert.equal(normalAnchor.kind, 'none');
   assert.equal(normalAnchor.cleanUrl, 'https://fahi-videos.auraajenticai.cloud/#kotha');
 
-  // Error callback normalization
+  // Error callback normalization + expired OAuth state handling
   const errCb = parseOAuthCallbackUrl(
     'https://fahi-videos.auraajenticai.cloud/?error=access_denied&error_description=User+denied'
   );
   assert.equal(errCb.kind, 'error');
   assert.equal(errCb.errorMessage, 'User denied');
   assert.equal(errCb.cleanUrl, 'https://fahi-videos.auraajenticai.cloud/');
+
+  const expiredCb = parseOAuthCallbackUrl(
+    'https://fahi-videos.auraajenticai.cloud/?error=invalid_request&error_code=bad_oauth_state&error_description=OAuth+state+not+found+or+expired'
+  );
+  assert.equal(expiredCb.kind, 'error');
+  assert.equal(expiredCb.errorCode, 'bad_oauth_state');
+  assert.equal(expiredCb.errorMessage, 'OAuth state not found or expired');
+  assert.equal(expiredCb.cleanUrl, 'https://fahi-videos.auraajenticai.cloud/');
+  const friendlyExpired = formatOAuthErrorMessage(
+    expiredCb.errorMessage,
+    expiredCb.errorCode
+  );
+  assert.match(friendlyExpired, /OAuth state expired/);
+  assert.match(friendlyExpired, /Continue with Google/);
+
+  const deniedMsg = formatOAuthErrorMessage('User denied access', 'access_denied');
+  assert.match(deniedMsg, /Continue with Google/);
 
   // Normalized user mapping for Google OAuth user
   const user = extractSupabaseOAuthUser(

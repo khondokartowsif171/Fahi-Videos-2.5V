@@ -33,6 +33,8 @@ import {
   toggleBlockUserEmail,
   getSupabaseConfig,
   upsertAdminUserRecord,
+  ensureAdminSupabaseSession,
+  clearAdminSupabaseToken,
   DEFAULT_ADMIN_EMAIL,
   DEFAULT_ADMIN_PASS,
   type AdminUserRecord,
@@ -45,38 +47,34 @@ interface AdminLoginModalProps {
   onClose: () => void;
 }
 
-const SUPABASE_SQL_SNIPPET = `-- Run this once in your Supabase SQL Editor (https://supabase.com/dashboard)
--- to sync all Registered Users & Live Traffic Logs across all devices!
+const SUPABASE_SQL_SNIPPET = `-- Secure Production Sync (Active on spkrpwlavvbeooxijubv)
+-- Automatically mirrors Google & Email sign-ins from auth.users -> public.fahi_user_profiles
+-- with JWT-verified Super Admin RLS policies (is_fahi_admin()).
 
-create table if not exists public.fahi_user_profiles (
-  email text primary key,
-  name text not null,
-  provider text default 'supabase',
-  created_at timestamptz default now(),
-  last_active_at timestamptz default now(),
-  login_count integer default 1,
-  action_count integer default 0,
-  is_blocked boolean default false
-);
-
-create table if not exists public.fahi_analytics_events (
-  id uuid primary key default gen_random_uuid(),
-  event_type text not null,
-  tool text not null,
-  title text not null,
-  user_email text not null,
-  user_name text not null,
-  created_at timestamptz default now()
-);
+create or replace function public.is_fahi_admin()
+returns boolean language sql stable security definer set search_path = public as $$
+  select lower(coalesce(auth.jwt() ->> 'email', '')) in ('ceo@auraajenticai.cloud', 'auraajenticai@gmail.com')
+      or lower(coalesce(auth.jwt() -> 'user_metadata' ->> 'role', '')) = 'admin';
+$$;
 
 alter table public.fahi_user_profiles enable row level security;
 alter table public.fahi_analytics_events enable row level security;
 
-create policy "Allow anon read/write user profiles"
-  on public.fahi_user_profiles for all using (true) with check (true);
+create policy "Users can view own profile" on public.fahi_user_profiles
+  for select to authenticated using (lower(auth.jwt() ->> 'email') = lower(email) or public.is_fahi_admin());
+create policy "Users can insert own profile" on public.fahi_user_profiles
+  for insert to authenticated with check (lower(auth.jwt() ->> 'email') = lower(email) or public.is_fahi_admin());
+create policy "Users can update own profile" on public.fahi_user_profiles
+  for update to authenticated using (lower(auth.jwt() ->> 'email') = lower(email) or public.is_fahi_admin())
+  with check (lower(auth.jwt() ->> 'email') = lower(email) or public.is_fahi_admin());
+create policy "Admin can view analytics events" on public.fahi_analytics_events
+  for select to authenticated using (public.is_fahi_admin());`;
 
-create policy "Allow anon read/write analytics events"
-  on public.fahi_analytics_events for all using (true) with check (true);`;
+function getProviderBadgeClass(isMasterCeo: boolean, provider: string): string {
+  if (isMasterCeo) return "bg-violet-500/20 border-violet-500/30 text-violet-300";
+  if (provider === "google") return "bg-cyan-500/20 border-cyan-500/30 text-cyan-300";
+  return "bg-indigo-500/20 border-indigo-500/30 text-indigo-300";
+}
 
 export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProps) {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -280,7 +278,7 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
 
   if (!isOpen) return null;
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const savedUser = (
       localStorage.getItem("fahi_admin_username") || DEFAULT_ADMIN_EMAIL
@@ -304,10 +302,12 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
       localStorage.setItem("fahi_admin_username", inputUser);
       localStorage.setItem("fahi_admin_password", inputPass);
 
+      const adminJwt = await ensureAdminSupabaseSession(inputUser, inputPass);
       const adminUserSession: FahiUser = {
         id: "super-admin",
         email: inputUser.includes("@") ? inputUser : DEFAULT_ADMIN_EMAIL,
         name: "CEO — Aura Agentic AI",
+        accessToken: adminJwt || undefined,
         provider: "admin",
       };
       localStorage.setItem(
@@ -318,7 +318,7 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
 
       setIsLoggedIn(true);
       setErrorMsg("");
-      refreshAnalytics();
+      await refreshAnalytics();
       if (typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("fahi-admin-login-change", { detail: { isLoggedIn: true } })
@@ -353,6 +353,7 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
   const handleLogout = () => {
     localStorage.removeItem("fahi_admin_logged_in");
     localStorage.removeItem("fahi_auth_session_v1");
+    clearAdminSupabaseToken();
     setIsLoggedIn(false);
     setUsername("");
     setPassword("");
@@ -874,7 +875,12 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
                                 <span className="text-sm font-extrabold text-white">
                                   {u.name}
                                 </span>
-                                <span className="px-2 py-0.5 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-[10px] font-mono font-bold uppercase">
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase border ${getProviderBadgeClass(
+                                    isMasterCeo,
+                                    u.provider
+                                  )}`}
+                                >
                                   {isMasterCeo ? "SUPER ADMIN / CEO" : u.provider}
                                 </span>
                                 {u.isBlocked ? (
@@ -1172,7 +1178,12 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
                                   <span className="text-xs sm:text-sm font-extrabold text-white">
                                     {u.name}
                                   </span>
-                                  <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-[10px] font-mono uppercase font-bold">
+                                  <span
+                                    className={`px-2 py-0.5 rounded border text-[10px] font-mono uppercase font-bold ${getProviderBadgeClass(
+                                      isMasterCeo,
+                                      u.provider
+                                    )}`}
+                                  >
                                     {isMasterCeo ? "SUPER ADMIN / CEO" : u.provider}
                                   </span>
                                   <span
