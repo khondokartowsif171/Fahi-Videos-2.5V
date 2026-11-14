@@ -18,7 +18,6 @@ Official Directories: **[mcprush](https://mcprush.com/khondokartowsif171/fahi-vi
 - **📥 Universal Media Downloader**: 100% free multi-engine stream extraction for **YouTube, Facebook, Instagram Reels, and TikTok** with 1080p/720p/MP3 stream fallback.
 - **✂️ CapCut Pro Video Studio**: Browser-based NLE video editing with left-aligned `00:00:00:00` timeline, precision clip trimming (`minIn`/`maxOut`), keyframe easing, CSS mask shapes, HSL/Curves color grading, and `.SRT` subtitle rendering.
 - **☁️ Cloud Project Sync**: Cross-device project sync and Google / email authentication for creators, with automatic offline draft recovery.
-
 - **🤖 World-Class MCP Connector (`/mcp`)**: 10 free-first MCP tools, 4 studio resources, 3 prompts, and a zero-dependency stdio bridge for Claude Desktop, Cursor, Windsurf, Cline, and Antigravity.
 
 ---

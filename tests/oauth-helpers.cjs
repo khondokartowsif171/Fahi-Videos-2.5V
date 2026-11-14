@@ -1,5 +1,8 @@
 require('./register-typescript.cjs');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const {
   generateCodeVerifier,
   createPkceChallenge,
@@ -113,7 +116,38 @@ const {
     authMethod: 'google',
   });
 
-  console.log('PASS: Supabase Google OAuth PKCE/implicit helpers verified.');
+  // Public repo & auth security hygiene regression guards
+  const repoRoot = path.resolve(__dirname, '..');
+  const supabaseClientSrc = fs.readFileSync(path.join(repoRoot, 'lib', 'supabase-client.ts'), 'utf8');
+  const adminModalSrc = fs.readFileSync(path.join(repoRoot, 'components', 'AdminLoginModal.tsx'), 'utf8');
+  const readmeSrc = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8');
+  const gitignoreSrc = fs.readFileSync(path.join(repoRoot, '.gitignore'), 'utf8');
+
+  for (const src of [supabaseClientSrc, adminModalSrc]) {
+    assert.doesNotMatch(src, /DEFAULT_ADMIN_PASS/);
+    assert.doesNotMatch(src, /(getItem|setItem)\s*\(\s*['"]fahi_admin_password['"]/);
+    assert.doesNotMatch(src, /default:\s*admin123/i);
+  }
+  assert.doesNotMatch(readmeSrc, /spkrpwlavvbeooxijubv/i);
+  assert.doesNotMatch(readmeSrc, /\.supabase\.co/i);
+  assert.doesNotMatch(readmeSrc, /\(\/admin\)/i);
+  assert.doesNotMatch(readmeSrc, /D:\/Fahi-videos/i);
+  assert.match(gitignoreSrc, /(^|\r?\n)MASTER\.md(\r?\n|$)/);
+
+  if (fs.existsSync(path.join(repoRoot, '.git'))) {
+    const trackedMaster = execFileSync('git', ['ls-files', 'MASTER.md'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    }).trim();
+    assert.equal(trackedMaster, '');
+    const ignoredMaster = execFileSync('git', ['check-ignore', 'MASTER.md'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    }).trim();
+    assert.equal(ignoredMaster, 'MASTER.md');
+  }
+
+  console.log('PASS: Supabase Google OAuth PKCE/implicit helpers & public repo security hygiene verified.');
 })().catch((err) => {
   console.error(err);
   process.exitCode = 1;

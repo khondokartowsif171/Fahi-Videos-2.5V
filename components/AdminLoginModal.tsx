@@ -32,14 +32,13 @@ import {
   fetchCloudAdminAnalytics,
   toggleBlockUserEmail,
   getSupabaseConfig,
-  upsertAdminUserRecord,
-  ensureAdminSupabaseSession,
+  hasValidAdminSession,
+  authenticateAdminWithSupabase,
+  updateAdminSupabasePassword,
   clearAdminSupabaseToken,
   DEFAULT_ADMIN_EMAIL,
-  DEFAULT_ADMIN_PASS,
   type AdminUserRecord,
   type AdminAnalyticsEvent,
-  type FahiUser,
 } from "@/lib/supabase-client";
 
 interface AdminLoginModalProps {
@@ -81,6 +80,7 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
   // Active dashboard tab
@@ -108,10 +108,10 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
   const [aiUhdEnabled, setAiUhdEnabled] = useState(true);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
-  // Change Admin Credentials state
-  const [newUsername, setNewUsername] = useState("");
+  // Change Admin Password state
   const [newPassword, setNewPassword] = useState("");
   const [credChangeSuccess, setCredChangeSuccess] = useState(false);
+  const [credChangeError, setCredChangeError] = useState("");
 
   const refreshAnalytics = async () => {
     if (typeof window === "undefined") return;
@@ -146,19 +146,15 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
 
   useEffect(() => {
     if (typeof window !== "undefined" && isOpen) {
-      const logged = localStorage.getItem("fahi_admin_logged_in") === "true";
+      localStorage.removeItem("fahi_admin_password");
+      const logged = hasValidAdminSession();
       setIsLoggedIn(logged);
 
+      const supaCfg = getSupabaseConfig();
       setGeminiApiKey(localStorage.getItem("fahi_gemini_api_key") || "");
       setN8nWebhookUrl(localStorage.getItem("fahi_n8n_webhook_url") || "");
-      setSupabaseUrl(
-        localStorage.getItem("fahi_supabase_url") ||
-          "https://spkrpwlavvbeooxijubv.supabase.co"
-      );
-      setSupabaseAnonKey(
-        localStorage.getItem("fahi_supabase_anon_key") ||
-          "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNwa3Jwd2xhdnZiZW9veGlqdWJ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI5NTIwODQsImV4cCI6MjEwODUyODA4NH0.cMOHFmKwBYw4hDbLu6Q4EwRB7pXIT9V2D9A42lq2J2A"
-      );
+      setSupabaseUrl(supaCfg.supabaseUrl);
+      setSupabaseAnonKey(supaCfg.supabaseAnonKey);
       setUseN8n(localStorage.getItem("fahi_use_n8n") === "true");
       setAiUhdEnabled(localStorage.getItem("fahi_ai_uhd") !== "false");
 
@@ -280,74 +276,41 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const savedUser = (
-      localStorage.getItem("fahi_admin_username") || DEFAULT_ADMIN_EMAIL
-    )
-      .trim()
-      .toLowerCase();
-    const savedPass = (
-      localStorage.getItem("fahi_admin_password") || DEFAULT_ADMIN_PASS
-    ).trim();
-
-    const inputUser = username.trim().toLowerCase();
-    const inputPass = password.trim();
-
-    const isDefaultMatch =
-      inputUser === DEFAULT_ADMIN_EMAIL.toLowerCase() &&
-      inputPass === DEFAULT_ADMIN_PASS;
-    const isSavedMatch = inputUser === savedUser && inputPass === savedPass;
-
-    if (isDefaultMatch || isSavedMatch) {
-      localStorage.setItem("fahi_admin_logged_in", "true");
-      localStorage.setItem("fahi_admin_username", inputUser);
-      localStorage.setItem("fahi_admin_password", inputPass);
-
-      const adminJwt = await ensureAdminSupabaseSession(inputUser, inputPass);
-      const adminUserSession: FahiUser = {
-        id: "super-admin",
-        email: inputUser.includes("@") ? inputUser : DEFAULT_ADMIN_EMAIL,
-        name: "CEO — Aura Agentic AI",
-        accessToken: adminJwt || undefined,
-        provider: "admin",
-      };
-      localStorage.setItem(
-        "fahi_auth_session_v1",
-        JSON.stringify(adminUserSession)
-      );
-      upsertAdminUserRecord(adminUserSession, true, false);
+    if (isLoggingIn) return;
+    setIsLoggingIn(true);
+    setErrorMsg("");
+    try {
+      const auth = await authenticateAdminWithSupabase(username, password);
+      if (!auth.accessToken || auth.error) {
+        setErrorMsg(auth.error || "Invalid Admin Email or Password.");
+        return;
+      }
 
       setIsLoggedIn(true);
-      setErrorMsg("");
+      setPassword("");
       await refreshAnalytics();
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(
-          new CustomEvent("fahi-admin-login-change", { detail: { isLoggedIn: true } })
-        );
-        window.dispatchEvent(
-          new CustomEvent("fahi-user-auth-change", {
-            detail: { user: adminUserSession },
-          })
-        );
-      }
-    } else {
-      setErrorMsg("Invalid Admin Email or Password.");
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
-  const handleChangeAdminCredentials = (e: React.FormEvent) => {
+  const handleChangeAdminCredentials = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUsername.trim() || !newPassword.trim()) return;
+    if (!newPassword.trim()) return;
+    setCredChangeError("");
+    setCredChangeSuccess(false);
 
-    localStorage.setItem("fahi_admin_username", newUsername.trim());
-    localStorage.setItem("fahi_admin_password", newPassword.trim());
+    const res = await updateAdminSupabasePassword(newPassword);
+    if (!res.success) {
+      setCredChangeError(res.error || "Failed to update Admin password.");
+      return;
+    }
 
     setCredChangeSuccess(true);
-    setNewUsername("");
     setNewPassword("");
-
     setTimeout(() => {
       setCredChangeSuccess(false);
-    }, 2500);
+    }, 3000);
   };
 
   const handleLogout = () => {
@@ -581,7 +544,7 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
               <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
                 <span className="flex items-center space-x-1.5">
                   <Lock className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Admin Passcode</span>
+                  <span>Admin Password</span>
                 </span>
                 <button
                   type="button"
@@ -604,10 +567,11 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
 
             <button
               type="submit"
-              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-violet-500/25 transition-all flex items-center justify-center space-x-2 cursor-pointer"
+              disabled={isLoggingIn}
+              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 disabled:opacity-60 text-white text-xs font-bold shadow-lg shadow-violet-500/25 transition-all flex items-center justify-center space-x-2 cursor-pointer"
             >
               <ShieldCheck className="w-4 h-4" />
-              <span>Log In to Admin Dashboard</span>
+              <span>{isLoggingIn ? "Verifying with Supabase..." : "Log In to Admin Dashboard"}</span>
             </button>
           </form>
         ) : (
@@ -1481,50 +1445,43 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
                   )}
                 </button>
 
-                {/* Change Admin Username & Password Form */}
+                {/* Rotate Supabase Super Admin Password Form */}
                 <form
                   onSubmit={handleChangeAdminCredentials}
                   className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-3"
                 >
                   <div className="flex items-center space-x-2 text-violet-300 font-bold text-xs">
                     <Lock className="w-4 h-4 text-violet-400" />
-                    <span>Change Super Admin Username & Password</span>
+                    <span>Rotate Supabase Super Admin Password</span>
                   </div>
+
+                  {credChangeError && (
+                    <div className="p-2 rounded-lg bg-red-500/20 border border-red-500/30 text-[11px] text-red-300 flex items-center space-x-1.5 font-bold">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{credChangeError}</span>
+                    </div>
+                  )}
 
                   {credChangeSuccess && (
                     <div className="p-2 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-[11px] text-emerald-300 flex items-center space-x-1.5 font-bold">
                       <Check className="w-3.5 h-3.5" />
-                      <span>Admin credentials updated!</span>
+                      <span>Supabase Admin password updated!</span>
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <span className="text-[10px] text-slate-400 font-bold uppercase block">
-                        New Username
-                      </span>
-                      <input
-                        type="text"
-                        placeholder="New admin user..."
-                        value={newUsername}
-                        onChange={(e) => setNewUsername(e.target.value)}
-                        required
-                        className="w-full bg-black/60 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 font-mono"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <span className="text-[10px] text-slate-400 font-bold uppercase block">
-                        New Password
-                      </span>
-                      <input
-                        type="password"
-                        placeholder="New password..."
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                        required
-                        className="w-full bg-black/60 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 font-mono"
-                      />
-                    </div>
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase block">
+                      New Strong Password (Min 8 chars)
+                    </span>
+                    <input
+                      type="password"
+                      minLength={8}
+                      placeholder="Enter new strong Supabase password..."
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      required
+                      className="w-full bg-black/60 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 font-mono"
+                    />
                   </div>
 
                   <button
@@ -1532,7 +1489,7 @@ export default function AdminLoginModal({ isOpen, onClose }: AdminLoginModalProp
                     className="w-full py-2 rounded-xl bg-violet-600/30 hover:bg-violet-600/50 text-violet-200 border border-violet-500/40 text-xs font-bold transition-all flex items-center justify-center space-x-1.5 cursor-pointer"
                   >
                     <Lock className="w-3.5 h-3.5" />
-                    <span>Update Admin Credentials</span>
+                    <span>Update Admin Password on Supabase</span>
                   </button>
                 </form>
               </div>

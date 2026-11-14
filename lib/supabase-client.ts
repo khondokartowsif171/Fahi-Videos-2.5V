@@ -417,48 +417,44 @@ function isJwtUnexpired(token: string): boolean {
   }
 }
 
-export async function ensureAdminSupabaseSession(
-  email?: string,
-  password?: string
-): Promise<string | null> {
-  if (typeof window === "undefined") return null;
-
+export function hasValidAdminSession(): boolean {
+  if (typeof window === "undefined") return false;
   const current = getCurrentUser();
-  if (current?.accessToken && isAdminEmailAddress(current.email) && isJwtUnexpired(current.accessToken)) {
-    localStorage.setItem(ADMIN_SUPABASE_TOKEN_KEY, current.accessToken);
-    return current.accessToken;
+  if (
+    current?.accessToken &&
+    isAdminEmailAddress(current.email) &&
+    isJwtUnexpired(current.accessToken)
+  ) {
+    return true;
   }
+  const cachedToken = localStorage.getItem(ADMIN_SUPABASE_TOKEN_KEY) || "";
+  return Boolean(
+    localStorage.getItem("fahi_admin_logged_in") === "true" &&
+      cachedToken &&
+      isJwtUnexpired(cachedToken)
+  );
+}
 
-  if (!email && !password) {
-    const cachedToken = localStorage.getItem(ADMIN_SUPABASE_TOKEN_KEY) || "";
-    if (cachedToken && isJwtUnexpired(cachedToken)) {
-      return cachedToken;
-    }
+export async function authenticateAdminWithSupabase(
+  email: string,
+  password: string
+): Promise<{ user?: FahiUser; accessToken?: string; error?: string }> {
+  if (typeof window === "undefined") {
+    return { error: "Admin login requires a browser session." };
   }
-
-  const isLocalAdminActive =
-    localStorage.getItem("fahi_admin_logged_in") === "true";
-  if (!isLocalAdminActive && (!email || !password)) {
-    return null;
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanPass = password.trim();
+  if (!cleanEmail || !cleanPass) {
+    return { error: "Admin email and password are required." };
+  }
+  if (!isAdminEmailAddress(cleanEmail)) {
+    return { error: "Unauthorized: only verified Super Admin accounts may sign in." };
   }
 
   const { supabaseUrl, supabaseAnonKey, isConfigured } = getSupabaseConfig();
-  if (!isConfigured) return null;
-
-  const candidateEmail = (
-    email ||
-    localStorage.getItem("fahi_admin_username") ||
-    DEFAULT_ADMIN_EMAIL
-  )
-    .trim()
-    .toLowerCase();
-  const candidatePass = (
-    password ||
-    localStorage.getItem("fahi_admin_password") ||
-    DEFAULT_ADMIN_PASS
-  ).trim();
-
-  if (!candidateEmail || !candidatePass) return null;
+  if (!isConfigured) {
+    return { error: "Supabase Auth configuration is missing." };
+  }
 
   try {
     const res = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
@@ -467,37 +463,119 @@ export async function ensureAdminSupabaseSession(
         "Content-Type": "application/json",
         apikey: supabaseAnonKey,
       },
-      body: JSON.stringify({ email: candidateEmail, password: candidatePass }),
+      body: JSON.stringify({ email: cleanEmail, password: cleanPass }),
     });
-    if (!res.ok) return null;
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     const token = String(data?.access_token || "");
-    if (!token) return null;
-
-    localStorage.setItem(ADMIN_SUPABASE_TOKEN_KEY, token);
-    if (!current || current.email.toLowerCase() === candidateEmail || !current.accessToken) {
-      const updatedSession: FahiUser = {
-        id: data.user?.id || current?.id || "super-admin",
-        email: candidateEmail,
-        name:
-          data.user?.user_metadata?.full_name ||
-          current?.name ||
-          "CEO — Aura Agentic AI",
-        accessToken: token,
-        refreshToken: data.refresh_token || current?.refreshToken,
-        provider: isAdminEmailAddress(candidateEmail) ? "admin" : "supabase",
+    if (!res.ok || !token) {
+      return {
+        error:
+          data?.error_description ||
+          data?.msg ||
+          data?.message ||
+          "Invalid Admin email or password.",
       };
-      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(updatedSession));
     }
-    return token;
-  } catch {
-    return null;
+
+    localStorage.removeItem("fahi_admin_password");
+    localStorage.setItem("fahi_admin_logged_in", "true");
+    localStorage.setItem("fahi_admin_username", cleanEmail);
+    localStorage.setItem(ADMIN_SUPABASE_TOKEN_KEY, token);
+
+    const adminUser: FahiUser = {
+      id: data.user?.id || "super-admin",
+      email: data.user?.email || cleanEmail,
+      name: data.user?.user_metadata?.full_name || "CEO — Aura Agentic AI",
+      accessToken: token,
+      refreshToken: data.refresh_token,
+      provider: "admin",
+    };
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(adminUser));
+    upsertAdminUserRecord(adminUser, true, false);
+    window.dispatchEvent(
+      new CustomEvent("fahi-admin-login-change", { detail: { isLoggedIn: true } })
+    );
+    window.dispatchEvent(
+      new CustomEvent("fahi-user-auth-change", { detail: { user: adminUser } })
+    );
+    return { user: adminUser, accessToken: token };
+  } catch (err: any) {
+    return { error: err?.message || "Could not verify admin session with Supabase." };
   }
+}
+
+export async function updateAdminSupabasePassword(
+  newPassword: string
+): Promise<{ success: boolean; error?: string }> {
+  if (typeof window === "undefined") {
+    return { success: false, error: "Browser session required." };
+  }
+  const cleanPass = newPassword.trim();
+  if (cleanPass.length < 8) {
+    return { success: false, error: "Password must be at least 8 characters long." };
+  }
+  const token = await ensureAdminSupabaseSession();
+  if (!token) {
+    return { success: false, error: "Active Supabase Admin session required. Please log in again." };
+  }
+  const { supabaseUrl, supabaseAnonKey, isConfigured } = getSupabaseConfig();
+  if (!isConfigured) {
+    return { success: false, error: "Supabase Auth is not configured." };
+  }
+  try {
+    const res = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ password: cleanPass }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return {
+        success: false,
+        error: data?.msg || data?.message || data?.error_description || "Password update failed.",
+      };
+    }
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || "Failed to reach Supabase Auth." };
+  }
+}
+
+export async function ensureAdminSupabaseSession(
+  email?: string,
+  password?: string
+): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+
+  localStorage.removeItem("fahi_admin_password");
+
+  const current = getCurrentUser();
+  if (current?.accessToken && isAdminEmailAddress(current.email) && isJwtUnexpired(current.accessToken)) {
+    localStorage.setItem(ADMIN_SUPABASE_TOKEN_KEY, current.accessToken);
+    return current.accessToken;
+  }
+
+  if (email && password) {
+    const authRes = await authenticateAdminWithSupabase(email, password);
+    return authRes.accessToken || null;
+  }
+
+  const cachedToken = localStorage.getItem(ADMIN_SUPABASE_TOKEN_KEY) || "";
+  if (cachedToken && isJwtUnexpired(cachedToken)) {
+    return cachedToken;
+  }
+
+  return null;
 }
 
 export function clearAdminSupabaseToken(): void {
   if (typeof window !== "undefined") {
     localStorage.removeItem(ADMIN_SUPABASE_TOKEN_KEY);
+    localStorage.removeItem("fahi_admin_password");
   }
 }
 
@@ -651,7 +729,6 @@ export async function fetchCloudAdminAnalytics(): Promise<{
 }
 
 export const DEFAULT_ADMIN_EMAIL = "ceo@auraajenticai.cloud";
-export const DEFAULT_ADMIN_PASS = "REMOVED_LEGACY_ADMIN_CREDENTIAL";
 
 export function getCurrentUser(): FahiUser | null {
   if (typeof window === "undefined") return null;
@@ -667,14 +744,20 @@ export function getCurrentUser(): FahiUser | null {
         return parsed;
       }
     }
-    // Super Admin bypasses user gate automatically
-    if (localStorage.getItem("fahi_admin_logged_in") === "true") {
+    // Restore verified Admin session only when an unexpired Supabase Admin JWT is present
+    const cachedToken = localStorage.getItem(ADMIN_SUPABASE_TOKEN_KEY) || "";
+    if (
+      localStorage.getItem("fahi_admin_logged_in") === "true" &&
+      cachedToken &&
+      isJwtUnexpired(cachedToken)
+    ) {
       const adminUser =
         localStorage.getItem("fahi_admin_username") || DEFAULT_ADMIN_EMAIL;
       return {
         id: "super-admin",
         email: adminUser.includes("@") ? adminUser : DEFAULT_ADMIN_EMAIL,
         name: "CEO — Aura Agentic AI",
+        accessToken: cachedToken,
         provider: "admin",
       };
     }
@@ -801,19 +884,6 @@ export async function signInWithSupabase(
     return { error: "আপনার অ্যাকাউন্টটি অ্যাডমিন দ্বারা স্থগিত (Blocked) করা হয়েছে।" };
   }
 
-  const savedAdminUser = (
-    localStorage.getItem("fahi_admin_username") || DEFAULT_ADMIN_EMAIL
-  )
-    .trim()
-    .toLowerCase();
-  const savedAdminPass = (
-    localStorage.getItem("fahi_admin_password") || DEFAULT_ADMIN_PASS
-  ).trim();
-
-  const isMasterAdminMatch =
-    (cleanEmail === DEFAULT_ADMIN_EMAIL && cleanPass === DEFAULT_ADMIN_PASS) ||
-    (cleanEmail === savedAdminUser && cleanPass === savedAdminPass);
-
   const { supabaseUrl, supabaseAnonKey, isConfigured } = getSupabaseConfig();
 
   if (isConfigured) {
@@ -831,26 +901,6 @@ export async function signInWithSupabase(
       });
       const data = await res.json();
       if (!res.ok) {
-        if (isMasterAdminMatch) {
-          const adminObj: FahiUser = {
-            id: "super-admin",
-            email: DEFAULT_ADMIN_EMAIL,
-            name: "CEO — Aura Agentic AI",
-            provider: "admin",
-          };
-          localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(adminObj));
-          localStorage.setItem("fahi_admin_logged_in", "true");
-          localStorage.setItem("fahi_admin_username", DEFAULT_ADMIN_EMAIL);
-          localStorage.setItem("fahi_admin_password", DEFAULT_ADMIN_PASS);
-          upsertAdminUserRecord(adminObj, true, false);
-          window.dispatchEvent(
-            new CustomEvent("fahi-user-auth-change", { detail: { user: adminObj } })
-          );
-          window.dispatchEvent(
-            new CustomEvent("fahi-admin-login-change", { detail: { isLoggedIn: true } })
-          );
-          return { user: adminObj };
-        }
         return {
           error:
             data.error_description ||
@@ -861,20 +911,24 @@ export async function signInWithSupabase(
       }
 
       const supaUser = data.user || {};
+      const authedEmail = (supaUser.email || cleanEmail).trim().toLowerCase();
+      const isMasterAdmin = isAdminEmailAddress(authedEmail);
       const userObj: FahiUser = {
         id: supaUser.id || `supa_${Date.now()}`,
-        email: supaUser.email || cleanEmail,
+        email: authedEmail,
         name:
           supaUser.user_metadata?.full_name ||
-          (isMasterAdminMatch ? "CEO — Aura Agentic AI" : cleanEmail.split("@")[0] || "Creator"),
+          (isMasterAdmin ? "CEO — Aura Agentic AI" : cleanEmail.split("@")[0] || "Creator"),
         accessToken: data.access_token,
-        provider: isMasterAdminMatch ? "admin" : "supabase",
+        refreshToken: data.refresh_token,
+        provider: isMasterAdmin ? "admin" : "supabase",
       };
+      localStorage.removeItem("fahi_admin_password");
       localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(userObj));
-      if (isMasterAdminMatch) {
+      if (isMasterAdmin && data.access_token) {
         localStorage.setItem("fahi_admin_logged_in", "true");
-        localStorage.setItem("fahi_admin_username", cleanEmail);
-        localStorage.setItem("fahi_admin_password", cleanPass);
+        localStorage.setItem("fahi_admin_username", authedEmail);
+        localStorage.setItem(ADMIN_SUPABASE_TOKEN_KEY, data.access_token);
         window.dispatchEvent(
           new CustomEvent("fahi-admin-login-change", { detail: { isLoggedIn: true } })
         );
@@ -883,23 +937,6 @@ export async function signInWithSupabase(
       window.dispatchEvent(new CustomEvent("fahi-user-auth-change", { detail: { user: userObj } }));
       return { user: userObj };
     } catch (err: any) {
-      if (isMasterAdminMatch) {
-        const adminObj: FahiUser = {
-          id: "super-admin",
-          email: DEFAULT_ADMIN_EMAIL,
-          name: "CEO — Aura Agentic AI",
-          provider: "admin",
-        };
-        localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(adminObj));
-        localStorage.setItem("fahi_admin_logged_in", "true");
-        window.dispatchEvent(
-          new CustomEvent("fahi-user-auth-change", { detail: { user: adminObj } })
-        );
-        window.dispatchEvent(
-          new CustomEvent("fahi-admin-login-change", { detail: { isLoggedIn: true } })
-        );
-        return { user: adminObj };
-      }
       return { error: err?.message || "Could not reach Supabase Auth server." };
     }
   }
@@ -953,6 +990,8 @@ export async function signOutUser(): Promise<void> {
 
   localStorage.removeItem(SESSION_STORAGE_KEY);
   localStorage.removeItem("fahi_admin_logged_in");
+  localStorage.removeItem("fahi_admin_password");
+  localStorage.removeItem(ADMIN_SUPABASE_TOKEN_KEY);
   window.dispatchEvent(new CustomEvent("fahi-user-auth-change", { detail: { user: null } }));
   window.dispatchEvent(new CustomEvent("fahi-admin-login-change", { detail: { isLoggedIn: false } }));
 }
@@ -1186,6 +1225,10 @@ export async function handleOAuthCallbackOnLoad(): Promise<{
     localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessionUser));
     if (normalized.provider === "admin") {
       localStorage.setItem("fahi_admin_logged_in", "true");
+      localStorage.setItem("fahi_admin_username", normalized.email);
+      if (normalized.accessToken) {
+        localStorage.setItem(ADMIN_SUPABASE_TOKEN_KEY, normalized.accessToken);
+      }
       window.dispatchEvent(
         new CustomEvent("fahi-admin-login-change", {
           detail: { isLoggedIn: true },

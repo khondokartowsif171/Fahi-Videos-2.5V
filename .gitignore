@@ -41,10 +41,11 @@ next-env.d.ts
 .fahicut-data/
 .next-before-dynamic-build/
 
-# Local archives, scraper dumps and raw secrets
+# Local archives, scraper dumps, internal handbooks and raw secrets
 *.zip
 *.f32le
 *Supabase*.txt
 *-player-script.js
+MASTER.md
 
 mcp-publisher.exe
