@@ -64,6 +64,11 @@ function loadTsModule(relPath, cache = {}) {
 
 const { handleMcpHttp } = loadTsModule('lib/mcp-server.ts');
 const {
+  parseMcptryBadgeSvg,
+  parseMcptryServerHtml,
+  parseMcprushCardSvg,
+} = loadTsModule('lib/mcp-directory-status.ts');
+const {
   DIRECT_MCP_URL,
   MCPRUSH_GW_URL,
   MCPRUSH_LISTING_SLUG,
@@ -311,6 +316,46 @@ async function rpcCall(method, params, headers = {}) {
   assert.equal(JSON.parse(byId.gemini_cli.variants.direct.primary.code).mcpServers['fahi-videos-mcp'].httpUrl, DIRECT_MCP_URL);
   assert.equal(JSON.parse(byId.windsurf.variants.direct.primary.code).mcpServers['fahi-videos-mcp'].serverUrl, DIRECT_MCP_URL);
   assert.equal(JSON.parse(byId.devin_desktop.variants.direct.primary.code).mcpServers['fahi-videos-mcp'].serverUrl, DIRECT_MCP_URL);
+
+  // 13. Test live MCP directory status parsers (mcptry & mcprush) + zero stale 89/100 guard
+  const parsedBadge = parseMcptryBadgeSvg(
+    '<svg xmlns="http://www.w3.org/2000/svg"><title>mcptry: working, score 100/100</title></svg>'
+  );
+  assert.deepEqual(parsedBadge, { status: 'working', rankScore: 100, rankMax: 100 });
+  assert.deepEqual(parseMcptryBadgeSvg(''), { status: null, rankScore: null, rankMax: null });
+
+  const parsedPage = parseMcptryServerHtml(`
+    <div>Health Uptime, 30 days <span>97.2%</span> Uptime, 90 days <span>97.2%</span>
+    Response, from Germany <span>161 ms</span> Protocol <span>2025-06-18</span>
+    Last check <span>Nov 14, 17:21 UTC : ok</span></div>
+    <div>How it ranks <span>100 /100</span>
+    Works right now 40 / 40 Uptime, 30 days 10 / 10 Tool quality 15 / 15
+    Complete listing 15 / 15 Verified publisher 5 / 5 Claimed by its maintainer 5 / 5
+    Speed 5 / 5 Recently updated 5 / 5</div>
+  `);
+  assert.equal(parsedPage.rankScore, 100);
+  assert.equal(parsedPage.rankMax, 100);
+  assert.equal(parsedPage.uptime30d, '97.2%');
+  assert.equal(parsedPage.latencyGermanyMs, 161);
+  assert.equal(parsedPage.protocol, '2025-06-18');
+  assert.equal(parsedPage.breakdown.length, 8);
+
+  const parsedRushUnscanned = parseMcprushCardSvg(
+    '<svg><title>Fahi-Videos MCP on mcprush: not scanned yet, no sign-in, 10 tools, works with 16 clients</title><text>v2.6.0</text></svg>'
+  );
+  assert.equal(parsedRushUnscanned.statusLabel, 'not scanned yet');
+  assert.equal(parsedRushUnscanned.grade, null);
+  assert.equal(parsedRushUnscanned.toolsCount, 10);
+  assert.equal(parsedRushUnscanned.clientsCount, 16);
+  assert.equal(parsedRushUnscanned.version, '2.6.0');
+
+  const parsedRushGradeA = parseMcprushCardSvg(
+    '<svg><title>Fahi-Videos MCP on mcprush: Tool-list grade A, 10 tools, works with 16 clients</title></svg>'
+  );
+  assert.equal(parsedRushGradeA.grade, 'A');
+
+  const mcpHubSource = fs.readFileSync(path.join(root, 'components', 'McpConfigHub.tsx'), 'utf8');
+  assert.ok(!mcpHubSource.includes('89/100'), 'McpConfigHub must not hardcode stale 89/100 score');
 
   console.log(
     'PASS: 100% Free-First MCP Connector (Kotha Studio, YT/FB/Insta/TikTok Downloader, CapCut Video Studio, Free Image Fallback, 10 tools, 4 resources, 3 prompts, 16 AI client configs) verified with zero API key.'

@@ -8,7 +8,7 @@
 
 Live Web App: **[https://fahi-videos.auraajenticai.cloud](https://fahi-videos.auraajenticai.cloud)**  
 Live MCP Endpoint: **`https://fahi-videos.auraajenticai.cloud/mcp`** (`v2.6.0`)  
-Official Directories: **[mcprush (Grade A)](https://mcprush.com/khondokartowsif171/fahi-videos-mcp)** · **[mcptry (Grade A · 89/100)](https://mcptry.com/servers/io.github.khondokartowsif171/fahi-videos-mcp)**
+Official Directories: **[mcprush](https://mcprush.com/khondokartowsif171/fahi-videos-mcp)** · **[mcptry (100/100)](https://mcptry.com/servers/io.github.khondokartowsif171/fahi-videos-mcp)**
 
 ---
 

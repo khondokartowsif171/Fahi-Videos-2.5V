@@ -33,6 +33,14 @@ import {
   type McpClientId,
   type McpTransportMode,
 } from '@/lib/mcp-client-configs';
+import { studioBase } from '@/lib/studio-client';
+import {
+  MCPTRY_LISTING_URL,
+  MCPTRY_BADGE_URL,
+  MCPRUSH_LISTING_URL,
+  MCPRUSH_BADGE_URL,
+  type LiveMcpDirectoryStatus,
+} from '@/lib/mcp-directory-status';
 
 interface ToolDef {
   name: string;
@@ -177,7 +185,7 @@ export default function McpConfigHub() {
   const [transportMode, setTransportMode] = useState<McpTransportMode>('direct');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-  // Live Server Health State
+  // Live Server Health & Directory Verification State
   const [isPinging, setIsPinging] = useState(false);
   const [pingStatus, setPingStatus] = useState<'online' | 'error' | 'checking'>('checking');
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
@@ -189,9 +197,10 @@ export default function McpConfigHub() {
   }>({
     name: 'fahi-videos-mcp-connector',
     version: '2.6.0',
-    protocolVersion: '2024-11-05',
+    protocolVersion: '2025-06-18',
     toolsCount: 10,
   });
+  const [directoryStatus, setDirectoryStatus] = useState<LiveMcpDirectoryStatus | null>(null);
 
   // Playground State
   const [selectedTool, setSelectedTool] = useState<string>('fahi_synthesize_studio_sfx');
@@ -205,33 +214,61 @@ export default function McpConfigHub() {
 
   const liveEndpoint = DIRECT_MCP_URL;
 
-  // Live Ping Checker
+  const fetchDirectoryStatus = async () => {
+    try {
+      const res = await fetch(`${studioBase}/api/mcp/directory-status`);
+      if (res.ok) {
+        const json: LiveMcpDirectoryStatus = await res.json();
+        setDirectoryStatus(json);
+      }
+    } catch {
+      // Keep directoryStatus null if offline rather than inventing scores
+    }
+  };
+
+  // Live Ping Checker (checks initialize + tools/list + live directory rank/health)
   const checkLiveHealth = async () => {
     setIsPinging(true);
     const start = performance.now();
     try {
-      const res = await fetch('/mcp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 'ping-check',
-          method: 'tools/list',
+      const [initRes, toolsRes] = await Promise.all([
+        fetch(`${studioBase}/mcp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 'init-check',
+            method: 'initialize',
+            params: {
+              protocolVersion: '2025-06-18',
+              clientInfo: { name: 'fahi-mcp-hub', version: '2.6.0' },
+            },
+          }),
         }),
-      });
+        fetch(`${studioBase}/mcp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 'ping-check',
+            method: 'tools/list',
+          }),
+        }),
+      ]);
       const end = performance.now();
       const elapsed = Math.round(end - start);
       setLatencyMs(elapsed);
 
-      if (res.ok) {
-        const data = await res.json();
+      if (toolsRes.ok) {
+        const toolsData = await toolsRes.json();
+        const initData = initRes.ok ? await initRes.json() : null;
         setPingStatus('online');
-        if (data.result?.tools) {
-          setServerMeta((prev) => ({
-            ...prev,
-            toolsCount: data.result.tools.length,
-          }));
-        }
+        setServerMeta((prev) => ({
+          name: initData?.result?.serverInfo?.name || prev.name,
+          version: initData?.result?.serverInfo?.version || prev.version,
+          protocolVersion: initData?.result?.protocolVersion || prev.protocolVersion,
+          toolsCount: toolsData.result?.tools?.length ?? prev.toolsCount,
+        }));
       } else {
         setPingStatus('error');
       }
@@ -244,7 +281,8 @@ export default function McpConfigHub() {
   };
 
   useEffect(() => {
-    checkLiveHealth();
+    void checkLiveHealth();
+    void fetchDirectoryStatus();
   }, []);
 
   const handleCopy = async (text: string, key: string) => {
@@ -286,7 +324,7 @@ export default function McpConfigHub() {
         return;
       }
 
-      const response = await fetch('/mcp', {
+      const response = await fetch(`${studioBase}/mcp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -368,10 +406,13 @@ export default function McpConfigHub() {
                 </span>
               </div>
               <button
-                onClick={checkLiveHealth}
+                onClick={() => {
+                  void checkLiveHealth();
+                  void fetchDirectoryStatus();
+                }}
                 disabled={isPinging}
                 className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                title="Refresh Health Check"
+                title="Refresh Health & Directory Status"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isPinging ? 'animate-spin text-cyan-400' : ''}`} />
               </button>
@@ -392,28 +433,37 @@ export default function McpConfigHub() {
               </div>
               <div>
                 <span className="text-slate-400 text-[11px]">Protocol</span>
-                <p className="font-mono text-[11px] text-slate-200">2024-11-05</p>
+                <p className="font-mono text-[11px] text-slate-200">{serverMeta.protocolVersion}</p>
               </div>
               <div>
                 <span className="text-slate-400 text-[11px]">Registries</span>
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <a
-                    href="https://mcprush.com/khondokartowsif171/fahi-videos-mcp"
+                    href={MCPRUSH_LISTING_URL}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 font-bold text-lime-300 hover:text-lime-200 hover:underline"
                   >
-                    <span>mcprush (A)</span>
+                    <span>
+                      {directoryStatus?.mcprush.grade
+                        ? `mcprush (${directoryStatus.mcprush.grade})`
+                        : 'mcprush'}
+                    </span>
                     <ExternalLink className="w-2.5 h-2.5" />
                   </a>
                   <span className="text-slate-600">·</span>
                   <a
-                    href="https://mcptry.com/servers/io.github.khondokartowsif171/fahi-videos-mcp"
+                    href={MCPTRY_LISTING_URL}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 font-bold text-indigo-300 hover:text-indigo-200 hover:underline"
                   >
-                    <span>mcptry (A)</span>
+                    <span>
+                      {directoryStatus?.mcptry.rankScore !== null &&
+                      directoryStatus?.mcptry.rankScore !== undefined
+                        ? `mcptry (${directoryStatus.mcptry.rankScore}/${directoryStatus.mcptry.rankMax ?? 100})`
+                        : 'mcptry (Live)'}
+                    </span>
                     <ExternalLink className="w-2.5 h-2.5" />
                   </a>
                 </div>
@@ -821,30 +871,107 @@ export default function McpConfigHub() {
               <ShieldCheck className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white">Verified on Global MCP Directories (Grade A)</h3>
-              <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
-                Listed &amp; verified on the official GitHub Model Context Protocol Registry, mcprush.com (Grade A · Low Access · Works with 16 Clients), and mcptry.com (Grade A · 89/100).
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm font-bold text-white">
+                  Verified on Global MCP Directories
+                </h3>
+                {directoryStatus?.mcptry.rankScore !== null &&
+                  directoryStatus?.mcptry.rankScore !== undefined && (
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-500/15 border border-emerald-400/35 text-emerald-300">
+                      mcptry {directoryStatus.mcptry.rankScore}/{directoryStatus.mcptry.rankMax ?? 100}
+                    </span>
+                  )}
+                {directoryStatus?.mcprush.grade && (
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-lime-500/15 border border-lime-400/35 text-lime-200">
+                    mcprush Grade {directoryStatus.mcprush.grade}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                Listed &amp; verified on the official GitHub Model Context Protocol Registry,{' '}
+                {directoryStatus ? (
+                  <>
+                    mcprush.com (
+                    {[
+                      directoryStatus.mcprush.grade
+                        ? `Grade ${directoryStatus.mcprush.grade}`
+                        : directoryStatus.mcprush.statusLabel || 'Verified',
+                      directoryStatus.mcprush.version ? `v${directoryStatus.mcprush.version}` : null,
+                      directoryStatus.mcprush.clientsCount
+                        ? `Works with ${directoryStatus.mcprush.clientsCount} Clients`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                    ), and{' '}
+                    <span className="text-slate-200 font-semibold">
+                      mcptry.com (
+                      {directoryStatus.mcptry.rankScore !== null
+                        ? [
+                            directoryStatus.mcptry.status === 'working'
+                              ? 'Working'
+                              : directoryStatus.mcptry.status,
+                            `${directoryStatus.mcptry.rankScore}/${directoryStatus.mcptry.rankMax ?? 100}`,
+                            directoryStatus.mcptry.uptime30d
+                              ? `${directoryStatus.mcptry.uptime30d} 30d uptime`
+                              : null,
+                            directoryStatus.mcptry.latencyGermanyMs !== null
+                              ? `${directoryStatus.mcptry.latencyGermanyMs}ms EU`
+                              : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')
+                        : 'Live Rank & Uptime Monitor'}
+                      )
+                    </span>
+                    .
+                  </>
+                ) : (
+                  'mcprush.com (16 AI Clients), and mcptry.com (Live Rank & Uptime Monitor).'
+                )}
               </p>
+
+              {directoryStatus?.mcptry.breakdown && directoryStatus.mcptry.breakdown.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap mt-2.5">
+                  {directoryStatus.mcptry.breakdown.map((item) => (
+                    <span
+                      key={item.label}
+                      className="px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/10 text-[10px] font-mono text-slate-300"
+                    >
+                      {item.label}: <span className="text-emerald-300 font-bold">{item.score}/{item.max}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
             <a
-              href="https://mcprush.com/khondokartowsif171/fahi-videos-mcp"
+              href={MCPRUSH_LISTING_URL}
               target="_blank"
               rel="noreferrer"
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-lime-500/15 hover:bg-lime-500/25 border border-lime-400/30 text-xs font-bold text-lime-200 transition-colors"
             >
-              <span>mcprush Listing (Grade A)</span>
+              <span>
+                {directoryStatus?.mcprush.grade
+                  ? `mcprush Listing (Grade ${directoryStatus.mcprush.grade})`
+                  : 'mcprush Listing'}
+              </span>
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
             <a
-              href="https://mcptry.com/servers/io.github.khondokartowsif171/fahi-videos-mcp"
+              href={MCPTRY_LISTING_URL}
               target="_blank"
               rel="noreferrer"
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/15 text-xs font-bold text-white transition-colors"
             >
-              <span>mcptry Status &amp; Playground</span>
+              <span>
+                {directoryStatus?.mcptry.rankScore !== null &&
+                directoryStatus?.mcptry.rankScore !== undefined
+                  ? `mcptry Status & Playground (${directoryStatus.mcptry.rankScore}/${directoryStatus.mcptry.rankMax ?? 100})`
+                  : 'mcptry Status & Playground'}
+              </span>
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
             <a
@@ -859,21 +986,39 @@ export default function McpConfigHub() {
           </div>
         </div>
 
-        <a
-          href="https://mcprush.com/khondokartowsif171/fahi-videos-mcp"
-          target="_blank"
-          rel="noreferrer"
-          className="shrink-0 block rounded-2xl overflow-hidden border border-white/10 hover:border-lime-400/40 transition-all shadow-xl"
-        >
-          <img
-            width={380}
-            height={200}
-            src="https://mcprush.com/badge/fahi-videos-mcp/card.svg"
-            alt="Fahi-Videos MCP server"
-            loading="lazy"
-            className="block max-w-full h-auto"
-          />
-        </a>
+        <div className="shrink-0 flex flex-col items-start lg:items-end gap-3">
+          <a
+            href={MCPTRY_LISTING_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/[0.04] border border-white/10 hover:border-emerald-400/40 transition-colors"
+            title="Live mcptry Status & Score Badge"
+          >
+            <img
+              width={133}
+              height={20}
+              src={MCPTRY_BADGE_URL}
+              alt="mcptry status and rank score badge"
+              loading="lazy"
+              className="block h-5 w-auto"
+            />
+          </a>
+          <a
+            href={MCPRUSH_LISTING_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="block rounded-2xl overflow-hidden border border-white/10 hover:border-lime-400/40 transition-all shadow-xl"
+          >
+            <img
+              width={380}
+              height={200}
+              src={MCPRUSH_BADGE_URL}
+              alt="Fahi-Videos MCP server"
+              loading="lazy"
+              className="block max-w-full h-auto"
+            />
+          </a>
+        </div>
       </div>
     </div>
   );
