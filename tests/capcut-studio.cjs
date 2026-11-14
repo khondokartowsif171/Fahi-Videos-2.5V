@@ -164,6 +164,17 @@ for (const assetRel of [
 const navbarSrc = fs.readFileSync(path.join(root, "components/Navbar.tsx"), "utf8");
 assert(navbarSrc.includes("PwaInstallButton"), "Expected Navbar.tsx to render PwaInstallButton next to Admin");
 
+// Verify SiteFooter branding, links & mounting across main shell pages
+const footerSrc = fs.readFileSync(path.join(root, "components/SiteFooter.tsx"), "utf8");
+const pageSrc = fs.readFileSync(path.join(root, "app/page.tsx"), "utf8");
+const mcpPageSrc = fs.readFileSync(path.join(root, "app/mcp-config/page.tsx"), "utf8");
+assert(footerSrc.includes("https://auraajenticai.cloud"), "Expected SiteFooter to link to https://auraajenticai.cloud");
+assert(footerSrc.includes("Aura Ajentic AI"), "Expected SiteFooter to display Powered by Aura Ajentic AI");
+assert(footerSrc.includes("Aura Tech Solution"), "Expected SiteFooter to display Aura Tech Solution");
+assert(footerSrc.includes("2026"), "Expected SiteFooter to include 2026 copyright year");
+assert(pageSrc.includes("<SiteFooter"), "Expected app/page.tsx to render SiteFooter");
+assert(mcpPageSrc.includes("<SiteFooter"), "Expected app/mcp-config/page.tsx to render SiteFooter");
+
 assert(cssSrc.includes("@media (max-width:767px)"), "Expected mobile responsive media query in video-editor.css");
 
 console.log(

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { ArrowLeft, Video } from 'lucide-react';
 import McpConfigHub from '@/components/McpConfigHub';
 import FahiVidsLogo from '@/components/FahiVidsLogo';
+import SiteFooter from '@/components/SiteFooter';
 
 export const metadata: Metadata = {
   title: 'MCP AI Configuration Hub — Fahi Videos 2.5V',
@@ -37,6 +38,8 @@ export default function McpConfigPage() {
       <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <McpConfigHub />
       </main>
+
+      <SiteFooter hasMobileBottomNav={false} />
     </div>
   );
 }

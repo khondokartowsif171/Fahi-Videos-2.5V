@@ -14,6 +14,7 @@ import AuraStudio from "@/components/AuraStudio";
 import KothaStudio from "@/components/KothaStudio";
 import AuthModal from "@/components/AuthModal";
 import McpConfigHub from "@/components/McpConfigHub";
+import SiteFooter from "@/components/SiteFooter";
 import {
   getCurrentUser,
   handleOAuthCallbackOnLoad,
@@ -259,7 +260,7 @@ export default function Page() {
 
       {/* Other Workspaces */}
       <main
-        className={`flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 overflow-x-hidden pb-24 md:pb-8 ${
+        className={`flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 overflow-x-hidden pb-8 ${
           activeTab !== "editor" && activeTab !== "ai" && activeTab !== "kotha"
             ? "block"
             : "hidden"
@@ -270,6 +271,11 @@ export default function Page() {
         {activeTab === "thumbnail" && <ThumbnailEditor />}
         {activeTab === "mcp" && <McpConfigHub />}
       </main>
+
+      {!isEmbedded &&
+        activeTab !== "editor" &&
+        activeTab !== "ai" &&
+        activeTab !== "kotha" && <SiteFooter hasMobileBottomNav />}
     </div>
   );
 }
