@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { FahiVidsMarkSvg } from "./FahiVidsLogo";
 import {
+  signInWithGoogleOAuth,
   signInWithSupabase,
   signUpWithSupabase,
   type FahiUser,
@@ -25,6 +26,8 @@ interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   targetToolLabel?: string;
+  pendingTab?: string | null;
+  initialError?: string;
   onSuccess?: (user: FahiUser) => void;
 }
 
@@ -32,6 +35,8 @@ export default function AuthModal({
   isOpen,
   onClose,
   targetToolLabel,
+  pendingTab,
+  initialError,
   onSuccess,
 }: AuthModalProps) {
   const [tab, setTab] = useState<"signin" | "signup">("signin");
@@ -40,17 +45,35 @@ export default function AuthModal({
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [infoMsg, setInfoMsg] = useState("");
 
   useEffect(() => {
     if (isOpen) {
-      setErrorMsg("");
+      setErrorMsg(initialError || "");
       setInfoMsg("");
+      setGoogleLoading(false);
     }
-  }, [isOpen]);
+  }, [isOpen, initialError]);
 
   if (!isOpen) return null;
+
+  const handleGoogleLogin = async () => {
+    setErrorMsg("");
+    setInfoMsg("");
+    setGoogleLoading(true);
+    try {
+      const res = await signInWithGoogleOAuth(pendingTab);
+      if (res.error) {
+        setErrorMsg(res.error);
+        setGoogleLoading(false);
+      }
+    } catch (err: any) {
+      setErrorMsg(err?.message || "Failed to start Google sign-in.");
+      setGoogleLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -121,6 +144,46 @@ export default function AuthModal({
             </span>
           </div>
         )}
+
+        {/* 1-Click Google OAuth */}
+        <button
+          type="button"
+          onClick={handleGoogleLogin}
+          disabled={loading || googleLoading}
+          className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-60"
+        >
+          <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              fill="#4285F4"
+              d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
+            />
+            <path
+              fill="#34A853"
+              d="M12 24c3.3 0 6.08-1.09 8.105-2.96l-3.88-3.05c-1.1.74-2.51 1.18-4.225 1.18-3.24 0-5.98-2.18-6.96-5.12H1.03v3.14C3.05 21.19 7.23 24 12 24z"
+            />
+            <path
+              fill="#FBBC05"
+              d="M5.04 14.05c-.25-.74-.39-1.53-.39-2.35s.14-1.61.39-2.35V6.21H1.03A11.96 11.96 0 0 0 0 11.7c0 1.93.46 3.75 1.03 5.49l4.01-3.14z"
+            />
+            <path
+              fill="#EA4335"
+              d="M12 4.65c1.8 0 3.41.62 4.68 1.83l3.51-3.51C18.07 1.1 15.3 0 12 0 7.23 0 3.05 2.81 1.03 6.21l4.01 3.14C6.02 6.83 8.76 4.65 12 4.65z"
+            />
+          </svg>
+          <span>
+            {googleLoading
+              ? "Redirecting to Google..."
+              : "Continue with Google"}
+          </span>
+        </button>
+
+        <div className="relative flex items-center py-0.5">
+          <div className="flex-grow border-t border-white/10" />
+          <span className="shrink-0 mx-3 text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+            or continue with email
+          </span>
+          <div className="flex-grow border-t border-white/10" />
+        </div>
 
         {/* Mode Switcher */}
         <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-black/50 border border-white/10">

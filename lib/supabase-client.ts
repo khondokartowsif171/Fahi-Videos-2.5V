@@ -8,6 +8,14 @@
  * - Supports 1-click User Block/Unblock and CSV Export
  */
 
+import {
+  buildSupabaseGoogleAuthorizeUrl,
+  createPkceChallenge,
+  extractSupabaseOAuthUser,
+  generateCodeVerifier,
+  parseOAuthCallbackUrl,
+} from "./oauth-helpers";
+
 export interface SupabaseConfig {
   supabaseUrl: string;
   supabaseAnonKey: string;
@@ -19,6 +27,9 @@ export interface FahiUser {
   email: string;
   name: string;
   accessToken?: string;
+  refreshToken?: string;
+  avatarUrl?: string;
+  authMethod?: "google" | "email";
   provider: "supabase" | "admin" | "local";
 }
 
@@ -53,6 +64,7 @@ export interface AdminAnalyticsEvent {
 }
 
 const SESSION_STORAGE_KEY = "fahi_auth_session_v1";
+const OAUTH_PKCE_STORAGE_KEY = "fahi_oauth_pkce_v1";
 const LOCAL_USERS_KEY = "fahi_registered_users_v1";
 const ADMIN_USERS_INDEX_KEY = "fahi_admin_users_index_v1";
 const ADMIN_EVENTS_KEY = "fahi_admin_analytics_events_v1";
@@ -243,15 +255,15 @@ export function upsertAdminUserRecord(
 
     localStorage.setItem(ADMIN_USERS_INDEX_KEY, JSON.stringify(list.slice(0, 500)));
 
-    // Sync asynchronously to Supabase if configured
+    // Sync asynchronously to Supabase when holding an authenticated JWT (prevents anon RLS 403)
     const { supabaseUrl, supabaseAnonKey, isConfigured } = getSupabaseConfig();
-    if (isConfigured) {
+    if (isConfigured && user.accessToken) {
       fetch(`${supabaseUrl}/rest/v1/fahi_user_profiles`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           apikey: supabaseAnonKey,
-          Authorization: `Bearer ${user.accessToken || supabaseAnonKey}`,
+          Authorization: `Bearer ${user.accessToken}`,
           Prefer: "resolution=merge-duplicates",
         },
         body: JSON.stringify({
@@ -759,6 +771,247 @@ export async function signOutUser(): Promise<void> {
   localStorage.removeItem("fahi_admin_logged_in");
   window.dispatchEvent(new CustomEvent("fahi-user-auth-change", { detail: { user: null } }));
   window.dispatchEvent(new CustomEvent("fahi-admin-login-change", { detail: { isLoggedIn: false } }));
+}
+
+interface StoredPkceState {
+  verifier: string;
+  pendingTab: string | null;
+  createdAt: number;
+}
+
+function readAndClearStoredPkce(): StoredPkceState | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(OAUTH_PKCE_STORAGE_KEY);
+    localStorage.removeItem(OAUTH_PKCE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredPkceState;
+    if (!parsed || Date.now() - Number(parsed.createdAt || 0) > 15 * 60 * 1000) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export async function signInWithGoogleOAuth(
+  pendingTab?: string | null
+): Promise<{ error?: string }> {
+  if (typeof window === "undefined") {
+    return { error: "Google sign-in requires a browser session." };
+  }
+  const { supabaseUrl, isConfigured } = getSupabaseConfig();
+  if (!isConfigured) {
+    return {
+      error: "Supabase configuration is missing. Please configure Supabase URL and Anon Key first.",
+    };
+  }
+
+  try {
+    const redirectTo = `${window.location.origin}${window.location.pathname}`;
+    const hasSubtleCrypto =
+      typeof window.crypto !== "undefined" && Boolean(window.crypto.subtle);
+
+    let codeChallenge: string | undefined;
+    let verifier = "";
+    if (hasSubtleCrypto) {
+      verifier = generateCodeVerifier(48);
+      codeChallenge = await createPkceChallenge(verifier);
+    }
+
+    const pkceState: StoredPkceState = {
+      verifier,
+      pendingTab: pendingTab || null,
+      createdAt: Date.now(),
+    };
+    localStorage.setItem(OAUTH_PKCE_STORAGE_KEY, JSON.stringify(pkceState));
+
+    const authUrl = buildSupabaseGoogleAuthorizeUrl({
+      supabaseUrl,
+      redirectTo,
+      codeChallenge,
+    });
+    window.location.assign(authUrl);
+    return {};
+  } catch (err: any) {
+    return {
+      error:
+        err?.message ||
+        "গুগল লগইন শুরু করা যায়নি (Unable to start Google sign-in).",
+    };
+  }
+}
+
+export async function handleOAuthCallbackOnLoad(): Promise<{
+  user?: FahiUser;
+  pendingTab?: string | null;
+  error?: string;
+} | null> {
+  if (typeof window === "undefined") return null;
+
+  let parsed;
+  try {
+    parsed = parseOAuthCallbackUrl(window.location.href);
+  } catch {
+    return null;
+  }
+  if (parsed.kind === "none") return null;
+
+  try {
+    window.history.replaceState({}, document.title, parsed.cleanUrl);
+  } catch {
+    // ignore history replace restrictions
+  }
+
+  const storedPkce = readAndClearStoredPkce();
+  const pendingTab = storedPkce?.pendingTab || null;
+
+  if (parsed.kind === "error") {
+    const rawErr = parsed.errorMessage || "Google sign-in was cancelled or denied.";
+    const friendly = rawErr.toLowerCase().includes("not enabled")
+      ? "Supabase ড্যাশবোর্ডে Google Provider এখনো চালু করা হয়নি। Authentication -> Providers -> Google অন করুন।"
+      : rawErr;
+    return { error: friendly, pendingTab };
+  }
+
+  const { supabaseUrl, supabaseAnonKey, isConfigured } = getSupabaseConfig();
+  if (!isConfigured) {
+    return {
+      error: "Supabase configuration missing while completing Google sign-in.",
+      pendingTab,
+    };
+  }
+
+  try {
+    let payload: Record<string, any> | null = null;
+
+    if (parsed.kind === "pkce" && parsed.code) {
+      if (!storedPkce?.verifier) {
+        return {
+          error: "গুগল সাইন-ইন সেশন মেয়াদোত্তীর্ণ হয়েছে, অনুগ্রহ করে আবার Continue with Google চাপুন।",
+          pendingTab,
+        };
+      }
+      const tokenRes = await fetch(
+        `${supabaseUrl}/auth/v1/token?grant_type=pkce`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: supabaseAnonKey,
+          },
+          body: JSON.stringify({
+            auth_code: parsed.code,
+            code_verifier: storedPkce.verifier,
+          }),
+        }
+      );
+      const tokenJson = await tokenRes.json().catch(() => ({}));
+      if (!tokenRes.ok) {
+        return {
+          error:
+            tokenJson?.error_description ||
+            tokenJson?.msg ||
+            tokenJson?.message ||
+            "Google authentication token exchange failed.",
+          pendingTab,
+        };
+      }
+      payload = tokenJson;
+    } else if (parsed.kind === "implicit" && parsed.accessToken) {
+      const userRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${parsed.accessToken}`,
+        },
+      });
+      const userJson = await userRes.json().catch(() => ({}));
+      if (!userRes.ok) {
+        return {
+          error:
+            userJson?.msg ||
+            userJson?.message ||
+            "Could not verify Google user session with Supabase.",
+          pendingTab,
+        };
+      }
+      payload = {
+        user: userJson,
+        access_token: parsed.accessToken,
+        refresh_token: parsed.refreshToken,
+      };
+    }
+
+    const savedAdminEmail = (
+      localStorage.getItem("fahi_admin_username") || DEFAULT_ADMIN_EMAIL
+    )
+      .trim()
+      .toLowerCase();
+
+    const normalized = extractSupabaseOAuthUser(
+      payload,
+      (em) =>
+        em.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase() ||
+        em.toLowerCase() === savedAdminEmail
+    );
+
+    if (!normalized) {
+      return {
+        error: "Google account email could not be verified from Supabase.",
+        pendingTab,
+      };
+    }
+
+    if (isEmailBlocked(normalized.email)) {
+      if (normalized.accessToken) {
+        fetch(`${supabaseUrl}/auth/v1/logout`, {
+          method: "POST",
+          headers: {
+            apikey: supabaseAnonKey,
+            Authorization: `Bearer ${normalized.accessToken}`,
+          },
+        }).catch(() => {});
+      }
+      return {
+        error: "আপনার অ্যাকাউন্টটি অ্যাডমিন দ্বারা স্থগিত (Blocked) করা হয়েছে।",
+        pendingTab,
+      };
+    }
+
+    const sessionUser: FahiUser = {
+      id: normalized.id,
+      email: normalized.email,
+      name: normalized.name,
+      accessToken: normalized.accessToken,
+      refreshToken: normalized.refreshToken,
+      avatarUrl: normalized.avatarUrl,
+      authMethod: normalized.authMethod,
+      provider: normalized.provider,
+    };
+
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessionUser));
+    if (normalized.provider === "admin") {
+      localStorage.setItem("fahi_admin_logged_in", "true");
+      window.dispatchEvent(
+        new CustomEvent("fahi-admin-login-change", {
+          detail: { isLoggedIn: true },
+        })
+      );
+    }
+    upsertAdminUserRecord(sessionUser, true, false);
+    window.dispatchEvent(
+      new CustomEvent("fahi-user-auth-change", { detail: { user: sessionUser } })
+    );
+    return { user: sessionUser, pendingTab };
+  } catch (err: any) {
+    return {
+      error:
+        err?.message ||
+        "গুগল লগইন সম্পন্ন করতে সমস্যা হয়েছে (Google OAuth error).",
+      pendingTab,
+    };
+  }
 }
 
 export async function saveProjectToCloud(

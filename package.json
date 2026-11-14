@@ -1,6 +1,6 @@
 {
   "name": "fahi-videos-os",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "license": "Apache-2.0",
   "private": true,
   "scripts": {
@@ -10,6 +10,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit --incremental false",
+    "test:auth": "node tests/oauth-helpers.cjs",
     "test:aura": "node tests/aura-server.cjs",
     "test:kotha": "node tests/kotha-studio.cjs",
     "test:capcut": "node tests/capcut-studio.cjs",

@@ -16,6 +16,7 @@ import AuthModal from "@/components/AuthModal";
 import McpConfigHub from "@/components/McpConfigHub";
 import {
   getCurrentUser,
+  handleOAuthCallbackOnLoad,
   recordTrafficVisit,
   type FahiUser,
 } from "@/lib/supabase-client";
@@ -48,6 +49,7 @@ export default function Page() {
   const [hasMounted, setHasMounted] = useState(false);
   const [currentUser, setCurrentUser] = useState<FahiUser | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalError, setAuthModalError] = useState("");
   const [pendingTab, setPendingTab] = useState<string | null>(null);
 
   // Public Home Page + Mandatory Login Gate for Tools (bypassed in embedded mode) + Traffic Analytics
@@ -83,6 +85,35 @@ export default function Page() {
     if (params.get("kotha") === "1") handleSelectTab("kotha");
     if (params.get("aura") === "1") handleSelectTab("ai");
     if (params.get("mcp") === "1") handleSelectTab("mcp");
+
+    if (!isEmbedded) {
+      void (async () => {
+        const oauthResult = await handleOAuthCallbackOnLoad();
+        if (!oauthResult) return;
+        if (oauthResult.error) {
+          setPendingTab(oauthResult.pendingTab || null);
+          setAuthModalError(oauthResult.error);
+          setAuthModalOpen(true);
+          return;
+        }
+        if (oauthResult.user) {
+          setCurrentUser(oauthResult.user);
+          setAuthModalError("");
+          setAuthModalOpen(false);
+          const destTab = oauthResult.pendingTab
+            ? TAB_ALIASES[oauthResult.pendingTab] || oauthResult.pendingTab
+            : null;
+          if (destTab) {
+            setPendingTab(null);
+            setActiveTabState(destTab);
+            recordTrafficVisit(
+              destTab as "downloader" | "editor" | "thumbnail" | "ai" | "kotha"
+            );
+          }
+        }
+      })();
+    }
+
     return cleanup;
   }, [handleSelectTab]);
 
@@ -158,6 +189,7 @@ export default function Page() {
         currentUser={currentUser}
         onOpenAuthModal={() => {
           setPendingTab(null);
+          setAuthModalError("");
           setAuthModalOpen(true);
         }}
       />
@@ -165,10 +197,16 @@ export default function Page() {
       {/* Supabase / User Login Gate Modal */}
       <AuthModal
         isOpen={authModalOpen}
-        onClose={() => setAuthModalOpen(false)}
+        onClose={() => {
+          setAuthModalOpen(false);
+          setAuthModalError("");
+        }}
         targetToolLabel={pendingTab ? TOOL_LABELS[pendingTab] : undefined}
+        pendingTab={pendingTab}
+        initialError={authModalError}
         onSuccess={(user) => {
           setCurrentUser(user);
+          setAuthModalError("");
           setAuthModalOpen(false);
           if (pendingTab) {
             setActiveTabState(pendingTab);
