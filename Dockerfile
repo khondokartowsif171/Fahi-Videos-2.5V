@@ -1,7 +1,10 @@
 # Slim Multi-Stage Production Dockerfile for Standalone Fahi-Videos 2.5V
-# Uses Next.js output: "standalone" to avoid copying devDependencies & .next/cache into runtime image.
+# Uses Next.js output: "standalone" to exclude devDependencies & .next/cache from runtime image.
 
 FROM node:22-bookworm-slim AS deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3 python-is-python3 ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --no-audit --no-fund
@@ -24,7 +27,7 @@ RUN npm run build
 
 FROM node:22-bookworm-slim AS runner
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      python3 python-is-python3 ffmpeg ca-certificates \
+      python3 python-is-python3 ffmpeg ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV NODE_ENV=production \
